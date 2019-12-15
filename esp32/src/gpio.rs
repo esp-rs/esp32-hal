@@ -121,24 +121,20 @@ impl crate::Readable for GPIO_OUT_REG {}
 impl crate::Writable for GPIO_OUT_REG {}
 #[doc = "GPIO 0-31 output register"]
 pub mod gpio_out_reg;
-#[doc = "GPIO 0-31 output set register\n\nThis register you can [`read`](crate::generic::Reg::read), [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero), [`modify`](crate::generic::Reg::modify). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_out_w1ts_reg](gpio_out_w1ts_reg) module"]
+#[doc = "GPIO 0-31 output set register\n\nThis register you can [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_out_w1ts_reg](gpio_out_w1ts_reg) module"]
 pub type GPIO_OUT_W1TS_REG = crate::Reg<u32, _GPIO_OUT_W1TS_REG>;
 #[allow(missing_docs)]
 #[doc(hidden)]
 pub struct _GPIO_OUT_W1TS_REG;
-#[doc = "`read()` method returns [gpio_out_w1ts_reg::R](gpio_out_w1ts_reg::R) reader structure"]
-impl crate::Readable for GPIO_OUT_W1TS_REG {}
 #[doc = "`write(|w| ..)` method takes [gpio_out_w1ts_reg::W](gpio_out_w1ts_reg::W) writer structure"]
 impl crate::Writable for GPIO_OUT_W1TS_REG {}
 #[doc = "GPIO 0-31 output set register"]
 pub mod gpio_out_w1ts_reg;
-#[doc = "GPIO 0-31 output clear register\n\nThis register you can [`read`](crate::generic::Reg::read), [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero), [`modify`](crate::generic::Reg::modify). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_out_w1tc_reg](gpio_out_w1tc_reg) module"]
+#[doc = "GPIO 0-31 output clear register\n\nThis register you can [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_out_w1tc_reg](gpio_out_w1tc_reg) module"]
 pub type GPIO_OUT_W1TC_REG = crate::Reg<u32, _GPIO_OUT_W1TC_REG>;
 #[allow(missing_docs)]
 #[doc(hidden)]
 pub struct _GPIO_OUT_W1TC_REG;
-#[doc = "`read()` method returns [gpio_out_w1tc_reg::R](gpio_out_w1tc_reg::R) reader structure"]
-impl crate::Readable for GPIO_OUT_W1TC_REG {}
 #[doc = "`write(|w| ..)` method takes [gpio_out_w1tc_reg::W](gpio_out_w1tc_reg::W) writer structure"]
 impl crate::Writable for GPIO_OUT_W1TC_REG {}
 #[doc = "GPIO 0-31 output clear register"]
@@ -154,24 +150,20 @@ impl crate::Readable for GPIO_OUT1_REG {}
 impl crate::Writable for GPIO_OUT1_REG {}
 #[doc = "GPIO 32-39 output register"]
 pub mod gpio_out1_reg;
-#[doc = "GPIO 32-39 output set register\n\nThis register you can [`read`](crate::generic::Reg::read), [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero), [`modify`](crate::generic::Reg::modify). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_out1_w1ts_reg](gpio_out1_w1ts_reg) module"]
+#[doc = "GPIO 32-39 output set register\n\nThis register you can [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_out1_w1ts_reg](gpio_out1_w1ts_reg) module"]
 pub type GPIO_OUT1_W1TS_REG = crate::Reg<u32, _GPIO_OUT1_W1TS_REG>;
 #[allow(missing_docs)]
 #[doc(hidden)]
 pub struct _GPIO_OUT1_W1TS_REG;
-#[doc = "`read()` method returns [gpio_out1_w1ts_reg::R](gpio_out1_w1ts_reg::R) reader structure"]
-impl crate::Readable for GPIO_OUT1_W1TS_REG {}
 #[doc = "`write(|w| ..)` method takes [gpio_out1_w1ts_reg::W](gpio_out1_w1ts_reg::W) writer structure"]
 impl crate::Writable for GPIO_OUT1_W1TS_REG {}
 #[doc = "GPIO 32-39 output set register"]
 pub mod gpio_out1_w1ts_reg;
-#[doc = "GPIO 32-39 output clear register\n\nThis register you can [`read`](crate::generic::Reg::read), [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero), [`modify`](crate::generic::Reg::modify). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_out1_w1tc_reg](gpio_out1_w1tc_reg) module"]
+#[doc = "GPIO 32-39 output clear register\n\nThis register you can [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_out1_w1tc_reg](gpio_out1_w1tc_reg) module"]
 pub type GPIO_OUT1_W1TC_REG = crate::Reg<u32, _GPIO_OUT1_W1TC_REG>;
 #[allow(missing_docs)]
 #[doc(hidden)]
 pub struct _GPIO_OUT1_W1TC_REG;
-#[doc = "`read()` method returns [gpio_out1_w1tc_reg::R](gpio_out1_w1tc_reg::R) reader structure"]
-impl crate::Readable for GPIO_OUT1_W1TC_REG {}
 #[doc = "`write(|w| ..)` method takes [gpio_out1_w1tc_reg::W](gpio_out1_w1tc_reg::W) writer structure"]
 impl crate::Writable for GPIO_OUT1_W1TC_REG {}
 #[doc = "GPIO 32-39 output clear register"]
@@ -187,24 +179,20 @@ impl crate::Readable for GPIO_ENABLE_REG {}
 impl crate::Writable for GPIO_ENABLE_REG {}
 #[doc = "GPIO 0-31 output enable register"]
 pub mod gpio_enable_reg;
-#[doc = "GPIO 0-31 output enable set register\n\nThis register you can [`read`](crate::generic::Reg::read), [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero), [`modify`](crate::generic::Reg::modify). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_enable_w1ts_reg](gpio_enable_w1ts_reg) module"]
+#[doc = "GPIO 0-31 output enable set register\n\nThis register you can [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_enable_w1ts_reg](gpio_enable_w1ts_reg) module"]
 pub type GPIO_ENABLE_W1TS_REG = crate::Reg<u32, _GPIO_ENABLE_W1TS_REG>;
 #[allow(missing_docs)]
 #[doc(hidden)]
 pub struct _GPIO_ENABLE_W1TS_REG;
-#[doc = "`read()` method returns [gpio_enable_w1ts_reg::R](gpio_enable_w1ts_reg::R) reader structure"]
-impl crate::Readable for GPIO_ENABLE_W1TS_REG {}
 #[doc = "`write(|w| ..)` method takes [gpio_enable_w1ts_reg::W](gpio_enable_w1ts_reg::W) writer structure"]
 impl crate::Writable for GPIO_ENABLE_W1TS_REG {}
 #[doc = "GPIO 0-31 output enable set register"]
 pub mod gpio_enable_w1ts_reg;
-#[doc = "GPIO 0-31 output enable clear register\n\nThis register you can [`read`](crate::generic::Reg::read), [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero), [`modify`](crate::generic::Reg::modify). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_enable_w1tc_reg](gpio_enable_w1tc_reg) module"]
+#[doc = "GPIO 0-31 output enable clear register\n\nThis register you can [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_enable_w1tc_reg](gpio_enable_w1tc_reg) module"]
 pub type GPIO_ENABLE_W1TC_REG = crate::Reg<u32, _GPIO_ENABLE_W1TC_REG>;
 #[allow(missing_docs)]
 #[doc(hidden)]
 pub struct _GPIO_ENABLE_W1TC_REG;
-#[doc = "`read()` method returns [gpio_enable_w1tc_reg::R](gpio_enable_w1tc_reg::R) reader structure"]
-impl crate::Readable for GPIO_ENABLE_W1TC_REG {}
 #[doc = "`write(|w| ..)` method takes [gpio_enable_w1tc_reg::W](gpio_enable_w1tc_reg::W) writer structure"]
 impl crate::Writable for GPIO_ENABLE_W1TC_REG {}
 #[doc = "GPIO 0-31 output enable clear register"]
@@ -220,24 +208,20 @@ impl crate::Readable for GPIO_ENABLE1_REG {}
 impl crate::Writable for GPIO_ENABLE1_REG {}
 #[doc = "GPIO 32-39 output enable register"]
 pub mod gpio_enable1_reg;
-#[doc = "GPIO 32-39 output enable set register\n\nThis register you can [`read`](crate::generic::Reg::read), [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero), [`modify`](crate::generic::Reg::modify). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_enable1_w1ts_reg](gpio_enable1_w1ts_reg) module"]
+#[doc = "GPIO 32-39 output enable set register\n\nThis register you can [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_enable1_w1ts_reg](gpio_enable1_w1ts_reg) module"]
 pub type GPIO_ENABLE1_W1TS_REG = crate::Reg<u32, _GPIO_ENABLE1_W1TS_REG>;
 #[allow(missing_docs)]
 #[doc(hidden)]
 pub struct _GPIO_ENABLE1_W1TS_REG;
-#[doc = "`read()` method returns [gpio_enable1_w1ts_reg::R](gpio_enable1_w1ts_reg::R) reader structure"]
-impl crate::Readable for GPIO_ENABLE1_W1TS_REG {}
 #[doc = "`write(|w| ..)` method takes [gpio_enable1_w1ts_reg::W](gpio_enable1_w1ts_reg::W) writer structure"]
 impl crate::Writable for GPIO_ENABLE1_W1TS_REG {}
 #[doc = "GPIO 32-39 output enable set register"]
 pub mod gpio_enable1_w1ts_reg;
-#[doc = "GPIO 32-39 output enable clear register\n\nThis register you can [`read`](crate::generic::Reg::read), [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero), [`modify`](crate::generic::Reg::modify). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_enable1_w1tc_reg](gpio_enable1_w1tc_reg) module"]
+#[doc = "GPIO 32-39 output enable clear register\n\nThis register you can [`reset`](crate::generic::Reg::reset), [`write`](crate::generic::Reg::write), [`write_with_zero`](crate::generic::Reg::write_with_zero). See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about avaliable fields see [gpio_enable1_w1tc_reg](gpio_enable1_w1tc_reg) module"]
 pub type GPIO_ENABLE1_W1TC_REG = crate::Reg<u32, _GPIO_ENABLE1_W1TC_REG>;
 #[allow(missing_docs)]
 #[doc(hidden)]
 pub struct _GPIO_ENABLE1_W1TC_REG;
-#[doc = "`read()` method returns [gpio_enable1_w1tc_reg::R](gpio_enable1_w1tc_reg::R) reader structure"]
-impl crate::Readable for GPIO_ENABLE1_W1TC_REG {}
 #[doc = "`write(|w| ..)` method takes [gpio_enable1_w1tc_reg::W](gpio_enable1_w1tc_reg::W) writer structure"]
 impl crate::Writable for GPIO_ENABLE1_W1TC_REG {}
 #[doc = "GPIO 32-39 output enable clear register"]

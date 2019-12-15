@@ -7,6 +7,8 @@ extern crate bare_metal;
 extern crate vcell;
 use core::marker::PhantomData;
 use core::ops::Deref;
+#[doc = r"Number available in the NVIC for configuring priority"]
+pub const NVIC_PRIO_BITS: u8 = 32;
 #[allow(unused_imports)]
 use generic::*;
 #[doc = r"Common register and bit access and modify traits"]

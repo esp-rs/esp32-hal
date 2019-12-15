@@ -7,3 +7,6 @@ edition = "2018"
 [dependencies]
 bare-metal = "0.2"
 vcell = "0.1"
+
+[dev-dependencies]
+xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt" }

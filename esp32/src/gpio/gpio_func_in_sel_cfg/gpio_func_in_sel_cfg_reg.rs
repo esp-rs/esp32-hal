@@ -24,20 +24,20 @@ impl<'a> GPIO_FUNC_IN_SEL_W<'a> {
         self.w
     }
 }
-#[doc = "Invert the input value. 1: invert; 0: do not invert.\n\nValue on reset: 0"]
+#[doc = "\n\nValue on reset: 0"]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GPIO_FUNC_IN_INV_SEL_A {
-    #[doc = "0: No invert."]
-    NO_INVERT,
-    #[doc = "1: Invert."]
-    INVERT,
+    #[doc = "0: `0`"]
+    LOW,
+    #[doc = "1: `1`"]
+    HIGH,
 }
 impl From<GPIO_FUNC_IN_INV_SEL_A> for bool {
     #[inline(always)]
     fn from(variant: GPIO_FUNC_IN_INV_SEL_A) -> Self {
         match variant {
-            GPIO_FUNC_IN_INV_SEL_A::NO_INVERT => false,
-            GPIO_FUNC_IN_INV_SEL_A::INVERT => true,
+            GPIO_FUNC_IN_INV_SEL_A::LOW => false,
+            GPIO_FUNC_IN_INV_SEL_A::HIGH => true,
         }
     }
 }
@@ -48,19 +48,19 @@ impl GPIO_FUNC_IN_INV_SEL_R {
     #[inline(always)]
     pub fn variant(&self) -> GPIO_FUNC_IN_INV_SEL_A {
         match self.bits {
-            false => GPIO_FUNC_IN_INV_SEL_A::NO_INVERT,
-            true => GPIO_FUNC_IN_INV_SEL_A::INVERT,
+            false => GPIO_FUNC_IN_INV_SEL_A::LOW,
+            true => GPIO_FUNC_IN_INV_SEL_A::HIGH,
         }
     }
-    #[doc = "Checks if the value of the field is `NO_INVERT`"]
+    #[doc = "Checks if the value of the field is `LOW`"]
     #[inline(always)]
-    pub fn is_no_invert(&self) -> bool {
-        *self == GPIO_FUNC_IN_INV_SEL_A::NO_INVERT
+    pub fn is_low(&self) -> bool {
+        *self == GPIO_FUNC_IN_INV_SEL_A::LOW
     }
-    #[doc = "Checks if the value of the field is `INVERT`"]
+    #[doc = "Checks if the value of the field is `HIGH`"]
     #[inline(always)]
-    pub fn is_invert(&self) -> bool {
-        *self == GPIO_FUNC_IN_INV_SEL_A::INVERT
+    pub fn is_high(&self) -> bool {
+        *self == GPIO_FUNC_IN_INV_SEL_A::HIGH
     }
 }
 #[doc = "Write proxy for field `GPIO_FUNC_IN_INV_SEL`"]
@@ -75,15 +75,15 @@ impl<'a> GPIO_FUNC_IN_INV_SEL_W<'a> {
             self.bit(variant.into())
         }
     }
-    #[doc = "No invert."]
+    #[doc = "`0`"]
     #[inline(always)]
-    pub fn no_invert(self) -> &'a mut W {
-        self.variant(GPIO_FUNC_IN_INV_SEL_A::NO_INVERT)
+    pub fn low(self) -> &'a mut W {
+        self.variant(GPIO_FUNC_IN_INV_SEL_A::LOW)
     }
-    #[doc = "Invert."]
+    #[doc = "`1`"]
     #[inline(always)]
-    pub fn invert(self) -> &'a mut W {
-        self.variant(GPIO_FUNC_IN_INV_SEL_A::INVERT)
+    pub fn high(self) -> &'a mut W {
+        self.variant(GPIO_FUNC_IN_INV_SEL_A::HIGH)
     }
     #[doc = r"Sets the field bit"]
     #[inline(always)]
@@ -102,20 +102,20 @@ impl<'a> GPIO_FUNC_IN_INV_SEL_W<'a> {
         self.w
     }
 }
-#[doc = "Bypass the GPIO Matrix. 1: route through GPIO Matrix, 0: connect signaldirectly to peripheral configured in the IO_MUX.\n\nValue on reset: 0"]
+#[doc = "\n\nValue on reset: 0"]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GPIO_SIG_IN_SEL_A {
-    #[doc = "0: Connect signal directly to peripheral configured in the IO_MUX"]
-    CONNECT,
-    #[doc = "1: Route through GPIO Matrix"]
-    ROUTE,
+    #[doc = "0: `0`"]
+    LOW,
+    #[doc = "1: `1`"]
+    HIGH,
 }
 impl From<GPIO_SIG_IN_SEL_A> for bool {
     #[inline(always)]
     fn from(variant: GPIO_SIG_IN_SEL_A) -> Self {
         match variant {
-            GPIO_SIG_IN_SEL_A::CONNECT => false,
-            GPIO_SIG_IN_SEL_A::ROUTE => true,
+            GPIO_SIG_IN_SEL_A::LOW => false,
+            GPIO_SIG_IN_SEL_A::HIGH => true,
         }
     }
 }
@@ -126,19 +126,19 @@ impl GPIO_SIG_IN_SEL_R {
     #[inline(always)]
     pub fn variant(&self) -> GPIO_SIG_IN_SEL_A {
         match self.bits {
-            false => GPIO_SIG_IN_SEL_A::CONNECT,
-            true => GPIO_SIG_IN_SEL_A::ROUTE,
+            false => GPIO_SIG_IN_SEL_A::LOW,
+            true => GPIO_SIG_IN_SEL_A::HIGH,
         }
     }
-    #[doc = "Checks if the value of the field is `CONNECT`"]
+    #[doc = "Checks if the value of the field is `LOW`"]
     #[inline(always)]
-    pub fn is_connect(&self) -> bool {
-        *self == GPIO_SIG_IN_SEL_A::CONNECT
+    pub fn is_low(&self) -> bool {
+        *self == GPIO_SIG_IN_SEL_A::LOW
     }
-    #[doc = "Checks if the value of the field is `ROUTE`"]
+    #[doc = "Checks if the value of the field is `HIGH`"]
     #[inline(always)]
-    pub fn is_route(&self) -> bool {
-        *self == GPIO_SIG_IN_SEL_A::ROUTE
+    pub fn is_high(&self) -> bool {
+        *self == GPIO_SIG_IN_SEL_A::HIGH
     }
 }
 #[doc = "Write proxy for field `GPIO_SIG_IN_SEL`"]
@@ -153,15 +153,15 @@ impl<'a> GPIO_SIG_IN_SEL_W<'a> {
             self.bit(variant.into())
         }
     }
-    #[doc = "Connect signal directly to peripheral configured in the IO_MUX"]
+    #[doc = "`0`"]
     #[inline(always)]
-    pub fn connect(self) -> &'a mut W {
-        self.variant(GPIO_SIG_IN_SEL_A::CONNECT)
+    pub fn low(self) -> &'a mut W {
+        self.variant(GPIO_SIG_IN_SEL_A::LOW)
     }
-    #[doc = "Route through GPIO Matrix"]
+    #[doc = "`1`"]
     #[inline(always)]
-    pub fn route(self) -> &'a mut W {
-        self.variant(GPIO_SIG_IN_SEL_A::ROUTE)
+    pub fn high(self) -> &'a mut W {
+        self.variant(GPIO_SIG_IN_SEL_A::HIGH)
     }
     #[doc = r"Sets the field bit"]
     #[inline(always)]
@@ -181,34 +181,34 @@ impl<'a> GPIO_SIG_IN_SEL_W<'a> {
     }
 }
 impl R {
-    #[doc = "Bits 0:5 - Selection control for peripheral input. A value of 0-39 selects which of the40 GPIO Matrix input pins this signal is connected to, or 0x38 for a constantly high input or 0x30 for a constantly low input."]
+    #[doc = "Bits 0:5"]
     #[inline(always)]
     pub fn gpio_func_in_sel(&self) -> GPIO_FUNC_IN_SEL_R {
         GPIO_FUNC_IN_SEL_R::new((self.bits & 0x3f) as u8)
     }
-    #[doc = "Bit 6 - Invert the input value. 1: invert; 0: do not invert."]
+    #[doc = "Bit 6"]
     #[inline(always)]
     pub fn gpio_func_in_inv_sel(&self) -> GPIO_FUNC_IN_INV_SEL_R {
         GPIO_FUNC_IN_INV_SEL_R::new(((self.bits >> 6) & 0x01) != 0)
     }
-    #[doc = "Bit 7 - Bypass the GPIO Matrix. 1: route through GPIO Matrix, 0: connect signaldirectly to peripheral configured in the IO_MUX."]
+    #[doc = "Bit 7"]
     #[inline(always)]
     pub fn gpio_sig_in_sel(&self) -> GPIO_SIG_IN_SEL_R {
         GPIO_SIG_IN_SEL_R::new(((self.bits >> 7) & 0x01) != 0)
     }
 }
 impl W {
-    #[doc = "Bits 0:5 - Selection control for peripheral input. A value of 0-39 selects which of the40 GPIO Matrix input pins this signal is connected to, or 0x38 for a constantly high input or 0x30 for a constantly low input."]
+    #[doc = "Bits 0:5"]
     #[inline(always)]
     pub fn gpio_func_in_sel(&mut self) -> GPIO_FUNC_IN_SEL_W {
         GPIO_FUNC_IN_SEL_W { w: self }
     }
-    #[doc = "Bit 6 - Invert the input value. 1: invert; 0: do not invert."]
+    #[doc = "Bit 6"]
     #[inline(always)]
     pub fn gpio_func_in_inv_sel(&mut self) -> GPIO_FUNC_IN_INV_SEL_W {
         GPIO_FUNC_IN_INV_SEL_W { w: self }
     }
-    #[doc = "Bit 7 - Bypass the GPIO Matrix. 1: route through GPIO Matrix, 0: connect signaldirectly to peripheral configured in the IO_MUX."]
+    #[doc = "Bit 7"]
     #[inline(always)]
     pub fn gpio_sig_in_sel(&mut self) -> GPIO_SIG_IN_SEL_W {
         GPIO_SIG_IN_SEL_W { w: self }
