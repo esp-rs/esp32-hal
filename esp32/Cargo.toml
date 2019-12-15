@@ -1,0 +1,9 @@
+[package]
+name = "esp32"
+version = "0.1.0"
+authors = ["Jean Pierre Dudey <jeandudey@hotmail.com>"]
+edition = "2018"
+
+[dependencies]
+bare-metal = "0.2"
+vcell = "0.1"
