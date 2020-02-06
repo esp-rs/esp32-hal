@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 # esp32 = { version = "0.2.1" }
-esp32 = { path = "../../hal/esp32-pac"}
+esp32 = { path = "../esp32"}
 
 [dependencies.embedded-hal]
 features = ["unproven"]
