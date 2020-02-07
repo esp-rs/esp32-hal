@@ -1,7 +1,7 @@
 use {
     crate::pac::{GPIO, IO_MUX},
     core::{convert::Infallible, marker::PhantomData},
-    embedded_hal::digital::v2::{InputPin, OutputPin},
+    embedded_hal::digital::v2::{InputPin, OutputPin, StatefulOutputPin, ToggleableOutputPin},
 };
 
 /// Extension trait to split a GPIO peripheral in independent pins and registers
@@ -45,6 +45,21 @@ pub struct Output<MODE> {
 pub struct Alternate<MODE> {
     _mode: PhantomData<MODE>,
 }
+
+/// Alternate Function 1
+pub struct Func1;
+
+/// Alternate Function 2
+pub struct Func2;
+
+/// Alternate Function 4
+pub struct Func4;
+
+/// Alternate Function 5
+pub struct Func5;
+
+/// Alternate Function 6
+pub struct Func6;
 
 macro_rules! gpio {
     ($GPIO:ident: [
@@ -114,12 +129,6 @@ gpio! {
        Gpio25: (gpio25, Input<Floating>),
        Gpio26: (gpio26, Input<Floating>),
        Gpio27: (gpio27, Input<Floating>),
-    // TODO all these really missing?
-    //    Gpio24: (gpio24, Input<Floating>),
-    //    Gpio28: (gpio28, Input<Floating>),
-    //    Gpio29: (gpio29, Input<Floating>),
-    //    Gpio30: (gpio30, Input<Floating>),
-    //    Gpio31: (gpio31, Input<Floating>),
        Gpio32: (gpio32, Input<Floating>),
        Gpio33: (gpio33, Input<Floating>),
        Gpio34: (gpio34, Input<Floating>),
@@ -153,6 +162,29 @@ macro_rules! impl_output {
                 }
             }
 
+            impl<MODE> StatefulOutputPin for $pxi<Output<MODE>> {
+                fn is_set_high(&self) -> Result<bool, Self::Error> {
+                     // NOTE(unsafe) atomic read to a stateless register
+                    unsafe { Ok((*GPIO::ptr()).$outs.read().bits() & (1 << $i) != 0) }
+                }
+
+                fn is_set_low(&self) -> Result<bool, Self::Error> {
+                    Ok(!self.is_set_high()?)
+                }
+            }
+
+            impl<MODE> ToggleableOutputPin for $pxi<Output<MODE>> {
+                type Error = Infallible;
+
+                fn toggle(&mut self) -> Result<(), Self::Error> {
+                    if self.is_set_high()? {
+                        Ok(self.set_low()?)
+                    } else {
+                        Ok(self.set_high()?)
+                    }
+                }
+            }
+
             impl<MODE> $pxi<MODE> {
                 pub fn into_push_pull_output(self) -> $pxi<Output<PushPull>> {
                     let gpio = unsafe{ &*GPIO::ptr() };
@@ -161,6 +193,56 @@ macro_rules! impl_output {
                     gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
 
                     iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
+                    iomux.$iomux.modify(|_, w| w.fun_wpd().set_bit());
+                    iomux.$iomux.modify(|_, w| w.fun_wpu().set_bit());
+                    $pxi { _mode: PhantomData }
+                }
+
+                pub fn into_open_drain_output(self) -> $pxi<Output<OpenDrain>> {
+                    let gpio = unsafe{ &*GPIO::ptr() };
+                    let iomux = unsafe{ &*IO_MUX::ptr() };
+                    gpio.$en.modify(|_, w| unsafe  { w.bits(0x1 << $i) });
+                    gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
+
+                    iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
+                    iomux.$iomux.modify(|_, w| w.fun_wpd().clear_bit());
+                    iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
+                    $pxi { _mode: PhantomData }
+                }
+
+                fn set_alternate(&self, n: u8) {
+                    let gpio = unsafe{ &*GPIO::ptr() };
+                    let iomux = unsafe{ &*IO_MUX::ptr() };
+                    gpio.$en.modify(|_, w| unsafe  { w.bits(0x1 << $i) });
+                    gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
+
+                    iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(n) });
+                    iomux.$iomux.modify(|_, w| w.fun_wpd().clear_bit());
+                    iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
+                }
+
+                pub fn into_alternate_1(self) -> $pxi<Alternate<Func1>> {
+                    self.set_alternate(0);
+                    $pxi { _mode: PhantomData }
+                }
+
+                pub fn into_alternate_2(self) -> $pxi<Alternate<Func2>> {
+                    self.set_alternate(1);
+                    $pxi { _mode: PhantomData }
+                }
+
+                pub fn into_alternate_4(self) -> $pxi<Alternate<Func4>> {
+                    self.set_alternate(3);
+                    $pxi { _mode: PhantomData }
+                }
+
+                pub fn into_alternate_5(self) -> $pxi<Alternate<Func5>> {
+                    self.set_alternate(4);
+                    $pxi { _mode: PhantomData }
+                }
+
+                pub fn into_alternate_6(self) -> $pxi<Alternate<Func6>> {
+                    self.set_alternate(5);
                     $pxi { _mode: PhantomData }
                 }
             }
