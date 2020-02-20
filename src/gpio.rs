@@ -47,19 +47,19 @@ pub struct Alternate<MODE> {
 }
 
 /// Alternate Function 1
-pub struct Func1;
+pub struct AF1;
 
 /// Alternate Function 2
-pub struct Func2;
+pub struct AF2;
 
 /// Alternate Function 4
-pub struct Func4;
+pub struct AF4;
 
 /// Alternate Function 5
-pub struct Func5;
+pub struct AF5;
 
 /// Alternate Function 6
-pub struct Func6;
+pub struct AF6;
 
 macro_rules! gpio {
     ($GPIO:ident: [
@@ -221,27 +221,27 @@ macro_rules! impl_output {
                     iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
                 }
 
-                pub fn into_alternate_1(self) -> $pxi<Alternate<Func1>> {
+                pub fn into_alternate_1(self) -> $pxi<Alternate<AF1>> {
                     self.set_alternate(0);
                     $pxi { _mode: PhantomData }
                 }
 
-                pub fn into_alternate_2(self) -> $pxi<Alternate<Func2>> {
+                pub fn into_alternate_2(self) -> $pxi<Alternate<AF2>> {
                     self.set_alternate(1);
                     $pxi { _mode: PhantomData }
                 }
 
-                pub fn into_alternate_4(self) -> $pxi<Alternate<Func4>> {
+                pub fn into_alternate_4(self) -> $pxi<Alternate<AF4>> {
                     self.set_alternate(3);
                     $pxi { _mode: PhantomData }
                 }
 
-                pub fn into_alternate_5(self) -> $pxi<Alternate<Func5>> {
+                pub fn into_alternate_5(self) -> $pxi<Alternate<AF5>> {
                     self.set_alternate(4);
                     $pxi { _mode: PhantomData }
                 }
 
-                pub fn into_alternate_6(self) -> $pxi<Alternate<Func6>> {
+                pub fn into_alternate_6(self) -> $pxi<Alternate<AF6>> {
                     self.set_alternate(5);
                     $pxi { _mode: PhantomData }
                 }
@@ -283,15 +283,16 @@ impl_output! {
 }
 
 impl_output! {
-    enable_w1ts, out1_w1ts, out1_w1tc, [
+    enable1_w1ts, out1_w1ts, out1_w1tc, [
         Gpio32: (0, pin32, func32_out_sel_cfg, gpio32),
         Gpio33: (1, pin33, func33_out_sel_cfg, gpio33),
+        /* Deliberately omitting 34-39 as these can *only* be inputs */
     ]
 }
 
 macro_rules! impl_input {
     ($en:ident, $reg:ident, $reader:ident [
-        // index, gpio pin name, funcX name, iomux pin name, iomux mcu_sel bits
+        // index, gpio pin name, funcX name, iomux pin name
         $($pxi:ident: ($i:expr, $pin:ident, $funcXin:ident, $iomux:ident),)+
     ]) => {
         $(
@@ -384,7 +385,7 @@ impl_input! {
 }
 
 impl_input! {
-    enable_w1ts, in1, in1_data [
+    enable1_w1ts, in1, in1_data [
         Gpio32: (0, pin32, func32_in_sel_cfg, gpio32),
         Gpio33: (1, pin33, func33_in_sel_cfg, gpio33),
         Gpio34: (2, pin34, func34_in_sel_cfg, gpio34),
