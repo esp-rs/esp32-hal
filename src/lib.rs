@@ -5,3 +5,4 @@ pub use esp32 as pac;
 
 pub mod gpio;
 pub mod prelude;
+pub mod rtc_clk;
