@@ -42,9 +42,60 @@ pub struct Output<MODE> {
     _mode: PhantomData<MODE>,
 }
 
+/// Generic GPIO type
+pub struct Gpio<MODE> {
+    /// The GPIO pin number
+    pub pin: u8,
+    _mode: PhantomData<MODE>,
+}
+
+// TODO: implement into_*_output functions for `Gpio`
+
+impl<MODE> OutputPin for Gpio<Output<MODE>> {
+    type Error = Infallible;
+
+    fn set_high(&mut self) -> Result<(), Self::Error> {
+        // NOTE(unsafe) atomic write to a stateless register
+        let gpio = unsafe { &(*GPIO::ptr()) };
+        match self.pin {
+            0..=31 => {
+                unsafe {
+                    gpio.out_w1ts.write(|w| w.bits(1 << self.pin))
+                };
+            }
+            32..=33 => {
+                unsafe {
+                    gpio.out_w1ts.write(|w| w.bits(1 << (self.pin - 32)))
+                };
+            }
+            _ => unreachable!()
+        }
+        Ok(())
+    }
+
+    fn set_low(&mut self) -> Result<(), Self::Error> {
+        // NOTE(unsafe) atomic write to a stateless register
+        let gpio = unsafe { &(*GPIO::ptr()) };
+        match self.pin {
+            0..=31 => {
+                unsafe {
+                    gpio.out_w1tc.write(|w| w.bits(1 << self.pin))
+                };
+            }
+            32..=33 => {
+                unsafe {
+                    gpio.out_w1tc.write(|w| w.bits(1 << (self.pin - 32)))
+                };
+            }
+            _ => unreachable!()
+        }
+        Ok(())
+    }
+}
+
 macro_rules! gpio {
     ($GPIO:ident: [
-        $($pxi:ident: ($pname:ident, $MODE:ty),)+
+        $($pxi:ident: ($i:expr, $pname:ident, $MODE:ty),)+
     ]) => {
 
         impl GpioExt for $GPIO {
@@ -73,57 +124,66 @@ macro_rules! gpio {
             pub struct $pxi<MODE> {
                 _mode: PhantomData<MODE>,
             }
-        )+
 
+            impl<MODE> $pxi<MODE> {
+                /// Downgrade this pin to a generic Gpio type.
+                pub fn downgrade(self) -> Gpio<MODE> {
+                    Gpio {
+                        pin: $i,
+                        _mode: PhantomData,
+                    }
+                }
+            }
+        )+
     };
 }
 
 // All info on reset state pulled from 4.10 IO_MUX Pad List in the reference manual
 gpio! {
    GPIO: [
-       Gpio0: (gpio0, Input<PullUp>),
-       Gpio1: (gpio1, Input<PullUp>),
-       Gpio2: (gpio2, Input<PullDown>),
-       Gpio3: (gpio3, Input<PullUp>),
-       Gpio4: (gpio4, Input<PullDown>),
-       Gpio5: (gpio5, Input<PullUp>),
-       Gpio6: (gpio6, Input<PullUp>),
-       Gpio7: (gpio7, Input<PullUp>),
-       Gpio8: (gpio8, Input<PullUp>),
-       Gpio9: (gpio9, Input<PullUp>),
-       Gpio10: (gpio10, Input<PullUp>),
-       Gpio11: (gpio11, Input<PullUp>),
-       Gpio12: (gpio12, Input<PullDown>),
-       Gpio13: (gpio13, Input<Floating>),
-       Gpio14: (gpio14, Input<Floating>),
-       Gpio15: (gpio15, Input<PullUp>),
-       Gpio16: (gpio16, Input<Floating>),
-       Gpio17: (gpio17, Input<Floating>),
-       Gpio18: (gpio18, Input<Floating>),
-       Gpio19: (gpio19, Input<Floating>),
-       Gpio20: (gpio20, Input<Floating>),
-       Gpio21: (gpio21, Input<Floating>),
-       Gpio22: (gpio22, Input<Floating>),
-       Gpio23: (gpio23, Input<Floating>),
-       // TODO these pins have a reset mode of 0 (apart from Gpio27), 
+       Gpio0: (0, gpio0, Input<PullUp>),
+       Gpio1: (1, gpio1, Input<PullUp>),
+       Gpio2: (2, gpio2, Input<PullDown>),
+       Gpio3: (3, gpio3, Input<PullUp>),
+       Gpio4: (4, gpio4, Input<PullDown>),
+       Gpio5: (5, gpio5, Input<PullUp>),
+       Gpio6: (6, gpio6, Input<PullUp>),
+       Gpio7: (7, gpio7, Input<PullUp>),
+       Gpio8: (8, gpio8, Input<PullUp>),
+       Gpio9: (9, gpio9, Input<PullUp>),
+       Gpio10: (10, gpio10, Input<PullUp>),
+       Gpio11: (11, gpio11, Input<PullUp>),
+       Gpio12: (12, gpio12, Input<PullDown>),
+       Gpio13: (13, gpio13, Input<Floating>),
+       Gpio14: (14, gpio14, Input<Floating>),
+       Gpio15: (15, gpio15, Input<PullUp>),
+       Gpio16: (16, gpio16, Input<Floating>),
+       Gpio17: (17, gpio17, Input<Floating>),
+       Gpio18: (18, gpio18, Input<Floating>),
+       Gpio19: (19, gpio19, Input<Floating>),
+       Gpio20: (10, gpio20, Input<Floating>),
+       Gpio21: (21, gpio21, Input<Floating>),
+       Gpio22: (22, gpio22, Input<Floating>),
+       Gpio23: (23, gpio23, Input<Floating>),
+       // TODO these pins have a reset mode of 0 (apart from Gpio27),
        // input disable, does that mean they are actually in output mode on reset?
-       Gpio25: (gpio25, Input<Floating>),
-       Gpio26: (gpio26, Input<Floating>),
-       Gpio27: (gpio27, Input<Floating>),
+       Gpio25: (25, gpio25, Input<Floating>),
+       Gpio26: (26, gpio26, Input<Floating>),
+       Gpio27: (27, gpio27, Input<Floating>),
     // TODO all these really missing?
-    //    Gpio24: (gpio24, Input<Floating>),
-    //    Gpio28: (gpio28, Input<Floating>),
-    //    Gpio29: (gpio29, Input<Floating>),
-    //    Gpio30: (gpio30, Input<Floating>),
-    //    Gpio31: (gpio31, Input<Floating>),
-       Gpio32: (gpio32, Input<Floating>),
-       Gpio33: (gpio33, Input<Floating>),
-       Gpio34: (gpio34, Input<Floating>),
-       Gpio35: (gpio35, Input<Floating>),
-       Gpio36: (gpio36, Input<Floating>),
-       Gpio37: (gpio37, Input<Floating>),
-       Gpio38: (gpio38, Input<Floating>),
-       Gpio39: (gpio39, Input<Floating>),
+    //    Gpio24: (24, gpio24, Input<Floating>),
+    //    Gpio28: (28, gpio28, Input<Floating>),
+    //    Gpio29: (29, gpio29, Input<Floating>),
+    //    Gpio30: (30, gpio30, Input<Floating>),
+    //    Gpio31: (31, gpio31, Input<Floating>),
+       Gpio32: (32, gpio32, Input<Floating>),
+       Gpio33: (33, gpio33, Input<Floating>),
+       Gpio34: (34, gpio34, Input<Floating>),
+       Gpio35: (35, gpio35, Input<Floating>),
+       Gpio36: (36, gpio36, Input<Floating>),
+       Gpio37: (37, gpio37, Input<Floating>),
+       Gpio38: (38, gpio38, Input<Floating>),
+       Gpio39: (39, gpio39, Input<Floating>),
    ]
 }
 
