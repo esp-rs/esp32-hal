@@ -1,0 +1,57 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558 
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "cargo xbuild --examples",
+            "type": "shell",
+            "command": "cargo xbuild --examples",
+            "problemMatcher": {
+                "base": "$rustc",
+                "fileLocation": ["absolute"]
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "flash example",
+            "type": "shell",
+            "command": "./flash ${input:example}",
+            "problemMatcher": {
+                "base": "$rustc",
+                "fileLocation": ["absolute"]
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            }
+        }
+    ],
+    "inputs": [
+        // requires Tasks Shell Input extension
+        {
+            "id": "example",
+            "type": "command",
+            "command": "shellCommand.execute",
+            "args": {
+                "command": "egrep '\[\[example\]\]|name[ \t]+=' Cargo.toml | egrep '\[\[example\]\]' -A1 | egrep 'name[ \t]+=' | sed -E 's/name =//; s/\"//g'",
+                "cwd": "${workspaceFolder}/../esp32-hal"
+            }
+        },
+        // alternatively type in manually
+        {
+            "id": "examplePrompt",
+            "description": "Example:",
+            "default": "serial",
+            "type": "promptString"
+        }
+    ]
+}
