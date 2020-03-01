@@ -84,7 +84,7 @@ impl<MODE> OutputPin for Gpio<Output<MODE>> {
             }
             32..=33 => {
                 unsafe {
-                    gpio.out_w1tc.write(|w| w.bits(1 << (self.pin - 32)))
+                    gpio.out1_w1tc.write(|w| w.bits(1 << (self.pin - 32)))
                 };
             }
             _ => unreachable!()
