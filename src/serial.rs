@@ -1,3 +1,14 @@
+/*
+
+Early UART support.
+It currently depends on GPIO pins and clock to be configured with default settings. 
+(Tested for UART 0)
+
+Also DPORT changes are made inside this peripheral: this should be moved to a dedicated 
+dport driver as there is a risk for race conditions this way.
+
+*/
+
 use core::marker::PhantomData;
 
 use embedded_hal::serial;
