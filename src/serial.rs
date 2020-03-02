@@ -216,14 +216,13 @@ macro_rules! halUart {
 
 
                 fn change_stopbits(self, stopbits: config::StopBits) -> Self {
-                    let uartreg = unsafe{ &*$UARTX::ptr() };
-
+ 
                     //workaround for hardware issue, when UART stop bit set as 2-bit mode.
-                    uartreg.rs485_conf.modify(|_,w|
+                    self.uart.rs485_conf.modify(|_,w|
                         w.dl1_en().bit(stopbits==config::StopBits::STOP2)
                     );
 
-                    uartreg.conf0.modify(|_,w|
+                    self.uart.conf0.modify(|_,w|
                         match stopbits {
                             config::StopBits::STOP1 => w.stop_bit_num().stop_bits_1(),
                             config::StopBits::STOP1P5 => w.stop_bit_num().stop_bits_1p5(),
@@ -236,9 +235,8 @@ macro_rules! halUart {
                 }
 
                 fn change_databits(self, databits: config::DataBits) -> Self {
-                    let uartreg = unsafe{ &*$UARTX::ptr() };
 
-                    uartreg.conf0.modify(|_,w|
+                    self.uart.conf0.modify(|_,w|
                         match databits {
                             config::DataBits::DataBits5 => w.bit_num().data_bits_5(),
                             config::DataBits::DataBits6 => w.bit_num().data_bits_6(),
@@ -251,9 +249,8 @@ macro_rules! halUart {
                 }
 
                 fn change_parity(self, parity: config::Parity) -> Self {
-                    let uartreg = unsafe{ &*$UARTX::ptr() };
 
-                    uartreg.conf0.modify(|_,w|
+                    self.uart.conf0.modify(|_,w|
                         match parity {
                             config::Parity::ParityNone => w.parity_en().clear_bit(),
                             config::Parity::ParityEven => w.parity_en().set_bit().parity().clear_bit(),
@@ -266,13 +263,13 @@ macro_rules! halUart {
 
 
                 fn change_baudrate(self, baudrate: u32) -> Self {
-                    let uartreg = unsafe{ &*$UARTX::ptr() };
 
-                    let tick_ref_always_on = uartreg.conf0.read().tick_ref_always_on().bit_is_set();
+                    let tick_ref_always_on = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
                     let sclk_freq = if tick_ref_always_on {APB_CLK_FREQ} else {REF_CLK_FREQ};
                     let clk_div = (sclk_freq*16)/baudrate;
 
-                    unsafe {uartreg.clkdiv.modify(|_, w| w
+                    unsafe {
+                        self.uart.clkdiv.modify(|_, w| w
                         .clkdiv().bits(clk_div>>4)
                         .clkdiv_frag().bits((clk_div&0xf) as u8)
                     )};
@@ -281,12 +278,11 @@ macro_rules! halUart {
                 }
 
                 pub fn get_baudrate(&self) -> u32 {
-                    let uartreg = unsafe{ &*$UARTX::ptr() };
 
-                    let tick_ref_always_on = uartreg.conf0.read().tick_ref_always_on().bit_is_set();
+                    let tick_ref_always_on = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
                     let sclk_freq = if tick_ref_always_on {APB_CLK_FREQ} else {REF_CLK_FREQ};
 
-                    return (sclk_freq<<4)/(uartreg.clkdiv.read().clkdiv().bits()<<4 | (uartreg.clkdiv.read().clkdiv_frag().bits() as u32))
+                    return (sclk_freq<<4)/(self.uart.clkdiv.read().clkdiv().bits()<<4 | (self.uart.clkdiv.read().clkdiv_frag().bits() as u32))
                 }
 
                 /// Starts listening for an interrupt event
@@ -301,7 +297,7 @@ macro_rules! halUart {
 
                 /// Return true if the line idle status is set
                 pub fn is_idle(& self) -> bool {
-                    unsafe { (*$UARTX::ptr()).status.read().st_urx_out().is_rx_idle() }
+                    self.uart.status.read().st_urx_out().is_rx_idle()
                 }
 
                 pub fn split(self) -> (Tx<$UARTX>, Rx<$UARTX>) {

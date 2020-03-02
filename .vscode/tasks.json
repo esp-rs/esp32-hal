@@ -9,7 +9,9 @@
             "command": "cargo xbuild --examples",
             "problemMatcher": {
                 "base": "$rustc",
-                "fileLocation": ["absolute"]
+                "fileLocation": [
+                    "relative"
+                ]
             },
             "group": {
                 "kind": "build",
@@ -26,7 +28,9 @@
             "command": "./flash ${input:example}",
             "problemMatcher": {
                 "base": "$rustc",
-                "fileLocation": ["absolute"]
+                "fileLocation": [
+                    "relative"
+                ]
             },
             "group": "build",
             "presentation": {
@@ -42,7 +46,7 @@
             "type": "command",
             "command": "shellCommand.execute",
             "args": {
-                "command": "egrep '\[\[example\]\]|name[ \t]+=' Cargo.toml | egrep '\[\[example\]\]' -A1 | egrep 'name[ \t]+=' | sed -E 's/name =//; s/\"//g'",
+                "command": "egrep '\\[\\[example\\]\\]|name[ \t]+=' Cargo.toml | egrep '\\[\\[example\\]\\]' -A1 | egrep 'name[ \t]+=' | sed -E 's/name =//; s/\"//g'",
                 "cwd": "${workspaceFolder}/../esp32-hal"
             }
         },
