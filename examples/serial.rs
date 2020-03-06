@@ -11,10 +11,8 @@ use esp32_hal::gpio::GpioExt;
 use esp32_hal::hal::digital::v2::OutputPin;
 
 use esp32_hal::hal::serial::Read as _;
-use esp32_hal::hal::serial::Write as _;
 
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
-use numtoa::NumToA;
 
 /// The default clock source is the onboard crystal
 /// In most cases 40mhz (but can be as low as 2mhz depending on the board)
@@ -43,27 +41,17 @@ fn main() -> ! {
 
     let serial = Serial::uart0(dp.UART0, (NoTx, NoRx), Config::default()).unwrap();
     let baudrate = serial.get_baudrate();
+
     let (mut tx, mut rx) = serial.split();
-
-    let mut buffer: [u8; 20] = [0; 20];
-
-    tx.write_str("baudrate: ").unwrap();
-    tx.write_str(baudrate.numtoa_str(10, &mut buffer)).unwrap();
-    tx.write_str("\r\n").unwrap();
+    writeln!(tx,"baudrate {:?}",baudrate).unwrap();
 
     loop {
-        tx.write_str("Hello world!\r\nCharacters received: ")
-            .unwrap();
-        tx.write_str(rx.count().numtoa_str(10, &mut buffer))
-            .unwrap();
-        tx.write_str("\r\n").unwrap();
+        writeln!(tx,"Characters received:  {:?}",rx.count()).unwrap();
+
         while let Ok(x) = rx.read() {
-            nb::block!(tx.write(if x >= 32 { x } else { '?' as u8 })).unwrap();
-            tx.write_str(" (0x").unwrap();
-            tx.write_str(x.numtoa_str(16, &mut buffer)).unwrap();
-            tx.write_str(") ").unwrap();
+            write!(tx,"{} ({:#x}) ", if x >= 32 { x as char } else { '?' }, x).unwrap()
         }
-        tx.write_str("\r\n").unwrap();
+        writeln!(tx,"").unwrap();
 
         blinky.set_high().unwrap();
         delay(BLINK_HZ);

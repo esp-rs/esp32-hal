@@ -1,14 +1,15 @@
 /*
 
 Early UART support.
-It currently depends on GPIO pins and clock to be configured with default settings. 
+It currently depends on GPIO pins and clock to be configured with default settings.
 (Tested for UART 0)
 
-Also DPORT changes are made inside this peripheral: this should be moved to a dedicated 
+Also DPORT changes are made inside this peripheral: this should be moved to a dedicated
 dport driver as there is a risk for race conditions this way.
 
 */
 
+use core::convert::Infallible;
 use core::marker::PhantomData;
 
 use embedded_hal::serial;
@@ -173,16 +174,15 @@ macro_rules! halUart {
                 where
                     PINS: Pins<$UARTX>,
                 {
-                    Ok(
-                        Serial { uart, pins }
+                        let serial=Serial { uart, pins }
                             .reset()
                             .enable()
-                            .change_baudrate(config.baudrate)
                             .change_stopbits(config.stopbits)
                             .change_databits(config.databits)
                             .change_parity(config.parity)
+                            .change_baudrate(config.baudrate);
 
-                    )
+                        Ok(serial)
                 }
 
                 fn reset(self) -> Self {
@@ -215,8 +215,8 @@ macro_rules! halUart {
                 }
 
 
-                fn change_stopbits(self, stopbits: config::StopBits) -> Self {
- 
+                pub fn change_stopbits(self, stopbits: config::StopBits) -> Self {
+
                     //workaround for hardware issue, when UART stop bit set as 2-bit mode.
                     self.uart.rs485_conf.modify(|_,w|
                         w.dl1_en().bit(stopbits==config::StopBits::STOP2)
@@ -234,7 +234,7 @@ macro_rules! halUart {
                     self
                 }
 
-                fn change_databits(self, databits: config::DataBits) -> Self {
+                pub fn change_databits(self, databits: config::DataBits) -> Self {
 
                     self.uart.conf0.modify(|_,w|
                         match databits {
@@ -248,7 +248,7 @@ macro_rules! halUart {
                     self
                 }
 
-                fn change_parity(self, parity: config::Parity) -> Self {
+                pub fn change_parity(self, parity: config::Parity) -> Self {
 
                     self.uart.conf0.modify(|_,w|
                         match parity {
@@ -262,7 +262,7 @@ macro_rules! halUart {
                 }
 
 
-                fn change_baudrate(self, baudrate: u32) -> Self {
+                pub fn change_baudrate(self, baudrate: u32) -> Self {
 
                     let tick_ref_always_on = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
                     let sclk_freq = if tick_ref_always_on {APB_CLK_FREQ} else {REF_CLK_FREQ};
@@ -273,7 +273,6 @@ macro_rules! halUart {
                         .clkdiv().bits(clk_div>>4)
                         .clkdiv_frag().bits((clk_div&0xf) as u8)
                     )};
-
                     self
                 }
 
@@ -318,9 +317,9 @@ macro_rules! halUart {
             }
 
             impl<PINS> serial::Read<u8> for Serial<$UARTX, PINS> {
-                type Error = Error;
+                type Error = Infallible;
 
-                fn read(&mut self) -> nb::Result<u8, Error> {
+                fn read(&mut self) -> nb::Result<u8, Self::Error> {
                     let mut rx: Rx<$UARTX> = Rx {
                         _uart: PhantomData,
                     };
@@ -348,9 +347,9 @@ macro_rules! halUart {
             }
 
             impl serial::Read<u8> for Rx<$UARTX> {
-                type Error = Error;
+                type Error = Infallible;
 
-                fn read(&mut self) -> nb::Result<u8, Error> {
+                fn read(&mut self) -> nb::Result<u8, Self::Error> {
 
                     if self.count()==0 {
                         Err(nb::Error::WouldBlock)
@@ -361,7 +360,7 @@ macro_rules! halUart {
             }
 
             impl<PINS> serial::Write<u8> for Serial<$UARTX, PINS> {
-                type Error = Error;
+                type Error = Infallible;
 
                 fn flush(&mut self) -> nb::Result<(), Self::Error> {
                     let mut tx: Tx<$UARTX> = Tx {
@@ -379,7 +378,7 @@ macro_rules! halUart {
             }
 
             impl serial::Write<u8> for Tx<$UARTX> {
-                type Error = Error;
+                type Error = Infallible;
 
                 fn flush(&mut self) -> nb::Result<(), Self::Error> {
                     if self.count()==0 {
@@ -392,7 +391,6 @@ macro_rules! halUart {
 
                 fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error> {
                     if self.count()<128 {
-
                         unsafe { (*$UARTX::ptr()).tx_fifo.write_with_zero(|w| { w.bits(byte)}) }
                         Ok(())
                     } else {
