@@ -23,6 +23,17 @@
             }
         },
         {
+            "label": "cargo xdoc --open",
+            "type": "shell",
+            "command": "cargo xdoc --open",
+            "problemMatcher": {
+                "base": "$rustc",
+                "fileLocation": [
+                    "relative"
+                ]
+            }
+        },
+        {
             "label": "flash example",
             "type": "shell",
             "command": "./flash ${input:example}",

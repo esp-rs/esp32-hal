@@ -1,13 +1,15 @@
-/*
-
-Early UART support.
-It currently depends on GPIO pins and clock to be configured with default settings.
-(Tested for UART 0)
-
-Also DPORT changes are made inside this peripheral: this should be moved to a dedicated
-dport driver as there is a risk for race conditions this way.
-
-*/
+//! UART peripheral control
+//!
+//! Controls the 3 uart peripherals (UART0, UART1, UART2)
+//!
+//! **It currently depends on GPIO pins and clock to be configured with default settings.**
+//! (Tested for UART 0)
+//!
+//! # TODO
+//! - Automatic GPIO configuration
+//! - Use clock_control for clock frequency detection
+//! - Add all extra features esp32 supports (eg rs485, etc. etc.)
+//! - Create separate dport peripheral (as otherwise risk for race conditions)
 
 use core::convert::Infallible;
 use core::marker::PhantomData;
@@ -15,9 +17,7 @@ use core::marker::PhantomData;
 use embedded_hal::serial;
 
 use crate::esp32::{DPORT, UART0, UART1, UART2};
-
-const APB_CLK_FREQ: u32 = 40_000_000; // TODO: get clk frequency dynamically
-const REF_CLK_FREQ: u32 = 1_000_000; // TODO: get clk frequency dynamically
+use crate::units::*;
 
 /// Serial error
 #[derive(Debug)]
@@ -45,6 +45,7 @@ pub enum Event {
 }
 
 pub mod config {
+    use crate::units::*;
 
     #[derive(PartialEq, Eq)]
     pub enum DataBits {
@@ -72,14 +73,14 @@ pub mod config {
     }
 
     pub struct Config {
-        pub baudrate: u32,
-        pub databits: DataBits,
+        pub baudrate: Hertz,
+        pub data_bits: DataBits,
         pub parity: Parity,
-        pub stopbits: StopBits,
+        pub stop_bits: StopBits,
     }
 
     impl Config {
-        pub fn baudrate(mut self, baudrate: u32) -> Self {
+        pub fn baudrate(mut self, baudrate: Hertz) -> Self {
             self.baudrate = baudrate;
             self
         }
@@ -99,13 +100,13 @@ pub mod config {
             self
         }
 
-        pub fn databits(mut self, databits: DataBits) -> Self {
-            self.databits = databits;
+        pub fn data_bits(mut self, data_bits: DataBits) -> Self {
+            self.data_bits = data_bits;
             self
         }
 
-        pub fn stopbits(mut self, stopbits: StopBits) -> Self {
-            self.stopbits = stopbits;
+        pub fn stop_bits(mut self, stop_bits: StopBits) -> Self {
+            self.stop_bits = stop_bits;
             self
         }
     }
@@ -116,10 +117,10 @@ pub mod config {
     impl Default for Config {
         fn default() -> Config {
             Config {
-                baudrate: 19_200,
-                databits: DataBits::DataBits8,
+                baudrate: Hertz(19_200),
+                data_bits: DataBits::DataBits8,
                 parity: Parity::ParityNone,
-                stopbits: StopBits::STOP1,
+                stop_bits: StopBits::STOP1,
             }
         }
     }
@@ -145,9 +146,10 @@ impl PinTx<UART0> for NoTx {}
 impl PinRx<UART0> for NoRx {}
 
 /// Serial abstraction
-pub struct Serial<UART, PINS> {
+pub struct Serial<'a, UART, PINS> {
     uart: UART,
     pins: PINS,
+    clock_control: &'a crate::clock_control::ClockControl,
 }
 
 /// Serial receiver
@@ -165,20 +167,21 @@ macro_rules! halUart {
         $UARTX:ident: ($uartX:ident),
     )+) => {
         $(
-            impl<PINS> Serial<$UARTX, PINS> {
+            impl<'a, PINS> Serial<'a, $UARTX, PINS> {
                 pub fn $uartX(
                     uart: $UARTX,
                     pins: PINS,
                     config: config::Config,
+                    clock_control: &'a crate::clock_control::ClockControl
                 ) -> Result<Self, config::InvalidConfig>
                 where
                     PINS: Pins<$UARTX>,
                 {
-                        let serial=Serial { uart, pins }
+                        let serial=Serial { uart, pins, clock_control }
                             .reset()
                             .enable()
-                            .change_stopbits(config.stopbits)
-                            .change_databits(config.databits)
+                            .change_stop_bits(config.stop_bits)
+                            .change_data_bits(config.data_bits)
                             .change_parity(config.parity)
                             .change_baudrate(config.baudrate);
 
@@ -215,15 +218,15 @@ macro_rules! halUart {
                 }
 
 
-                pub fn change_stopbits(self, stopbits: config::StopBits) -> Self {
+                pub fn change_stop_bits(self, stop_bits: config::StopBits) -> Self {
 
                     //workaround for hardware issue, when UART stop bit set as 2-bit mode.
                     self.uart.rs485_conf.modify(|_,w|
-                        w.dl1_en().bit(stopbits==config::StopBits::STOP2)
+                        w.dl1_en().bit(stop_bits==config::StopBits::STOP2)
                     );
 
                     self.uart.conf0.modify(|_,w|
-                        match stopbits {
+                        match stop_bits {
                             config::StopBits::STOP1 => w.stop_bit_num().stop_bits_1(),
                             config::StopBits::STOP1P5 => w.stop_bit_num().stop_bits_1p5(),
                             //workaround for hardware issue, when UART stop bit set as 2-bit mode.
@@ -234,10 +237,10 @@ macro_rules! halUart {
                     self
                 }
 
-                pub fn change_databits(self, databits: config::DataBits) -> Self {
+                pub fn change_data_bits(self, data_bits: config::DataBits) -> Self {
 
                     self.uart.conf0.modify(|_,w|
-                        match databits {
+                        match data_bits {
                             config::DataBits::DataBits5 => w.bit_num().data_bits_5(),
                             config::DataBits::DataBits6 => w.bit_num().data_bits_6(),
                             config::DataBits::DataBits7 => w.bit_num().data_bits_7(),
@@ -262,11 +265,11 @@ macro_rules! halUart {
                 }
 
 
-                pub fn change_baudrate(self, baudrate: u32) -> Self {
+                pub fn change_baudrate(self, baudrate: Hertz) -> Self {
 
                     let tick_ref_always_on = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
-                    let sclk_freq = if tick_ref_always_on {APB_CLK_FREQ} else {REF_CLK_FREQ};
-                    let clk_div = (sclk_freq*16)/baudrate;
+                    let sclk_freq = if tick_ref_always_on {self.clock_control.apb_frequency()} else {self.clock_control.ref_frequency()};
+                    let clk_div  = (sclk_freq*16)/baudrate;
 
                     unsafe {
                         self.uart.clkdiv.modify(|_, w| w
@@ -276,12 +279,12 @@ macro_rules! halUart {
                     self
                 }
 
-                pub fn get_baudrate(&self) -> u32 {
+                pub fn get_baudrate(&self) -> Hertz {
 
                     let tick_ref_always_on = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
-                    let sclk_freq = if tick_ref_always_on {APB_CLK_FREQ} else {REF_CLK_FREQ};
+                    let sclk_freq = if tick_ref_always_on {self.clock_control.apb_frequency()} else {self.clock_control.ref_frequency()};
 
-                    return (sclk_freq<<4)/(self.uart.clkdiv.read().clkdiv().bits()<<4 | (self.uart.clkdiv.read().clkdiv_frag().bits() as u32))
+                    return (sclk_freq*16)/(self.uart.clkdiv.read().clkdiv().bits()<<4 | (self.uart.clkdiv.read().clkdiv_frag().bits() as u32))
                 }
 
                 /// Starts listening for an interrupt event
@@ -316,7 +319,7 @@ macro_rules! halUart {
 
             }
 
-            impl<PINS> serial::Read<u8> for Serial<$UARTX, PINS> {
+            impl<'a, PINS> serial::Read<u8> for Serial<'a, $UARTX, PINS> {
                 type Error = Infallible;
 
                 fn read(&mut self) -> nb::Result<u8, Self::Error> {
@@ -359,7 +362,7 @@ macro_rules! halUart {
                 }
             }
 
-            impl<PINS> serial::Write<u8> for Serial<$UARTX, PINS> {
+            impl<'a, PINS> serial::Write<u8> for Serial<'a, $UARTX, PINS> {
                 type Error = Infallible;
 
                 fn flush(&mut self) -> nb::Result<(), Self::Error> {
