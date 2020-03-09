@@ -77,6 +77,8 @@ pub struct ClockControl {
     apbctrl: APB_CTRL,
 }
 
+unsafe impl Sync for ClockControl {}
+
 impl ClockControl {
     /// Create new ClockControl structure
     pub fn new(rtccntl: RTCCNTL, apbctrl: APB_CTRL) -> Self {

@@ -172,12 +172,12 @@ macro_rules! halUart {
                     uart: $UARTX,
                     pins: PINS,
                     config: config::Config,
-                    clock_control: &'a crate::clock_control::ClockControl
+                    clock_control:  &'a mut crate::clock_control::ClockControl
                 ) -> Result<Self, config::InvalidConfig>
                 where
                     PINS: Pins<$UARTX>,
                 {
-                        let serial=Serial { uart, pins, clock_control }
+                        let serial=Serial { uart, pins,  clock_control }
                             .reset()
                             .enable()
                             .change_stop_bits(config.stop_bits)
