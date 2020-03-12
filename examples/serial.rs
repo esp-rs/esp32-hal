@@ -42,7 +42,8 @@ fn main() -> ! {
     let mut clkcntrl = esp32_hal::clock_control::ClockControl::new(dp.RTCCNTL, dp.APB_CTRL);
     clkcntrl.watchdog().disable();
 
-    let serial = Serial::uart0(dp.UART0, (NoTx, NoRx), Config::default(), &mut clkcntrl).unwrap();
+    let serial =
+        Serial::uart0(dp.UART0, (NoTx, NoRx), Config::default(), clkcntrl.freeze()).unwrap();
     let baudrate = serial.get_baudrate();
 
     let (mut tx, mut rx) = serial.split();

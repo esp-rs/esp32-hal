@@ -14,10 +14,10 @@ const BLINK_HZ: Hertz = Hertz(2);
 
 const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
-pub struct Context {
+pub struct Context /*<'a>*/ {
     clock_control: esp32_hal::clock_control::ClockControl,
     /*  uart0: esp32_hal::serial::Serial<
-        'static,
+        'a,
         esp32::UART0,
         (esp32_hal::serial::NoTx, esp32_hal::serial::NoRx),
     >,*/
@@ -42,24 +42,51 @@ fn main() -> ! {
     disable_timg_wdts(&mut timg0, &mut timg1);
 
     let mut clock_control = ClockControl::new(dp.RTCCNTL, dp.APB_CTRL);
+    clock_control.set_slow_source(SlowClockSource::SLOW_CK);
+
+    let clock_control_config = clock_control.freeze();
+
+    let clock_control_config2 = clock_control_config;
 
     let uart0 = Serial::uart0(
         dp.UART0,
         (NoTx, NoRx),
         Config::default(),
-        &mut clock_control,
+        clock_control_config,
     )
     .unwrap();
 
-    let (tx, rx) = uart0.split();
+    //  uart0.change_baudrate(19200.Hz());
 
-    *GLOBAL_CONTEXT.lock() = Some(Context {
-        clock_control,
-        //        uart0,
-        rx,
-        tx,
-    });
+    //    clock_control.set_slow_source(SlowClockSource::SLOW_CK);
 
+    //  clock_control_config.apb_frequency();
+
+    let (mut tx, rx) = uart0.split();
+
+    clock_control.set_slow_source(SlowClockSource::SLOW_CK);
+    //    uart0.change_baudrate(19_200.kHz());
+
+    use embedded_hal::serial::Write;
+    tx.write(0);
+
+    /*
+        let (mut tx, rx) = uart0.split();
+
+        tx.write(0);
+
+        clock_control.set_slow_source(SlowClockSource::SLOW_CK);
+
+        use embedded_hal::serial::Write;
+        tx.write(0);
+
+        *GLOBAL_CONTEXT.lock() = Some(Context {
+            clock_control,
+            //      uart0,
+            rx,
+            tx,
+        });
+    */
     {
         let mut lock = GLOBAL_CONTEXT.lock();
         let ctx = lock.as_mut().unwrap();

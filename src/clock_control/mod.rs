@@ -79,12 +79,35 @@ pub struct ClockControl {
 
 unsafe impl Sync for ClockControl {}
 
+#[derive(Copy, Clone)]
+pub struct ClockControlConfig<'a> {
+    clock_control: &'a ClockControl,
+}
+
+impl<'a> ClockControlConfig<'a> {
+    pub fn apb_frequency(&self) -> Hertz {
+        self.clock_control.apb_frequency()
+    }
+
+    pub fn ref_frequency(&self) -> Hertz {
+        self.clock_control.ref_frequency()
+    }
+}
+
+static mut GLOBAL_CLOCK_CONTROL: Option<ClockControl> = None;
+
 impl ClockControl {
     /// Create new ClockControl structure
     pub fn new(rtccntl: RTCCNTL, apbctrl: APB_CTRL) -> Self {
         let mut cc = ClockControl { rtccntl, apbctrl };
         cc.init();
         cc
+    }
+
+    pub fn freeze<'a>(&'a mut self) -> ClockControlConfig<'a> {
+        ClockControlConfig {
+            clock_control: self,
+        }
     }
 
     /// Initialize clock configuration

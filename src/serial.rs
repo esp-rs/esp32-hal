@@ -146,10 +146,11 @@ impl PinTx<UART0> for NoTx {}
 impl PinRx<UART0> for NoRx {}
 
 /// Serial abstraction
+///
 pub struct Serial<'a, UART, PINS> {
     uart: UART,
     pins: PINS,
-    clock_control: &'a crate::clock_control::ClockControl,
+    clock_control: crate::clock_control::ClockControlConfig<'a>,
 }
 
 /// Serial receiver
@@ -172,7 +173,7 @@ macro_rules! halUart {
                     uart: $UARTX,
                     pins: PINS,
                     config: config::Config,
-                    clock_control:  &'a mut crate::clock_control::ClockControl
+                    clock_control:  crate::clock_control::ClockControlConfig<'a>
                 ) -> Result<Self, config::InvalidConfig>
                 where
                     PINS: Pins<$UARTX>,
@@ -265,11 +266,11 @@ macro_rules! halUart {
                 }
 
 
-                pub fn change_baudrate(self, baudrate: Hertz) -> Self {
+                pub fn change_baudrate<T: Into<Hertz>>(mut self, baudrate: T) -> Self {
 
                     let tick_ref_always_on = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
                     let sclk_freq = if tick_ref_always_on {self.clock_control.apb_frequency()} else {self.clock_control.ref_frequency()};
-                    let clk_div  = (sclk_freq*16)/baudrate;
+                    let clk_div  = (sclk_freq*16)/baudrate.into();
 
                     unsafe {
                         self.uart.clkdiv.modify(|_, w| w
@@ -279,7 +280,7 @@ macro_rules! halUart {
                     self
                 }
 
-                pub fn get_baudrate(&self) -> Hertz {
+                pub fn get_baudrate(&'a self) -> Hertz {
 
                     let tick_ref_always_on = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
                     let sclk_freq = if tick_ref_always_on {self.clock_control.apb_frequency()} else {self.clock_control.ref_frequency()};
