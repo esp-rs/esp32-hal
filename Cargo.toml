@@ -12,3 +12,22 @@ esp32 = { version = "0.2.2" }
 [dependencies.embedded-hal]
 features = ["unproven"]
 version = "0.2.3"
+
+[dev-dependencies]
+panic-halt = "0.2.0"
+xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt", rev = "89cea20c441d4a1624de99c7278df13af5c211a4" }
+
+[[example]]
+name = "blinky"
+
+[profile.dev]
+lto = true 
+incremental = false
+debug = false # debug adds frame pointers - which must be omitted
+codegen-units = 1
+
+[profile.release]
+lto = true
+incremental = false
+debug = false # debug adds frame pointers - which must be omitted
+codegen-units = 1
