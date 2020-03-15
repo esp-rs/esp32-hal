@@ -8,6 +8,7 @@ edition = "2018"
 
 
 [dependencies]
+xtensa-lx6-rt = { path = "../xtensa-lx6-rt" }
 esp32 = { path = "../esp32"}
 #esp32 = { version = "0.2.2" }
 nb = "0.1.2"
@@ -25,8 +26,6 @@ debug = true
 codegen-units = 1
 
 [dev-dependencies]
-xtensa-lx6-rt = { path = "../xtensa-lx6-rt" }
-esp32 = { path = "../esp32"}
 esp32-hal = { path = "../esp32-hal"}
 #esp32-alloc = { path = "../esp32-alloc"}
 

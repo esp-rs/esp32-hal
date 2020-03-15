@@ -7,14 +7,15 @@ use embedded_hal::watchdog::*;
 use esp32;
 use esp32_hal::clock_control::watchdog::*;
 use esp32_hal::clock_control::*;
+use esp32_hal::dport::DPort;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 use esp32_hal::units::*;
 
-const BLINK_HZ: Hertz = Hertz(2);
+const BLINK_HZ: Hertz = Hertz(1);
 
 const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
-pub struct Context /*<'a>*/ {
+pub struct Context {
     clock_control: esp32_hal::clock_control::ClockControl,
     /*  uart0: esp32_hal::serial::Serial<
         'a,
@@ -34,6 +35,8 @@ fn main() -> ! {
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
 
+    let dport = DPort::new(dp.DPORT);
+
     // (https://github.com/espressif/openocd-esp32/blob/97ba3a6bb9eaa898d91df923bbedddfeaaaf28c9/src/target/esp32.c#L431)
     // openocd disables the watchdog timers on halt
     // we will do it manually on startup
@@ -41,66 +44,62 @@ fn main() -> ! {
 
     disable_timg_wdts(&mut timg0, &mut timg1);
 
-    let mut clock_control = ClockControl::new(dp.RTCCNTL, dp.APB_CTRL);
-    clock_control.set_slow_source(SlowClockSource::SLOW_CK);
+    let mut clock_control = ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport.clock_control);
+    clock_control.set_slow_rtc_source(SlowRTCSource::RTC150k);
 
-    let clock_control_config = clock_control.freeze();
+    clock_control.set_cpu_frequency(40.MHz()).unwrap();
+    clock_control.watchdog().start(100.s());
+    //    clock_control.set_pll_frequency(320.MHz());
 
-    let clock_control_config2 = clock_control_config;
-
-    let uart0 = Serial::uart0(
+    let mut uart0 = Serial::uart0(
         dp.UART0,
         (NoTx, NoRx),
         Config::default(),
-        clock_control_config,
+        clock_control.get_config().unwrap(),
     )
     .unwrap();
 
-    //  uart0.change_baudrate(19200.Hz());
+    uart0.change_baudrate(115200).unwrap();
+    let baudrate = uart0.get_baudrate();
 
-    //    clock_control.set_slow_source(SlowClockSource::SLOW_CK);
-
-    //  clock_control_config.apb_frequency();
+    let (conf0, div, div_frac, use_apb_clock) = uart0.get_div();
 
     let (mut tx, rx) = uart0.split();
 
-    clock_control.set_slow_source(SlowClockSource::SLOW_CK);
-    //    uart0.change_baudrate(19_200.kHz());
+    writeln!(
+        tx,
+        "\n\n\nSerial: {:0x} {}, {}, {}, {}",
+        conf0, div, div_frac, use_apb_clock, baudrate
+    )
+    .unwrap();
+    writeln!(
+        tx,
+        "ClockControl: {:?},",
+        clock_control.get_config().unwrap()
+    )
+    .unwrap();
 
-    use embedded_hal::serial::Write;
-    tx.write(0);
+    *GLOBAL_CONTEXT.lock() = Some(Context {
+        clock_control,
+        //      uart0,
+        rx,
+        tx,
+    });
 
-    /*
-        let (mut tx, rx) = uart0.split();
-
-        tx.write(0);
-
-        clock_control.set_slow_source(SlowClockSource::SLOW_CK);
-
-        use embedded_hal::serial::Write;
-        tx.write(0);
-
-        *GLOBAL_CONTEXT.lock() = Some(Context {
-            clock_control,
-            //      uart0,
-            rx,
-            tx,
-        });
-    */
     {
         let mut lock = GLOBAL_CONTEXT.lock();
         let ctx = lock.as_mut().unwrap();
         let tx = &mut ctx.tx;
         let clock_control = &mut ctx.clock_control;
 
-        clock_control.set_slow_source(SlowClockSource::SLOW_CK);
+        clock_control.set_slow_rtc_source(SlowRTCSource::RTC150k);
         let mut wdtconfig = clock_control.watchdog().config().unwrap();
         wdtconfig.action1 = WatchdogAction::RESETCPU;
-        wdtconfig.period1 = 10.s().into();
+        wdtconfig.period1 = 100.s().into();
         wdtconfig.reset_cpu[0] = true;
 
         //TODO: frequencies are not correct
-        clock_control.watchdog().start(wdtconfig);
+        clock_control.watchdog().set_config(wdtconfig);
 
         writeln!(tx, "\n\nReboot!\n").unwrap();
 
@@ -110,17 +109,29 @@ fn main() -> ! {
             "CPU Frequency {}, APB Frequency {}, Slow Frequency {}",
             clock_control.cpu_frequency(),
             clock_control.apb_frequency(),
-            clock_control.slow_frequency()
+            clock_control.slow_rtc_frequency()
         )
         .unwrap();
-        writeln!(tx, "{:?}", clock_control.cpu_frequency_config().unwrap()).unwrap();
+        writeln!(tx, "{:?}", clock_control.get_config()).unwrap();
     }
 
     // panic!("panic test");
 
     let mut x = 1;
+    let mut prev_ccount = 0;
+
     loop {
-        writeln!(GLOBAL_CONTEXT.lock().as_mut().unwrap().tx, "Loop: {}", x).unwrap();
+        let ccount = xtensa_lx6_rt::get_cycle_count();
+        writeln!(
+            GLOBAL_CONTEXT.lock().as_mut().unwrap().tx,
+            "Loop: {}, CCOUNT: {}, {}",
+            x,
+            ccount,
+            ccount - prev_ccount
+        )
+        .unwrap();
+
+        prev_ccount = ccount;
         x += 1;
 
         for _x in 0..10 {

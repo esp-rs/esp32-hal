@@ -2,19 +2,16 @@
 #![no_main]
 #![feature(asm)]
 
-use xtensa_lx6_rt as _;
-
 use core::fmt::Write;
 use core::panic::PanicInfo;
+use embedded_hal::watchdog::*;
 use esp32;
+use esp32_hal::clock_control::delay_cycles;
+use esp32_hal::dport::DPort;
 use esp32_hal::gpio::GpioExt;
 use esp32_hal::hal::digital::v2::OutputPin;
-
 use esp32_hal::hal::serial::Read as _;
-
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
-
-use embedded_hal::watchdog::*;
 
 /// The default clock source is the onboard crystal
 /// In most cases 40mhz (but can be as low as 2mhz depending on the board)
@@ -31,23 +28,32 @@ fn main() -> ! {
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
 
+    let dport = DPort::new(dp.DPORT);
+
     // (https://github.com/espressif/openocd-esp32/blob/97ba3a6bb9eaa898d91df923bbedddfeaaaf28c9/src/target/esp32.c#L431)
     // openocd disables the watchdog timer on halt
     // we will do it manually on startup
     disable_timg_wdts(&mut timg0, &mut timg1);
 
+    let mut clkcntrl =
+        esp32_hal::clock_control::ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport.clock_control);
+
+    clkcntrl.watchdog().disable();
+
     let gpios = dp.GPIO.split();
     let mut blinky = gpios.gpio13.into_push_pull_output();
 
-    let mut clkcntrl = esp32_hal::clock_control::ClockControl::new(dp.RTCCNTL, dp.APB_CTRL);
-    clkcntrl.watchdog().disable();
-
-    let serial =
-        Serial::uart0(dp.UART0, (NoTx, NoRx), Config::default(), clkcntrl.freeze()).unwrap();
-    let baudrate = serial.get_baudrate();
+    let serial = Serial::uart0(
+        dp.UART0,
+        (NoTx, NoRx),
+        Config::default(),
+        clkcntrl.get_config().unwrap(),
+    )
+    .unwrap();
 
     let (mut tx, mut rx) = serial.split();
-    writeln!(tx, "baudrate {:?}", baudrate).unwrap();
+
+    writeln!(tx, "\n\nESP32 Started\n\n").unwrap();
 
     loop {
         writeln!(tx, "Characters received:  {:?}", rx.count()).unwrap();
@@ -58,9 +64,9 @@ fn main() -> ! {
         writeln!(tx, "").unwrap();
 
         blinky.set_high().unwrap();
-        delay(BLINK_HZ);
+        delay_cycles(BLINK_HZ);
         blinky.set_low().unwrap();
-        delay(BLINK_HZ);
+        delay_cycles(BLINK_HZ);
     }
 }
 
@@ -76,41 +82,8 @@ fn disable_timg_wdts(timg0: &mut esp32::TIMG0, timg1: &mut esp32::TIMG1) {
     timg1.wdtconfig0.write(|w| unsafe { w.bits(0x0) });
 }
 
-/// rough delay - as a guess divide your cycles by 20 (results will differ on opt level)
-pub fn delay2(clocks: u32) {
-    let dummy_var: u32 = 0;
-    for _ in 0..clocks {
-        unsafe { core::ptr::read_volatile(&dummy_var) };
-    }
-}
-
-/// cycle accurate delay using the cycle counter register
-pub fn delay(clocks: u32) {
-    let start = get_ccount();
-    loop {
-        if get_ccount().wrapping_sub(start) >= clocks {
-            break;
-        }
-    }
-}
-
-/// Performs a special register read to read the current cycle count.
-/// In the future, this can be pre-compiled to a archive (.a) and linked to so we don't
-/// have to require the asm nightly feature - see cortex-m-rt for more details
-pub fn get_ccount() -> u32 {
-    let x: u32;
-    unsafe { asm!("rsr.ccount a2" : "={a2}"(x) ) };
-    x
-}
-
 /// Basic panic handler - just loops
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop {
-        /*        blinky.set_high().unwrap();
-        delay(CORE_HZ/10);
-        blinky.set_low().unwrap();
-        delay(CORE_HZ/10);
-        */
-    }
+    loop {}
 }

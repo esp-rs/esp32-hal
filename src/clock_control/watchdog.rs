@@ -45,16 +45,16 @@ impl<'a> WatchDog<'a> {
 
     fn access_registers<A, F: FnMut(&RTCCNTL) -> A>(&mut self, mut f: F) -> A {
         // Unprotect write access to registers
-        let rtccntl = &self.clock_control.rtccntl;
+        let rtc_control = &self.clock_control.rtc_control;
 
-        rtccntl
+        rtc_control
             .wdtwprotect
             .write(|w| unsafe { w.bits(WATCHDOG_UNBLOCK_KEY) });
 
-        let a = f(&rtccntl);
+        let a = f(&rtc_control);
 
         // Protect again
-        rtccntl
+        rtc_control
             .wdtwprotect
             .write(|w| unsafe { w.bits(WATCHDOG_BLOCK_VALUE) });
 
@@ -63,17 +63,17 @@ impl<'a> WatchDog<'a> {
 
     fn calc_period(&self, value: u32) -> MicroSeconds {
         return (((1000000u64 * value as u64)
-            / (u32::from(self.clock_control.slow_frequency()) as u64)) as u32)
+            / (u32::from(self.clock_control.slow_rtc_frequency()) as u64)) as u32)
             .us();
     }
     fn calc_ticks(&self, value: MicroSeconds) -> u32 {
-        return (u32::from(value) as u64 * u32::from(self.clock_control.slow_frequency()) as u64
+        return (u32::from(value) as u64 * u32::from(self.clock_control.slow_rtc_frequency()) as u64
             / 1000000u64) as u32;
     }
 
     pub fn config(&self) -> Result<WatchdogConfig<MicroSeconds>, super::Error> {
-        let rtccntl = &self.clock_control.rtccntl;
-        let wdtconfig0 = rtccntl.wdtconfig0.read();
+        let rtc_control = &self.clock_control.rtc_control;
+        let wdtconfig0 = rtc_control.wdtconfig0.read();
 
         let stg0 = match wdtconfig0.wdt_stg0().variant() {
             Val(x) => x,
@@ -93,13 +93,13 @@ impl<'a> WatchDog<'a> {
         };
 
         Ok(WatchdogConfig::<MicroSeconds> {
-            period1: self.calc_period(rtccntl.wdtconfig1.read().bits()),
+            period1: self.calc_period(rtc_control.wdtconfig1.read().bits()),
             action1: stg0,
-            period2: self.calc_period(rtccntl.wdtconfig2.read().bits()),
+            period2: self.calc_period(rtc_control.wdtconfig2.read().bits()),
             action2: stg1,
-            period3: self.calc_period(rtccntl.wdtconfig3.read().bits()),
+            period3: self.calc_period(rtc_control.wdtconfig3.read().bits()),
             action3: stg2,
-            period4: self.calc_period(rtccntl.wdtconfig4.read().bits()),
+            period4: self.calc_period(rtc_control.wdtconfig4.read().bits()),
             action4: stg3,
             cpu_reset_duration: wdtconfig0.wdt_cpu_reset_length().variant(),
             sys_reset_duration: wdtconfig0.wdt_sys_reset_length().variant(),
@@ -111,15 +111,15 @@ impl<'a> WatchDog<'a> {
         })
     }
 
-    pub fn start<T: Into<MicroSeconds> + Copy>(&mut self, config: WatchdogConfig<T>) {
+    pub fn set_config<T: Into<MicroSeconds> + Copy>(&mut self, config: WatchdogConfig<T>) {
         let per1 = self.calc_ticks(config.period1.into());
         let per2 = self.calc_ticks(config.period2.into());
         let per3 = self.calc_ticks(config.period3.into());
         let per4 = self.calc_ticks(config.period4.into());
 
-        self.access_registers(|rtccntl| {
-            rtccntl.wdtfeed.write(|w| w.wdt_feed().set_bit());
-            rtccntl.wdtconfig0.modify(|_, w| {
+        self.access_registers(|rtc_control| {
+            rtc_control.wdtfeed.write(|w| w.wdt_feed().set_bit());
+            rtc_control.wdtconfig0.modify(|_, w| {
                 w.wdt_stg0()
                     .variant(config.action1)
                     .wdt_stg1()
@@ -143,10 +143,10 @@ impl<'a> WatchDog<'a> {
                     .wdt_appcpu_reset_en()
                     .bit(config.reset_cpu[1])
             });
-            rtccntl.wdtconfig1.write(|w| unsafe { w.bits(per1) });
-            rtccntl.wdtconfig2.write(|w| unsafe { w.bits(per2) });
-            rtccntl.wdtconfig3.write(|w| unsafe { w.bits(per3) });
-            rtccntl.wdtconfig4.write(|w| unsafe { w.bits(per4) });
+            rtc_control.wdtconfig1.write(|w| unsafe { w.bits(per1) });
+            rtc_control.wdtconfig2.write(|w| unsafe { w.bits(per2) });
+            rtc_control.wdtconfig3.write(|w| unsafe { w.bits(per3) });
+            rtc_control.wdtconfig4.write(|w| unsafe { w.bits(per4) });
         });
     }
 }
@@ -155,13 +155,14 @@ impl WatchdogEnable for WatchDog<'_> {
     type Time = MicroSeconds;
 
     fn start<T: Into<Self::Time>>(&mut self, period: T) {
-        let per: u32 = u32::from(period.into());
-        self.access_registers(|rtccntl| {
-            rtccntl.wdtfeed.write(|w| w.wdt_feed().set_bit());
-            rtccntl
+        let per = self.calc_ticks(period.into());
+
+        self.access_registers(|rtc_control| {
+            rtc_control.wdtfeed.write(|w| w.wdt_feed().set_bit());
+            rtc_control
                 .wdtconfig1
                 .write(|w| unsafe { w.wdt_stg0_hold().bits(per) });
-            rtccntl.wdtconfig0.modify(|_, w| {
+            rtc_control.wdtconfig0.modify(|_, w| {
                 w.wdt_flashboot_mod_en()
                     .clear_bit()
                     .wdt_en()
@@ -175,9 +176,9 @@ impl WatchdogEnable for WatchDog<'_> {
 
 impl<'a> WatchdogDisable for WatchDog<'a> {
     fn disable(&mut self) {
-        self.access_registers(|rtccntl| {
-            rtccntl.wdtfeed.write(|w| w.wdt_feed().set_bit());
-            rtccntl
+        self.access_registers(|rtc_control| {
+            rtc_control.wdtfeed.write(|w| w.wdt_feed().set_bit());
+            rtc_control
                 .wdtconfig0
                 .modify(|_, w| w.wdt_flashboot_mod_en().clear_bit().wdt_en().clear_bit());
         });
@@ -186,8 +187,8 @@ impl<'a> WatchdogDisable for WatchDog<'a> {
 
 impl Watchdog for WatchDog<'_> {
     fn feed(&mut self) {
-        self.access_registers(|rtccntl| {
-            rtccntl.wdtfeed.write(|w| w.wdt_feed().set_bit());
+        self.access_registers(|rtc_control| {
+            rtc_control.wdtfeed.write(|w| w.wdt_feed().set_bit());
         });
     }
 }

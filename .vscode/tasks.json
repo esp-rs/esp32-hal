@@ -18,8 +18,9 @@
                 "isDefault": true
             },
             "presentation": {
-                "reveal": "always",
-                "panel": "dedicated"
+                "reveal": "silent",
+                "panel": "shared",
+                "clear": true
             }
         },
         {
@@ -31,6 +32,11 @@
                 "fileLocation": [
                     "relative"
                 ]
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "clear": true
             }
         },
         {
@@ -45,8 +51,9 @@
             },
             "group": "build",
             "presentation": {
-                "reveal": "always",
-                "panel": "dedicated"
+                "reveal": "silent",
+                "panel": "shared",
+                "clear": true
             }
         }
     ],

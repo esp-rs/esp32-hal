@@ -30,8 +30,10 @@ pub enum Error {
     Overrun,
     /// Parity check error
     Parity,
-    #[doc(hidden)]
-    _Extensible,
+    /// Baudrate too low
+    BaudrateTooLow,
+    /// Baudrate too high
+    BaudrateTooHigh,
 }
 
 /// Interrupt event
@@ -111,9 +113,6 @@ pub mod config {
         }
     }
 
-    #[derive(Debug)]
-    pub struct InvalidConfig;
-
     impl Default for Config {
         fn default() -> Config {
             Config {
@@ -147,10 +146,10 @@ impl PinRx<UART0> for NoRx {}
 
 /// Serial abstraction
 ///
-pub struct Serial<'a, UART, PINS> {
+pub struct Serial<UART, PINS> {
     uart: UART,
     pins: PINS,
-    clock_control: crate::clock_control::ClockControlConfig<'a>,
+    clock_control: crate::clock_control::ClockControlConfig,
 }
 
 /// Serial receiver
@@ -168,35 +167,37 @@ macro_rules! halUart {
         $UARTX:ident: ($uartX:ident),
     )+) => {
         $(
-            impl<'a, PINS> Serial<'a, $UARTX, PINS> {
+            impl<'a, PINS> Serial<$UARTX, PINS> {
                 pub fn $uartX(
                     uart: $UARTX,
                     pins: PINS,
                     config: config::Config,
-                    clock_control:  crate::clock_control::ClockControlConfig<'a>
-                ) -> Result<Self, config::InvalidConfig>
+                    clock_control:  crate::clock_control::ClockControlConfig
+                ) -> Result<Self, Error>
                 where
                     PINS: Pins<$UARTX>,
                 {
-                        let serial=Serial { uart, pins,  clock_control }
+                        let mut serial=Serial { uart, pins, clock_control };
+
+                        serial
                             .reset()
                             .enable()
                             .change_stop_bits(config.stop_bits)
                             .change_data_bits(config.data_bits)
                             .change_parity(config.parity)
-                            .change_baudrate(config.baudrate);
+                            .change_baudrate(config.baudrate)?;
 
                         Ok(serial)
                 }
 
-                fn reset(self) -> Self {
+                fn reset(&mut self) -> &mut Self {
                     let dportreg = unsafe{ &*DPORT::ptr() };
                     dportreg.perip_rst_en.modify(|_,w| w.$uartX().set_bit());
                     dportreg.perip_rst_en.modify(|_,w| w.$uartX().clear_bit());
                     self
                 }
 
-                pub fn enable(self) -> Self {
+                pub fn enable(&mut self) -> &mut Self {
                     let dportreg = unsafe{ &*DPORT::ptr() };
                     dportreg.perip_clk_en.modify(|_,w| w.uart_mem().set_bit());
                     dportreg.perip_clk_en.modify(|_,w| w.$uartX().set_bit());
@@ -204,7 +205,7 @@ macro_rules! halUart {
                     self
                 }
 
-                pub fn disable(self) -> Self {
+                pub fn disable(&mut self) -> &mut Self {
                     let dportreg = unsafe{ &*DPORT::ptr() };
                     dportreg.perip_clk_en.modify(|_,w| w.$uartX().clear_bit());
                     dportreg.perip_rst_en.modify(|_,w| w.$uartX().set_bit());
@@ -219,7 +220,7 @@ macro_rules! halUart {
                 }
 
 
-                pub fn change_stop_bits(self, stop_bits: config::StopBits) -> Self {
+                pub fn change_stop_bits(&mut self, stop_bits: config::StopBits) -> &mut Self {
 
                     //workaround for hardware issue, when UART stop bit set as 2-bit mode.
                     self.uart.rs485_conf.modify(|_,w|
@@ -238,7 +239,7 @@ macro_rules! halUart {
                     self
                 }
 
-                pub fn change_data_bits(self, data_bits: config::DataBits) -> Self {
+                pub fn change_data_bits(&mut self, data_bits: config::DataBits) -> &mut Self {
 
                     self.uart.conf0.modify(|_,w|
                         match data_bits {
@@ -252,7 +253,7 @@ macro_rules! halUart {
                     self
                 }
 
-                pub fn change_parity(self, parity: config::Parity) -> Self {
+                pub fn change_parity(&mut self, parity: config::Parity) -> &mut Self {
 
                     self.uart.conf0.modify(|_,w|
                         match parity {
@@ -265,27 +266,74 @@ macro_rules! halUart {
                     self
                 }
 
+                pub fn change_baudrate <T: Into<Hertz> + Copy>(&mut self, baudrate: T) -> Result<&mut Self,Error> {
+                    let mut use_apb_frequency = false;
 
-                pub fn change_baudrate<T: Into<Hertz>>(mut self, baudrate: T) -> Self {
+                    // if APB frequency is <10MHz (according to documentation, in practice 5MHz), the ref clock is no longer accurate
+                    // or if the baudrate > Ref frequency
+                    if self.clock_control.apb_frequency < 10_000_000.Hz()
+                            || baudrate.into() > self.clock_control.ref_frequency {
+                        use_apb_frequency = true;
+                    } else if baudrate.into() < self.clock_control.apb_frequency/(1<<20-1) {
+                        // if baudrate is lower then can be achieved via the APB frequency
+                        use_apb_frequency = false;
+                    }
+                    else {
+                        let clk_div =
+                            (self.clock_control.ref_frequency * 16 + baudrate.into() / 2) / baudrate.into();
+                        // if baudrate too high use APB clock
+                        if clk_div == 0 {
+                            use_apb_frequency = true
+                        } else {
+                            // if baudrate cannot be reached within 1.5% use APB frequency
+                            // use 203 as multiplier (2*101.5), because 1Mhz * 16 * 203 still fits in 2^32
+                            let calc_baudrate = (self.clock_control.ref_frequency * 16 * 200) / clk_div;
+                            if calc_baudrate > baudrate.into() * 203
+                                || calc_baudrate < baudrate.into() * 197
+                            {
+                                use_apb_frequency = true;
+                            }
+                        }
+                    }
 
-                    let tick_ref_always_on = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
-                    let sclk_freq = if tick_ref_always_on {self.clock_control.apb_frequency()} else {self.clock_control.ref_frequency()};
-                    let clk_div  = (sclk_freq*16)/baudrate.into();
+                    // set clock source
+                    self.uart.conf0.modify(|_, w| w.tick_ref_always_on().bit(use_apb_frequency));
+
+                    let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency} else {self.clock_control.ref_frequency};
+
+                    // calculate nearest divider
+                    let clk_div = (sclk_freq * 16 + baudrate.into()/2 ) / baudrate.into();
+
+                    if clk_div == 0 {
+                        return Err(Error::BaudrateTooHigh)
+                    }
+                    if clk_div > (1<<24)-1 {
+                        return Err(Error::BaudrateTooLow)
+                    }
 
                     unsafe {
-                        self.uart.clkdiv.modify(|_, w| w
-                        .clkdiv().bits(clk_div>>4)
-                        .clkdiv_frag().bits((clk_div&0xf) as u8)
-                    )};
-                    self
+                        self.uart.clkdiv.modify(|_, w| {
+                            w.clkdiv()
+                                .bits(clk_div >> 4)
+                                .clkdiv_frag()
+                                .bits((clk_div & 0xf) as u8)
+                        })
+                    };
+
+                    Ok(self)
                 }
 
-                pub fn get_baudrate(&'a self) -> Hertz {
+                pub fn get_div(&mut self) -> (u32, u32, u8, bool) {
+                    (self.uart.conf0.read().bits(), self.uart.clkdiv.read().clkdiv().bits(), self.uart.clkdiv.read().clkdiv_frag().bits(), self.uart.conf0.read().tick_ref_always_on().bit_is_set())
+                }
 
-                    let tick_ref_always_on = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
-                    let sclk_freq = if tick_ref_always_on {self.clock_control.apb_frequency()} else {self.clock_control.ref_frequency()};
+                pub fn get_baudrate(& self) -> Hertz {
+                    let use_apb_frequency = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
+                    let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency} else {self.clock_control.ref_frequency};
+                    let div = self.uart.clkdiv.read().clkdiv().bits()<<4 | (self.uart.clkdiv.read().clkdiv_frag().bits() as u32);
 
-                    return (sclk_freq*16)/(self.uart.clkdiv.read().clkdiv().bits()<<4 | (self.uart.clkdiv.read().clkdiv_frag().bits() as u32))
+                    // round to nearest integer baudrate
+                    (sclk_freq * 16 + Hertz(div / 2)) / div
                 }
 
                 /// Starts listening for an interrupt event
@@ -320,7 +368,7 @@ macro_rules! halUart {
 
             }
 
-            impl<'a, PINS> serial::Read<u8> for Serial<'a, $UARTX, PINS> {
+            impl<'a, PINS> serial::Read<u8> for Serial<$UARTX, PINS> {
                 type Error = Infallible;
 
                 fn read(&mut self) -> nb::Result<u8, Self::Error> {
@@ -363,7 +411,7 @@ macro_rules! halUart {
                 }
             }
 
-            impl<'a, PINS> serial::Write<u8> for Serial<'a, $UARTX, PINS> {
+            impl<'a, PINS> serial::Write<u8> for Serial<$UARTX, PINS> {
                 type Error = Infallible;
 
                 fn flush(&mut self) -> nb::Result<(), Self::Error> {
