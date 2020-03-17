@@ -7,7 +7,6 @@ use esp32::{dport, DPORT};
 
 pub struct DPort {
     dport: DPORT,
-    pub clock_control: ClockControl,
 }
 
 /// Cpu Period Configuration Register
@@ -20,12 +19,19 @@ impl ClockControl {
     }
 }
 
+pub trait Split {
+    fn split(self) -> (DPort, ClockControl);
+}
+
+impl Split for DPORT {
+    fn split(self) -> (DPort, ClockControl) {
+        (DPort::new(self), ClockControl {})
+    }
+}
+
 impl DPort {
     /// Create new ClockControl structure
-    pub fn new(dport: DPORT) -> Self {
-        DPort {
-            dport,
-            clock_control: ClockControl {},
-        }
+    fn new(dport: DPORT) -> Self {
+        DPort { dport }
     }
 }

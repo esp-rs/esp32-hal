@@ -323,10 +323,6 @@ macro_rules! halUart {
                     Ok(self)
                 }
 
-                pub fn get_div(&mut self) -> (u32, u32, u8, bool) {
-                    (self.uart.conf0.read().bits(), self.uart.clkdiv.read().clkdiv().bits(), self.uart.clkdiv.read().clkdiv_frag().bits(), self.uart.conf0.read().tick_ref_always_on().bit_is_set())
-                }
-
                 pub fn get_baudrate(& self) -> Hertz {
                     let use_apb_frequency = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
                     let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency} else {self.clock_control.ref_frequency};

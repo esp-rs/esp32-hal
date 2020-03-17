@@ -4,10 +4,10 @@
 
 use core::fmt::Write;
 use core::panic::PanicInfo;
-use embedded_hal::watchdog::*;
+use embedded_hal::watchdog::WatchdogDisable;
 use esp32;
 use esp32_hal::clock_control::delay_cycles;
-use esp32_hal::dport::DPort;
+use esp32_hal::dport::Split;
 use esp32_hal::gpio::GpioExt;
 use esp32_hal::hal::digital::v2::OutputPin;
 use esp32_hal::hal::serial::Read as _;
@@ -28,28 +28,23 @@ fn main() -> ! {
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
 
-    let dport = DPort::new(dp.DPORT);
+    let (_dport, dport_clock_control) = dp.DPORT.split();
 
     // (https://github.com/espressif/openocd-esp32/blob/97ba3a6bb9eaa898d91df923bbedddfeaaaf28c9/src/target/esp32.c#L431)
     // openocd disables the watchdog timer on halt
     // we will do it manually on startup
     disable_timg_wdts(&mut timg0, &mut timg1);
 
-    let mut clkcntrl =
-        esp32_hal::clock_control::ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport.clock_control);
+    let clkcntrl =
+        esp32_hal::clock_control::ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control);
 
-    clkcntrl.watchdog().disable();
+    let (clkcntrl_config, mut watchdog) = clkcntrl.freeze().unwrap();
+    watchdog.disable();
 
     let gpios = dp.GPIO.split();
     let mut blinky = gpios.gpio13.into_push_pull_output();
 
-    let serial = Serial::uart0(
-        dp.UART0,
-        (NoTx, NoRx),
-        Config::default(),
-        clkcntrl.get_config().unwrap(),
-    )
-    .unwrap();
+    let serial = Serial::uart0(dp.UART0, (NoTx, NoRx), Config::default(), clkcntrl_config).unwrap();
 
     let (mut tx, mut rx) = serial.split();
 

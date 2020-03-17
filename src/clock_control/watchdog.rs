@@ -15,8 +15,9 @@ pub type WatchDogResetDuration = WDT_CPU_RESET_LENGTH_A;
 const WATCHDOG_UNBLOCK_KEY: u32 = 0x50D83AA1;
 const WATCHDOG_BLOCK_VALUE: u32 = 0x89ABCDEF;
 
-pub struct WatchDog<'a> {
-    clock_control: &'a super::ClockControl,
+pub struct WatchDog {
+    clock_control_config: super::ClockControlConfig,
+    //    rtc_control: &'static esp32::rtccntl::RegisterBlock,
 }
 
 // TODO: make T for different periods independent
@@ -36,22 +37,27 @@ pub struct WatchdogConfig<T: Into<MicroSeconds>> {
     pub reset_cpu: [bool; 2],
 }
 
-impl<'a> WatchDog<'a> {
-    pub fn new(clock_control: &'a mut super::ClockControl) -> Self {
+unsafe impl Sync for WatchDog {}
+
+impl WatchDog {
+    pub(crate) fn new(clock_control_config: super::ClockControlConfig) -> Self {
         WatchDog {
-            clock_control: clock_control,
+            clock_control_config,
         }
     }
 
-    fn access_registers<A, F: FnMut(&RTCCNTL) -> A>(&mut self, mut f: F) -> A {
+    fn access_registers<A, F: FnMut(&esp32::rtccntl::RegisterBlock) -> A>(
+        &mut self,
+        mut f: F,
+    ) -> A {
         // Unprotect write access to registers
-        let rtc_control = &self.clock_control.rtc_control;
+        let rtc_control = unsafe { &(*RTCCNTL::ptr()) };
 
         rtc_control
             .wdtwprotect
             .write(|w| unsafe { w.bits(WATCHDOG_UNBLOCK_KEY) });
 
-        let a = f(&rtc_control);
+        let a = f(rtc_control);
 
         // Protect again
         rtc_control
@@ -63,16 +69,18 @@ impl<'a> WatchDog<'a> {
 
     fn calc_period(&self, value: u32) -> MicroSeconds {
         return (((1000000u64 * value as u64)
-            / (u32::from(self.clock_control.slow_rtc_frequency()) as u64)) as u32)
+            / (u32::from(self.clock_control_config.slow_rtc_frequency) as u64))
+            as u32)
             .us();
     }
     fn calc_ticks(&self, value: MicroSeconds) -> u32 {
-        return (u32::from(value) as u64 * u32::from(self.clock_control.slow_rtc_frequency()) as u64
+        return (u32::from(value) as u64
+            * u32::from(self.clock_control_config.slow_rtc_frequency) as u64
             / 1000000u64) as u32;
     }
 
     pub fn config(&self) -> Result<WatchdogConfig<MicroSeconds>, super::Error> {
-        let rtc_control = &self.clock_control.rtc_control;
+        let rtc_control = unsafe { &(*RTCCNTL::ptr()) };
         let wdtconfig0 = rtc_control.wdtconfig0.read();
 
         let stg0 = match wdtconfig0.wdt_stg0().variant() {
@@ -111,7 +119,7 @@ impl<'a> WatchDog<'a> {
         })
     }
 
-    pub fn set_config<T: Into<MicroSeconds> + Copy>(&mut self, config: WatchdogConfig<T>) {
+    pub fn set_config<T: Into<MicroSeconds> + Copy>(&mut self, config: &WatchdogConfig<T>) {
         let per1 = self.calc_ticks(config.period1.into());
         let per2 = self.calc_ticks(config.period2.into());
         let per3 = self.calc_ticks(config.period3.into());
@@ -151,7 +159,7 @@ impl<'a> WatchDog<'a> {
     }
 }
 
-impl WatchdogEnable for WatchDog<'_> {
+impl WatchdogEnable for WatchDog {
     type Time = MicroSeconds;
 
     fn start<T: Into<Self::Time>>(&mut self, period: T) {
@@ -169,12 +177,14 @@ impl WatchdogEnable for WatchDog<'_> {
                     .set_bit()
                     .wdt_pause_in_slp()
                     .set_bit()
+                    .wdt_stg0()
+                    .variant(WatchdogAction::RESETRTC)
             });
         });
     }
 }
 
-impl<'a> WatchdogDisable for WatchDog<'a> {
+impl<'a> WatchdogDisable for WatchDog {
     fn disable(&mut self) {
         self.access_registers(|rtc_control| {
             rtc_control.wdtfeed.write(|w| w.wdt_feed().set_bit());
@@ -185,8 +195,11 @@ impl<'a> WatchdogDisable for WatchDog<'a> {
     }
 }
 
-impl Watchdog for WatchDog<'_> {
+/// Feed (=reset) the watchdog timer
+// function is safe with immutable reference as it is a single atomic write
+impl Watchdog for WatchDog {
     fn feed(&mut self) {
+        // TODO: doesn't need the access protection
         self.access_registers(|rtc_control| {
             rtc_control.wdtfeed.write(|w| w.wdt_feed().set_bit());
         });

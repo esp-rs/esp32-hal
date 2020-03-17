@@ -22,5 +22,6 @@ rustflags = [
 # see: https://github.com/MabezDev/xtensa-rust-quickstart/issues/1#issuecomment-481119695
 # however this interferese with cargo xdoc
  # "--emit", "llvm-bc,link", 
+ # "--emit", "asm", 
  
 ]
