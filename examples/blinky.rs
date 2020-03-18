@@ -1,12 +1,12 @@
 #![no_std]
 #![no_main]
-#![feature(asm)]
 
 extern crate esp32_hal as hal;
 extern crate panic_halt;
 extern crate xtensa_lx6_rt;
 
 use hal::prelude::*;
+use xtensa_lx6_rt::get_cycle_count;
 
 /// The default clock source is the onboard crystal
 /// In most cases 40mhz (but can be as low as 2mhz depending on the board)
@@ -76,19 +76,10 @@ fn disable_timg_wdts(timg0: &mut hal::pac::TIMG0, timg1: &mut hal::pac::TIMG1) {
 /// cycle accurate delay using the cycle counter register
 pub fn delay(clocks: u32) {
     // NOTE: does not account for rollover
-    let target = get_ccount() + clocks;
+    let target = get_cycle_count() + clocks;
     loop {
-        if get_ccount() > target {
+        if get_cycle_count() > target {
             break;
         }
     }
-}
-
-/// Performs a special register read to read the current cycle count.
-/// In the future, this can be precompiled to a archive (.a) and linked to so we don't
-/// have to require the asm nightly feature - see cortex-m-rt for more details
-pub fn get_ccount() -> u32 {
-    let x: u32;
-    unsafe { asm!("rsr.ccount a2" : "={a2}"(x) ) };
-    x
 }

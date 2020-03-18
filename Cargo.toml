@@ -4,8 +4,6 @@ version = "0.1.0"
 authors = ["Scott Mabin <scott@mabez.dev>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 esp32 = { version = "0.2.2" }
 
@@ -15,19 +13,15 @@ version = "0.2.3"
 
 [dev-dependencies]
 panic-halt = "0.2.0"
-xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt", rev = "89cea20c441d4a1624de99c7278df13af5c211a4" }
+xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt", rev = "e5eb8c4cb893e47172e4e59eadd3d4d9c3093a06" }
 
 [[example]]
 name = "blinky"
 
 [profile.dev]
-lto = true 
 incremental = false
-debug = false # debug adds frame pointers - which must be omitted
-codegen-units = 1
 
 [profile.release]
 lto = true
 incremental = false
-debug = false # debug adds frame pointers - which must be omitted
 codegen-units = 1
