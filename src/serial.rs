@@ -143,6 +143,10 @@ pub struct NoRx;
 
 impl PinTx<UART0> for NoTx {}
 impl PinRx<UART0> for NoRx {}
+impl PinTx<UART1> for NoTx {}
+impl PinRx<UART1> for NoRx {}
+impl PinTx<UART2> for NoTx {}
+impl PinRx<UART2> for NoRx {}
 
 /// Serial abstraction
 ///
@@ -172,7 +176,8 @@ macro_rules! halUart {
                     uart: $UARTX,
                     pins: PINS,
                     config: config::Config,
-                    clock_control:  crate::clock_control::ClockControlConfig
+                    clock_control:  crate::clock_control::ClockControlConfig,
+                    dport: &mut esp32::DPORT
                 ) -> Result<Self, Error>
                 where
                     PINS: Pins<$UARTX>,
@@ -180,8 +185,8 @@ macro_rules! halUart {
                         let mut serial=Serial { uart, pins, clock_control };
 
                         serial
-                            .reset()
-                            .enable()
+                            .reset(dport)
+                            .enable(dport)
                             .change_stop_bits(config.stop_bits)
                             .change_data_bits(config.data_bits)
                             .change_parity(config.parity)
@@ -190,31 +195,28 @@ macro_rules! halUart {
                         Ok(serial)
                 }
 
-                fn reset(&mut self) -> &mut Self {
-                    let dportreg = unsafe{ &*DPORT::ptr() };
-                    dportreg.perip_rst_en.modify(|_,w| w.$uartX().set_bit());
-                    dportreg.perip_rst_en.modify(|_,w| w.$uartX().clear_bit());
+                fn reset(&mut self, dport:&mut esp32::DPORT) -> &mut Self {
+                    dport.perip_rst_en.modify(|_,w| w.$uartX().set_bit());
+                    dport.perip_rst_en.modify(|_,w| w.$uartX().clear_bit());
                     self
                 }
 
-                pub fn enable(&mut self) -> &mut Self {
-                    let dportreg = unsafe{ &*DPORT::ptr() };
-                    dportreg.perip_clk_en.modify(|_,w| w.uart_mem().set_bit());
-                    dportreg.perip_clk_en.modify(|_,w| w.$uartX().set_bit());
-                    dportreg.perip_rst_en.modify(|_,w| w.$uartX().clear_bit());
+                pub fn enable(&mut self, dport:&mut esp32::DPORT) -> &mut Self {
+                    dport.perip_clk_en.modify(|_,w| w.uart_mem().set_bit());
+                    dport.perip_clk_en.modify(|_,w| w.$uartX().set_bit());
+                    dport.perip_rst_en.modify(|_,w| w.$uartX().clear_bit());
                     self
                 }
 
-                pub fn disable(&mut self) -> &mut Self {
-                    let dportreg = unsafe{ &*DPORT::ptr() };
-                    dportreg.perip_clk_en.modify(|_,w| w.$uartX().clear_bit());
-                    dportreg.perip_rst_en.modify(|_,w| w.$uartX().set_bit());
+                pub fn disable(&mut self, dport:&mut esp32::DPORT) -> &mut Self {
+                    dport.perip_clk_en.modify(|_,w| w.$uartX().clear_bit());
+                    dport.perip_rst_en.modify(|_,w| w.$uartX().set_bit());
 
-                    if     dportreg.perip_clk_en.read().uart0().bit_is_clear()
-                        && dportreg.perip_clk_en.read().uart1().bit_is_clear()
-                        && dportreg.perip_clk_en.read().uart2().bit_is_clear()
+                    if     dport.perip_clk_en.read().uart0().bit_is_clear()
+                        && dport.perip_clk_en.read().uart1().bit_is_clear()
+                        && dport.perip_clk_en.read().uart2().bit_is_clear()
                     {
-                        dportreg.perip_clk_en.modify(|_,w| w.uart_mem().clear_bit());
+                        dport.perip_clk_en.modify(|_,w| w.uart_mem().clear_bit());
                     }
                     self
                 }

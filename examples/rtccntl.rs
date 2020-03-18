@@ -3,22 +3,23 @@
 
 use core::fmt::Write;
 use core::panic::PanicInfo;
-use embedded_hal::watchdog::*;
-use esp32;
-use esp32_hal::clock_control::*;
+
+use esp32_hal::prelude::*;
+
+use esp32_hal::clock_control::{delay, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
-use esp32_hal::units::*;
 
 const BLINK_HZ: Hertz = Hertz(1);
 
-pub struct Context {
+struct Context {
     watchdog: esp32_hal::clock_control::watchdog::WatchDog,
     rx: esp32_hal::serial::Rx<esp32::UART0>,
     tx: esp32_hal::serial::Tx<esp32::UART0>,
 }
 
-pub static GLOBAL_CONTEXT: spin::Mutex<Option<Context>> = spin::Mutex::new(None);
+// TODO: replace spinning mutex as it is not thread or interrupt safe
+static GLOBAL_CONTEXT: spin::Mutex<Option<Context>> = spin::Mutex::new(None);
 
 #[no_mangle]
 fn main() -> ! {
@@ -27,7 +28,7 @@ fn main() -> ! {
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
 
-    let (_dport, dport_clock_control) = dp.DPORT.split();
+    let (mut dport, mut dport_clock_control) = dp.DPORT.split();
 
     // (https://github.com/espressif/openocd-esp32/blob/97ba3a6bb9eaa898d91df923bbedddfeaaaf28c9/src/target/esp32.c#L431)
     // openocd disables the watchdog timers on halt
@@ -48,6 +49,7 @@ fn main() -> ! {
         (NoTx, NoRx),
         Config::default(),
         clock_control_config,
+        &mut dport,
     )
     .unwrap();
 
