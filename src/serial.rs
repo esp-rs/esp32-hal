@@ -16,7 +16,7 @@ use core::marker::PhantomData;
 
 use embedded_hal::serial;
 
-use crate::esp32::{DPORT, UART0, UART1, UART2};
+use crate::esp32::{UART0, UART1, UART2};
 use crate::units::*;
 
 /// Serial error

@@ -28,7 +28,7 @@ fn main() -> ! {
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
 
-    let (mut dport, mut dport_clock_control) = dp.DPORT.split();
+    let (mut dport, dport_clock_control) = dp.DPORT.split();
 
     // (https://github.com/espressif/openocd-esp32/blob/97ba3a6bb9eaa898d91df923bbedddfeaaaf28c9/src/target/esp32.c#L431)
     // openocd disables the watchdog timers on halt

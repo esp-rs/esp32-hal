@@ -48,15 +48,6 @@ fn main() -> ! {
     )
     .unwrap();
 
-    let serial1 = Serial::uart1(
-        dp.UART1,
-        (NoTx, NoRx),
-        Config::default(),
-        clkcntrl_config,
-        &mut dport,
-    )
-    .unwrap();
-
     let (mut tx, mut rx) = serial.split();
 
     writeln!(tx, "\n\nESP32 Started\n\n").unwrap();
