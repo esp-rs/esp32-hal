@@ -12,15 +12,8 @@ use esp32_hal::units::*;
 
 const BLINK_HZ: Hertz = Hertz(1);
 
-const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
-
 pub struct Context {
     watchdog: esp32_hal::clock_control::watchdog::WatchDog,
-    /*  uart0: esp32_hal::serial::Serial<
-        'a,
-        esp32::UART0,
-        (esp32_hal::serial::NoTx, esp32_hal::serial::NoRx),
-    >,*/
     rx: esp32_hal::serial::Rx<esp32::UART0>,
     tx: esp32_hal::serial::Tx<esp32::UART0>,
 }
@@ -43,13 +36,13 @@ fn main() -> ! {
 
     disable_timg_wdts(&mut timg0, &mut timg1);
 
+    // setup clocks & watchdog
     let mut clock_control = ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control);
-
     clock_control.set_cpu_frequency_to_pll(240.MHz()).unwrap();
-
     let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
     watchdog.start(3.s());
 
+    // setup serial controller
     let mut uart0 = Serial::uart0(
         dp.UART0,
         (NoTx, NoRx),
@@ -62,14 +55,17 @@ fn main() -> ! {
 
     let (mut tx, rx) = uart0.split();
 
+    // print startup message
     writeln!(tx, "\n\nReboot!\n").unwrap();
 
     writeln!(tx, "Running on core {:0x}\n", xtensa_lx6_rt::get_core_id()).unwrap();
     writeln!(tx, "{:?}\n", clock_control_config).unwrap();
     writeln!(tx, "{:?}\n", watchdog.config().unwrap()).unwrap();
 
+    // move to global context to allow access in panic handler
     *GLOBAL_CONTEXT.lock() = Some(Context { watchdog, rx, tx });
 
+    // uncomment next line to test panic exit
     // panic!("panic test");
 
     let mut x = 1;
@@ -95,6 +91,8 @@ fn main() -> ! {
         GLOBAL_CONTEXT.lock().as_mut().unwrap().watchdog.feed();
     }
 }
+
+const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
 fn disable_timg_wdts(timg0: &mut esp32::TIMG0, timg1: &mut esp32::TIMG1) {
     timg0

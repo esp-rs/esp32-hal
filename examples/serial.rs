@@ -5,21 +5,15 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use embedded_hal::watchdog::WatchdogDisable;
-use esp32;
-use esp32_hal::clock_control::delay_cycles;
+use esp32_hal::clock_control::delay;
 use esp32_hal::dport::Split;
 use esp32_hal::gpio::GpioExt;
 use esp32_hal::hal::digital::v2::OutputPin;
 use esp32_hal::hal::serial::Read as _;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::units::*;
 
-/// The default clock source is the onboard crystal
-/// In most cases 40mhz (but can be as low as 2mhz depending on the board)
-const CORE_HZ: u32 = 40_000_000;
-
-const BLINK_HZ: u32 = CORE_HZ / 1;
-
-const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
+const BLINK_HZ: Hertz = Hertz(2);
 
 #[no_mangle]
 fn main() -> ! {
@@ -59,11 +53,13 @@ fn main() -> ! {
         writeln!(tx, "").unwrap();
 
         blinky.set_high().unwrap();
-        delay_cycles(BLINK_HZ);
+        delay((Hertz(1_000_000) / BLINK_HZ).us());
         blinky.set_low().unwrap();
-        delay_cycles(BLINK_HZ);
+        delay((Hertz(1_000_000) / BLINK_HZ).us());
     }
 }
+
+const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
 fn disable_timg_wdts(timg0: &mut esp32::TIMG0, timg1: &mut esp32::TIMG1) {
     timg0
