@@ -42,7 +42,7 @@
         {
             "label": "flash example",
             "type": "shell",
-            "command": "./flash ${input:example}",
+            "command": "./flash -t ${input:example}",
             "problemMatcher": {
                 "base": "$rustc",
                 "fileLocation": [
