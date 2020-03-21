@@ -1,19 +1,93 @@
 #!/bin/bash
 
-cargo xbuild --example $1
+# port esp32 is connected to
+PORT=/dev/ttyUSB0
+
+# debug or release build
+TYPE=debug
+
+showhelp() {
+cat << EOF
+Usage: flash -hrt -p <serial port> <example>
+
+-h, --help                  Display Help
+-r, --release               Build in release mode
+-p, --port <serial port>    Set serial port (default: $PORT)
+-t, --terminal              Open terminal program after flashing
+EOF
+}
+
+# get command line options
+options=$(getopt -l "help,release,port:,terminal" -o "hrp:t" -a -- "$@")
 
 if [ $? -ne 0 ]; then
-    exit
+    echo
+    showhelp
+    exit 1
 fi
 
+eval set -- "$options"
+
+
+while true
+do
+    case $1 in
+    -h|--help)
+        showhelp
+        exit 0
+        ;;
+    -r|--release)
+        export TYPE=release
+        ;;
+    -p|--port)
+        export PORT=$1
+        ;;
+    -t|--terminal)
+        export TERMINAL=1
+        ;;
+    --)
+        shift
+        break;;
+    esac
+shift
+done
+
+if [[ $# -ne 1 ]]
+then
+    echo "*** Too many arguments" >&2
+    echo
+    showhelp
+    exit 1
+fi
 
 # change this for release flashes
-BIN_PATH=target/xtensa-esp32-none-elf/debug/examples/$1
+BIN_PATH=target/xtensa-esp32-none-elf/$TYPE/examples/$1
 
-rm $BIN_PATH.bin
+# build the specific example
+if [ "$TYPE" = "release" ]
+then 
+    cargo xbuild --example $1 --release
+else
+    cargo xbuild --example $1
+fi
+
+# if cargo returned an error quit the script
+if [ $? -ne 0 ]; then
+    exit 1
+fi
 
 # convert to bin
+rm $BIN_PATH.bin
 esptool --chip esp32 elf2image --flash_mode="dio" --flash_freq "40m" --flash_size "4MB" -o $BIN_PATH.bin $BIN_PATH
 
+# kill terminal programs using the same port
+ps -ef|grep $PORT|grep -v grep |awk '{print $2}'|xargs -r kill
+
 # flash
-esptool --chip esp32 --port /dev/ttyUSB0 --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 $BIN_PATH.bin
+esptool --chip esp32 --port $PORT --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 $BIN_PATH.bin
+
+# start terminal program
+if [[ -v TERMINAL ]]
+then
+    gnome-terminal --geometry 200x15+0+2000 -- picocom -b 115200 /dev/ttyUSB0 --imap lfcrlf 2>/dev/null
+fi
