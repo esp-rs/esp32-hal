@@ -13,14 +13,15 @@
 //! - Low Power Clock (LPClock, regs: DPORT_BT_LPCK_DIV_FRAC_REG,DPORT_BT_LPCK_DIV_INT_REG)
 //! - LED clock selection in ledc peripheral
 
+mod pll;
+pub mod watchdog;
+
 use crate::prelude::*;
 use esp32::dport::cpu_per_conf::CPUPERIOD_SEL_A;
 use esp32::generic::Variant::*;
 use esp32::rtccntl::bias_conf::*;
 use esp32::rtccntl::clk_conf::*;
 use esp32::{APB_CTRL, RTCCNTL};
-
-pub mod watchdog;
 
 type CoreBias = DBIAS_WAK_A;
 
@@ -62,66 +63,11 @@ const RTC_SLOW_CLK_FREQ_8MD256: Hertz = Hertz(RTC_FAST_CLK_FREQ_8M.0 / 256);
 
 /* Delays for various clock sources to be enabled/switched.
  * All values are in microseconds.
- * TODO: some of these are excessive, and should be reduced.
+ * TODO according to esp-idf: some of these are excessive, and should be reduced.
  */
-#[allow(dead_code)]
-const DELAY_PLL_DBIAS_RAISE: MicroSeconds = MicroSeconds(3);
-const DELAY_PLL_ENABLE_WITH_150K: MicroSeconds = MicroSeconds(80);
-const DELAY_PLL_ENABLE_WITH_32K: MicroSeconds = MicroSeconds(160);
 const DELAY_FAST_CLK_SWITCH: MicroSeconds = MicroSeconds(3);
 const DELAY_SLOW_CLK_SWITCH: MicroSeconds = MicroSeconds(300);
 const DELAY_8M_ENABLE: MicroSeconds = MicroSeconds(50);
-
-const PLL_I2C_BLOCK: u8 = 0x66;
-const PLL_I2C_HOSTID: u8 = 4;
-
-mod pll_i2c {
-    pub const IR_CAL_DELAY: u8 = 0;
-    pub const IR_CAL_EXT_CAP: u8 = 1;
-    pub const OC_LREF: u8 = 2;
-    pub const OC_DIV_7_0: u8 = 3;
-    pub const OC_ENB_FCAL: u8 = 4;
-    pub const OC_DCUR: u8 = 5;
-    pub const BBADC_DSMP: u8 = 9;
-    pub const OC_ENB_VCON: u8 = 10;
-    pub const ENDIV5: u8 = 11;
-    pub const BBADC_CAL_7_0: u8 = 12;
-}
-
-mod pll_val {
-    pub const ENDIV5_VAL_320M: u8 = 0x43;
-    pub const BBADC_DSMP_VAL_320M: u8 = 0x84;
-    pub const ENDIV5_VAL_480M: u8 = 0xc3;
-    pub const BBADC_DSMP_VAL_480M: u8 = 0x74;
-    pub const IR_CAL_DELAY_VAL: u8 = 0x18;
-    pub const IR_CAL_EXT_CAP_VAL: u8 = 0x20;
-    pub const OC_ENB_FCAL_VAL: u8 = 0x9a;
-    pub const OC_ENB_VCON_VAL: u8 = 0x00;
-    pub const BBADC_CAL_7_0_VAL: u8 = 0x00;
-}
-
-// div_ref, div7_0, div10_8, lref,dcur,bw
-struct PLLConfig(u8, u8, u8, u8, u8, u8);
-
-impl PLLConfig {
-    const PLL_320M_XTAL_40M: PLLConfig = PLLConfig(0, 32, 0, 0, 6, 3);
-    const PLL_320M_XTAL_26M: PLLConfig = PLLConfig(12, 224, 4, 1, 0, 1);
-    const PLL_320M_XTAL_24M: PLLConfig = PLLConfig(11, 224, 4, 1, 0, 1);
-
-    const PLL_480M_XTAL_40M: PLLConfig = PLLConfig(0, 28, 0, 0, 6, 3);
-    const PLL_480M_XTAL_26M: PLLConfig = PLLConfig(12, 144, 4, 1, 0, 1);
-    const PLL_480M_XTAL_24M: PLLConfig = PLLConfig(11, 144, 4, 1, 0, 1);
-
-    fn get_lref(&self) -> u8 {
-        (self.3 << 7) | (self.2 << 4) | self.0
-    }
-    fn get_div7_0(&self) -> u8 {
-        self.1
-    }
-    fn get_dcur(&self) -> u8 {
-        (self.5 << 6) | self.4
-    }
-}
 
 /// CPU/APB/REF clock source
 #[derive(Debug, Copy, Clone)]
@@ -552,10 +498,13 @@ impl ClockControl {
     where
         T: Into<Hertz> + Copy + PartialOrd,
     {
-        let (pll_frequency_high, cpuperiod_sel) = match frequency.into() {
-            f if f <= 80.MHz().into() => (false, CPUPERIOD_SEL_A::SEL_80),
-            f if f <= 160.MHz().into() => (false, CPUPERIOD_SEL_A::SEL_160),
-            f if f <= 240.MHz().into() => (true, CPUPERIOD_SEL_A::SEL_240),
+        // TODO: adjust bias if flash at 80MHz
+        let (pll_frequency_high, cpuperiod_sel, dbias) = match frequency.into() {
+            f if f <= 80.MHz().into() => (false, CPUPERIOD_SEL_A::SEL_80, DIG_DBIAS_80M_160M),
+            f if f <= 160.MHz().into() => (false, CPUPERIOD_SEL_A::SEL_160, DIG_DBIAS_80M_160M),
+            f if f <= 240.MHz().into() => {
+                (true, CPUPERIOD_SEL_A::SEL_240, DIG_DBIAS_240M_OR_FLASH_80M)
+            }
             _ => {
                 return Err(Error::FrequencyTooHigh);
             }
@@ -567,6 +516,10 @@ impl ClockControl {
         self.dport_control
             .cpu_per_conf()
             .modify(|_, w| w.cpuperiod_sel().variant(cpuperiod_sel));
+
+        self.rtc_control
+            .bias_conf
+            .modify(|_, w| w.dig_dbias_wak().variant(dbias));
 
         self.set_pll_frequency(pll_frequency_high)?;
 
@@ -775,94 +728,5 @@ impl ClockControl {
             CPUSource::RTC8M => RTC_FAST_CLK_FREQ_8M,
             CPUSource::APLL => unimplemented!(),
         }
-    }
-
-    fn write_pll_i2c(address: u8, data: u8) {
-        unsafe {
-            crate::rom::rom_i2c_writeReg(PLL_I2C_BLOCK, PLL_I2C_HOSTID, address, data);
-        }
-    }
-
-    fn pll_disable(&mut self) {
-        self.rtc_control.options0.modify(|_, w| {
-            w.bias_i2c_force_pd()
-                // is APLL under force power down? then also power down the internal I2C bus
-                .bit(self.rtc_control.ana_conf.read().plla_force_pd().bit())
-                .bb_i2c_force_pd()
-                .set_bit()
-                .bbpll_force_pd()
-                .set_bit()
-                .bbpll_i2c_force_pd()
-                .set_bit()
-        });
-    }
-
-    fn pll_enable(&mut self) {
-        self.rtc_control.options0.modify(|_, w| {
-            w.bias_i2c_force_pd()
-                .clear_bit()
-                .bb_i2c_force_pd()
-                .clear_bit()
-                .bbpll_force_pd()
-                .clear_bit()
-                .bbpll_i2c_force_pd()
-                .clear_bit()
-        });
-
-        /* reset BBPLL configuration */
-        Self::write_pll_i2c(pll_i2c::IR_CAL_DELAY, pll_val::IR_CAL_DELAY_VAL);
-        Self::write_pll_i2c(pll_i2c::IR_CAL_EXT_CAP, pll_val::IR_CAL_EXT_CAP_VAL);
-        Self::write_pll_i2c(pll_i2c::OC_ENB_FCAL, pll_val::OC_ENB_FCAL_VAL);
-        Self::write_pll_i2c(pll_i2c::OC_ENB_VCON, pll_val::OC_ENB_VCON_VAL);
-        Self::write_pll_i2c(pll_i2c::BBADC_CAL_7_0, pll_val::BBADC_CAL_7_0_VAL);
-    }
-
-    pub fn set_pll_frequency(&mut self, high: bool) -> Result<(), Error> {
-        let pll_config = match high {
-            false => {
-                // TODO: adjust bias if flash at 80MHz
-                self.rtc_control
-                    .bias_conf
-                    .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_80M_160M));
-
-                Self::write_pll_i2c(pll_i2c::ENDIV5, pll_val::ENDIV5_VAL_320M);
-                Self::write_pll_i2c(pll_i2c::BBADC_DSMP, pll_val::BBADC_DSMP_VAL_320M);
-
-                match self.xtal_frequency() {
-                    Hertz(40_000_000) => PLLConfig::PLL_320M_XTAL_40M,
-                    Hertz(26_000_000) => PLLConfig::PLL_320M_XTAL_26M,
-                    Hertz(24_000_000) => PLLConfig::PLL_320M_XTAL_24M,
-                    _ => return Err(Error::UnsupportedPLLConfig),
-                }
-            }
-            true => {
-                self.rtc_control
-                    .bias_conf
-                    .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_240M_OR_FLASH_80M));
-
-                Self::write_pll_i2c(pll_i2c::ENDIV5, pll_val::ENDIV5_VAL_480M);
-                Self::write_pll_i2c(pll_i2c::BBADC_DSMP, pll_val::BBADC_DSMP_VAL_480M);
-
-                match self.xtal_frequency() {
-                    Hertz(40_000_000) => PLLConfig::PLL_480M_XTAL_40M,
-                    Hertz(26_000_000) => PLLConfig::PLL_480M_XTAL_26M,
-                    Hertz(24_000_000) => PLLConfig::PLL_480M_XTAL_24M,
-                    _ => return Err(Error::UnsupportedPLLConfig),
-                }
-            }
-        };
-
-        Self::write_pll_i2c(pll_i2c::OC_LREF, pll_config.get_lref());
-        Self::write_pll_i2c(pll_i2c::OC_DIV_7_0, pll_config.get_div7_0());
-        Self::write_pll_i2c(pll_i2c::OC_DCUR, pll_config.get_dcur());
-
-        let delay_us = if let Ok(SlowRTCSource::RTC150k) = self.slow_rtc_source() {
-            DELAY_PLL_ENABLE_WITH_150K
-        } else {
-            DELAY_PLL_ENABLE_WITH_32K
-        };
-
-        self.delay(delay_us);
-        Ok(())
     }
 }
