@@ -3,22 +3,30 @@
 # port esp32 is connected to
 PORT=/dev/ttyUSB0
 
+# baud rate for programming
+FLASH_BAUDRATE=115200
+
+# baud rate for terminal
+TERM_BAUDRATE=115200
+
 # debug or release build
 TYPE=debug
 
 showhelp() {
 cat << EOF
-Usage: flash -hrt -p <serial port> <example>
+Usage: flash -hrtb -p <serial port> <example>
 
--h, --help                  Display Help
--r, --release               Build in release mode
--p, --port <serial port>    Set serial port (default: $PORT)
--t, --terminal              Open terminal program after flashing
+-h, --help                      Display Help
+-r, --release                   Build in release mode
+-p, --port <serial port>        Set serial port (default: $PORT)
+-b, --baudrate <baudrate>       Set baudrate for flasinh (default: $FLASH_BAUDRATE)
+  , --termbaudrate <baudrate>   Set baudrate for flasinh (default: $FLASH_BAUDRATE)
+-t, --terminal                  Open terminal program after flashing
 EOF
 }
 
 # get command line options
-options=$(getopt -l "help,release,port:,terminal" -o "hrp:t" -a -- "$@")
+options=$(getopt -l "help,release,port:,terminal,baudrate:,termbaudrate:" -o "hrp:tb:" -a -- "$@")
 
 if [ $? -ne 0 ]; then
     echo
@@ -40,10 +48,19 @@ do
         export TYPE=release
         ;;
     -p|--port)
+        shift
         export PORT=$1
         ;;
     -t|--terminal)
         export TERMINAL=1
+        ;;
+    -b|--baudrate)
+        shift
+        export FLASH_BAUDRATE=$1
+        ;;
+    --termbaudrate)
+        shift
+        export TERM_BAUDRATE=$1
         ;;
     --)
         shift
@@ -54,7 +71,7 @@ done
 
 if [[ $# -ne 1 ]]
 then
-    echo "*** Too many arguments" >&2
+    echo "*** Wrong number of arguments" >&2
     echo
     showhelp
     exit 1
@@ -81,13 +98,13 @@ rm $BIN_PATH.bin
 esptool --chip esp32 elf2image --flash_mode="dio" --flash_freq "40m" --flash_size "4MB" -o $BIN_PATH.bin $BIN_PATH
 
 # kill terminal programs using the same port
-ps -ef|grep $PORT|grep -v grep |awk '{print $2}'|xargs -r kill
+ps -ef|grep $PORT|egrep -v "$0|grep" |awk '{print $2}'|xargs -r kill
 
 # flash
-esptool --chip esp32 --port $PORT --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 $BIN_PATH.bin
+esptool --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 $BIN_PATH.bin
 
 # start terminal program
 if [[ -v TERMINAL ]]
 then
-    gnome-terminal --geometry 200x15+0+2000 -- picocom -b 115200 /dev/ttyUSB0 --imap lfcrlf 2>/dev/null
+    gnome-terminal --geometry 200x15+0+2000 -- picocom -b $TERM_BAUDRATE /dev/ttyUSB0 --imap lfcrlf 2>/dev/null
 fi
