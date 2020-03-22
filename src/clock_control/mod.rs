@@ -496,10 +496,18 @@ impl ClockControl {
 
         let div_1m = actual_frequency / REF_CLK_FREQ_1M;
 
+        // select appropriate voltage
+        if actual_frequency > 2.MHz().into() {
+            self.rtc_control
+                .bias_conf
+                .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_XTAL))
+        };
+
         // set divider from XTAL to CPU clock
         self.apb_control
             .sysclk_conf
             .modify(|_, w| unsafe { w.pre_div_cnt().bits(div as u16 - 1) });
+
         // adjust ref tick
         self.apb_control
             .xtal_tick_conf
@@ -510,17 +518,14 @@ impl ClockControl {
             .clk_conf
             .modify(|_, w| w.soc_clk_sel().xtal());
 
-        self.pll_disable();
-
         // select appropriate voltage
-        self.rtc_control.bias_conf.modify(|_, w| {
-            w.dig_dbias_wak()
-                .variant(if actual_frequency < 2.MHz().into() {
-                    DIG_DBIAS_2M
-                } else {
-                    DIG_DBIAS_XTAL
-                })
-        });
+        if actual_frequency <= 2.MHz().into() {
+            self.rtc_control
+                .bias_conf
+                .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_2M))
+        };
+
+        self.pll_disable();
 
         self.set_apb_frequency_to_scratch(actual_frequency);
 
@@ -548,15 +553,16 @@ impl ClockControl {
             _ => (true, CPUPERIOD_SEL_A::SEL_240, DIG_DBIAS_240M_OR_FLASH_80M),
         };
 
+        // TODO: optimize speed of switching temporarily to xtal when pll frequency needs to change
+        if pll_frequency_high != (self.pll_frequency() == 480.MHz().into()) {
+            self.set_cpu_frequency_to_xtal(self.xtal_frequency());
+        }
+
         self.pll_enable();
         self.wait_for_slow_cycle();
 
-        self.dport_control
-            .cpu_per_conf()
-            .modify(|_, w| w.cpuperiod_sel().variant(cpuperiod_sel));
-
         // if high frequency requested raise voltage first
-        if (pll_frequency_high) {
+        if pll_frequency_high {
             self.rtc_control
                 .bias_conf
                 .modify(|_, w| w.dig_dbias_wak().variant(dbias));
@@ -566,13 +572,15 @@ impl ClockControl {
 
         self.set_pll_frequency(pll_frequency_high)?;
 
+        self.dport_control
+            .cpu_per_conf()
+            .modify(|_, w| w.cpuperiod_sel().variant(cpuperiod_sel));
+
         // if low frequency requested lower voltage after
-        if (!pll_frequency_high) {
+        if !pll_frequency_high {
             self.rtc_control
                 .bias_conf
                 .modify(|_, w| w.dig_dbias_wak().variant(dbias));
-
-            delay(DELAY_DBIAS_RAISE);
         }
 
         // switch clock source
@@ -580,9 +588,9 @@ impl ClockControl {
             .clk_conf
             .modify(|_, w| w.soc_clk_sel().pll());
 
-        self.set_apb_frequency_to_scratch(80.MHz());
         self.wait_for_slow_cycle();
 
+        self.set_apb_frequency_to_scratch(80.MHz());
         self.update_current_config();
         Ok(self)
     }
