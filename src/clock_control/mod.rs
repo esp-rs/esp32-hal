@@ -24,6 +24,8 @@ pub mod watchdog;
 
 type CoreBias = DBIAS_WAK_A;
 
+const DEFAULT_XTAL_FREQUENCY: Hertz = Hertz(26_000_000);
+
 #[allow(dead_code)]
 const DIG_DBIAS_240M_OR_FLASH_80M: CoreBias = CoreBias::BIAS_1V25;
 #[allow(dead_code)]
@@ -41,6 +43,8 @@ pub enum Error {
     UnsupportedPLLConfig,
     FrequencyTooHigh,
     FrequencyTooLow,
+    LockAlreadyReleased,
+    TooManyCallBacks,
 }
 
 /// Reference clock frequency always at 1MHz
@@ -68,43 +72,48 @@ const DELAY_FAST_CLK_SWITCH: MicroSeconds = MicroSeconds(3);
 const DELAY_SLOW_CLK_SWITCH: MicroSeconds = MicroSeconds(300);
 const DELAY_8M_ENABLE: MicroSeconds = MicroSeconds(50);
 
-const PLL_BLOCK: u8 = 0x66;
-const PLL_HOSTID: u8 = 4;
+const PLL_I2C_BLOCK: u8 = 0x66;
+const PLL_I2C_HOSTID: u8 = 4;
 
-struct PllI2C {}
-impl PllI2C {
-    const IR_CAL_DELAY: u8 = 0;
-    const IR_CAL_EXT_CAP: u8 = 1;
-    const OC_LREF: u8 = 2;
-    const OC_DIV_7_0: u8 = 3;
-    const OC_ENB_FCAL: u8 = 4;
-    const OC_DCUR: u8 = 5;
-    const BBADC_DSMP: u8 = 9;
-    const OC_ENB_VCON: u8 = 10;
-    const ENDIV5: u8 = 11;
-    const BBADC_CAL_7_0: u8 = 12;
+mod pll_i2c {
+    pub const IR_CAL_DELAY: u8 = 0;
+    pub const IR_CAL_EXT_CAP: u8 = 1;
+    pub const OC_LREF: u8 = 2;
+    pub const OC_DIV_7_0: u8 = 3;
+    pub const OC_ENB_FCAL: u8 = 4;
+    pub const OC_DCUR: u8 = 5;
+    pub const BBADC_DSMP: u8 = 9;
+    pub const OC_ENB_VCON: u8 = 10;
+    pub const ENDIV5: u8 = 11;
+    pub const BBADC_CAL_7_0: u8 = 12;
 }
 
-struct PllVal {}
-impl PllVal {
-    const ENDIV5_VAL_320M: u8 = 0x43;
-    const BBADC_DSMP_VAL_320M: u8 = 0x84;
-    const ENDIV5_VAL_480M: u8 = 0xc3;
-    const BBADC_DSMP_VAL_480M: u8 = 0x74;
-
-    const IR_CAL_DELAY_VAL: u8 = 0x18;
-    const IR_CAL_EXT_CAP_VAL: u8 = 0x20;
-    const OC_ENB_FCAL_VAL: u8 = 0x9a;
-    const OC_ENB_VCON_VAL: u8 = 0x00;
-    const BBADC_CAL_7_0_VAL: u8 = 0x00;
+mod pll_val {
+    pub const ENDIV5_VAL_320M: u8 = 0x43;
+    pub const BBADC_DSMP_VAL_320M: u8 = 0x84;
+    pub const ENDIV5_VAL_480M: u8 = 0xc3;
+    pub const BBADC_DSMP_VAL_480M: u8 = 0x74;
+    pub const IR_CAL_DELAY_VAL: u8 = 0x18;
+    pub const IR_CAL_EXT_CAP_VAL: u8 = 0x20;
+    pub const OC_ENB_FCAL_VAL: u8 = 0x9a;
+    pub const OC_ENB_VCON_VAL: u8 = 0x00;
+    pub const BBADC_CAL_7_0_VAL: u8 = 0x00;
 }
 
 // div_ref, div7_0, div10_8, lref,dcur,bw
 struct PLLConfig(u8, u8, u8, u8, u8, u8);
 
 impl PLLConfig {
+    const PLL_320M_XTAL_40M: PLLConfig = PLLConfig(0, 32, 0, 0, 6, 3);
+    const PLL_320M_XTAL_26M: PLLConfig = PLLConfig(12, 224, 4, 1, 0, 1);
+    const PLL_320M_XTAL_24M: PLLConfig = PLLConfig(11, 224, 4, 1, 0, 1);
+
+    const PLL_480M_XTAL_40M: PLLConfig = PLLConfig(0, 28, 0, 0, 6, 3);
+    const PLL_480M_XTAL_26M: PLLConfig = PLLConfig(12, 144, 4, 1, 0, 1);
+    const PLL_480M_XTAL_24M: PLLConfig = PLLConfig(11, 144, 4, 1, 0, 1);
+
     fn get_lref(&self) -> u8 {
-        (self.3 << 7) | (self.2 << 7) | (self.0 << 7)
+        (self.3 << 7) | (self.2 << 4) | self.0
     }
     fn get_div7_0(&self) -> u8 {
         self.1
@@ -113,16 +122,6 @@ impl PLLConfig {
         (self.5 << 6) | self.4
     }
 }
-
-const PLL_CONFIG_320M_XTAL_40M: PLLConfig = PLLConfig(0, 32, 0, 0, 6, 3);
-const PLL_CONFIG_320M_XTAL_26M: PLLConfig = PLLConfig(2, 224, 4, 1, 0, 1);
-const PLL_CONFIG_320M_XTAL_24M: PLLConfig = PLLConfig(11, 224, 4, 1, 0, 1);
-const PLL_CONFIG_320M_XTAL_UNKNOWN: PLLConfig = PLLConfig(12, 224, 4, 0, 0, 0);
-
-const PLL_CONFIG_480M_XTAL_40M: PLLConfig = PLLConfig(0, 28, 0, 0, 6, 3);
-const PLL_CONFIG_480M_XTAL_26M: PLLConfig = PLLConfig(12, 144, 4, 1, 0, 1);
-const PLL_CONFIG_480M_XTAL_24M: PLLConfig = PLLConfig(11, 144, 4, 1, 0, 1);
-const PLL_CONFIG_480M_XTAL_UNKNOWN: PLLConfig = PLLConfig(12, 224, 4, 0, 0, 0);
 
 /// CPU/APB/REF clock source
 #[derive(Debug, Copy, Clone)]
@@ -154,14 +153,13 @@ pub enum FastRTCSource {
     /// 8MHz internal oscillator
     RTC8M,
     /// High frequency Xtal (26MHz or 40MHz)
-    Xtal,
+    XtalD4,
 }
 
-/// Clock configuration
-#[derive(Debug, Copy, Clone)]
-pub struct ClockControlConfig {
+#[derive(Debug)]
+struct ClockControlCurrent {
     /// CPU Frequency
-    pub cpu_frequency: Hertz,
+    cpu_frequency: Hertz,
     /// APB Frequency
     pub apb_frequency: Hertz,
     /// REF Frequency
@@ -196,6 +194,184 @@ pub struct ClockControlConfig {
     pub fast_rtc_source: FastRTCSource,
 }
 
+impl Default for ClockControlCurrent {
+    fn default() -> Self {
+        ClockControlCurrent {
+            cpu_frequency: Hertz(0),
+            apb_frequency: Hertz(0),
+            ref_frequency: Hertz(0),
+            apll_frequency: Hertz(0),
+            pll_d2_frequency: Hertz(0),
+            slow_rtc_frequency: Hertz(0),
+            fast_rtc_frequency: Hertz(0),
+            xtal_frequency: Hertz(0),
+            xtal32k_frequency: Hertz(0),
+            rtc8m_frequency: Hertz(0),
+            rtc_frequency: Hertz(0),
+            pll_frequency: Hertz(0),
+
+            cpu_source: CPUSource::Xtal,
+            slow_rtc_source: SlowRTCSource::RTC150k,
+            fast_rtc_source: FastRTCSource::XtalD4,
+        }
+    }
+}
+
+/// Clock configuration
+#[derive(Copy, Clone)]
+pub struct ClockControlConfig {}
+
+fn do_callbacks() {
+    // copy the callbacks to prevent needing to have interrupts disabled the entire time
+    // as callback cannot be deleted this is ok.
+    let (nr, callbacks) = xtensa_lx6_rt::interrupt::free(|_| unsafe {
+        let nr = NR_CALLBACKS.lock();
+        (*nr, CALLBACKS)
+    });
+
+    for i in 0..nr {
+        callbacks[i]();
+    }
+}
+
+use core::fmt::Write;
+
+static mut CLOCK_CONTROL: Option<ClockControl> = None;
+
+fn lock_apb_frequency_start() {
+    do_callbacks()
+}
+fn lock_apb_frequency_stop() {
+    do_callbacks()
+}
+fn lock_cpu_frequency_start() {
+    do_callbacks()
+}
+fn lock_cpu_frequency_stop() {
+    do_callbacks()
+}
+fn lock_awake_start() {
+    do_callbacks()
+}
+fn lock_awake_stop() {
+    do_callbacks()
+}
+
+static LOCK_APB_FREQUENCY: crate::lock_execute::LockExecute =
+    crate::lock_execute::LockExecute::new(lock_apb_frequency_start, lock_apb_frequency_stop);
+static LOCK_CPU_FREQUENCY: crate::lock_execute::LockExecute =
+    crate::lock_execute::LockExecute::new(lock_cpu_frequency_start, lock_cpu_frequency_stop);
+static LOCK_AWAKE: crate::lock_execute::LockExecute =
+    crate::lock_execute::LockExecute::new(lock_awake_start, lock_awake_stop);
+
+const MAX_CALLBACKS: usize = 10;
+static mut CALLBACKS: [&dyn Fn(); MAX_CALLBACKS] = [&|| {}; MAX_CALLBACKS];
+
+static mut NR_CALLBACKS: spin::Mutex<usize> = spin::Mutex::new(0);
+
+impl<'a> ClockControlConfig {
+    pub fn cpu_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.cpu_frequency }
+    }
+    pub fn apb_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.apb_frequency }
+    }
+    pub fn min_cpu_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().min_cpu_frequency }
+    }
+    pub fn max_cpu_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().max_cpu_frequency }
+    }
+    pub fn min_apb_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().min_cpu_frequency }
+    }
+    pub fn max_apb_frequency(&self) -> Hertz {
+        Hertz(80_000_000)
+    }
+    pub fn ref_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.ref_frequency }
+    }
+    pub fn slow_rtc_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.slow_rtc_frequency }
+    }
+    pub fn fast_rtc_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.fast_rtc_frequency }
+    }
+    pub fn apll_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.apll_frequency }
+    }
+    pub fn pll_d2_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.pll_d2_frequency }
+    }
+    pub fn xtal_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.xtal_frequency }
+    }
+    pub fn xtal32k_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.xtal32k_frequency }
+    }
+    pub fn pll_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.pll_frequency }
+    }
+    pub fn rtc8m_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.rtc8m_frequency }
+    }
+    pub fn rtc_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.rtc_frequency }
+    }
+    pub fn cpu_source(&self) -> CPUSource {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.cpu_source }
+    }
+    pub fn slow_rtc_source(&self) -> SlowRTCSource {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.slow_rtc_source }
+    }
+    pub fn fast_rtc_source(&self) -> FastRTCSource {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.fast_rtc_source }
+    }
+
+    pub fn lock_apb_frequency(&self) -> crate::lock_execute::LockExecuteGuard<'a> {
+        LOCK_APB_FREQUENCY.lock()
+    }
+    pub fn lock_cpu_frequency(&self) -> crate::lock_execute::LockExecuteGuard<'a> {
+        LOCK_CPU_FREQUENCY.lock()
+    }
+    pub fn lock_awake(&self) -> crate::lock_execute::LockExecuteGuard<'a> {
+        LOCK_AWAKE.lock()
+    }
+
+    pub fn add_callback<F>(&self, f: &'static F) -> Result<(), Error>
+    where
+        F: Fn(),
+    {
+        // need to disable interrupts, because otherwise deadlock can arise
+        // when interrupt is called after mutex is obtained and interrupt
+        // routine also adds callback
+        xtensa_lx6_rt::interrupt::free(|_| {
+            let mut nr = unsafe { NR_CALLBACKS.lock() };
+
+            if *nr >= MAX_CALLBACKS {
+                return Err(Error::TooManyCallBacks);
+            }
+
+            unsafe { CALLBACKS[*nr] = f };
+            *nr += 1;
+            Ok(())
+        })
+    }
+}
+
+use core::fmt;
+
+impl fmt::Debug for ClockControlConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unsafe {
+            f.write_fmt(format_args!(
+                "{:?}",
+                CLOCK_CONTROL.as_ref().unwrap().current
+            ))
+        }
+    }
+}
+
 /// cycle accurate delay using the cycle counter register
 pub fn delay_cycles(clocks: u32) {
     let start = xtensa_lx6_rt::get_cycle_count();
@@ -206,21 +382,23 @@ pub fn delay_cycles(clocks: u32) {
     }
 }
 
-static mut CPU_FREQUENCY: Hertz = Hertz(40_000_000);
-
-pub fn time_to_cpu_cycles<T: Into<NanoSeconds>>(time: T) -> u32 {
-    unsafe { (((CPU_FREQUENCY / 1000000.Hz()) as u64) * ((time.into() / 1000.ns()) as u64)) as u32 }
-}
-
-pub fn delay<T: Into<NanoSeconds>>(time: T) {
-    delay_cycles(time_to_cpu_cycles(time));
-}
-
 /// Clock Control
 pub struct ClockControl {
     rtc_control: RTCCNTL,
     apb_control: APB_CTRL,
     dport_control: crate::dport::ClockControl,
+
+    min_cpu_frequency: Hertz,
+    min_cpu_source: CPUSource,
+    max_cpu_frequency: Hertz,
+    max_cpu_source: CPUSource,
+    light_sleep_enabled: bool,
+
+    current: ClockControlCurrent,
+}
+
+pub fn delay<T: Into<NanoSeconds>>(time: T) {
+    unsafe { CLOCK_CONTROL.as_ref().unwrap().delay(time) };
 }
 
 impl ClockControl {
@@ -234,14 +412,28 @@ impl ClockControl {
             rtc_control,
             apb_control,
             dport_control,
+            min_cpu_frequency: Hertz(2_000_000),
+            min_cpu_source: CPUSource::Xtal,
+            max_cpu_frequency: Hertz(240_000_000),
+            max_cpu_source: CPUSource::PLL,
+            light_sleep_enabled: false,
+            current: ClockControlCurrent::default(),
         };
         cc.init();
-
         cc
     }
 
     pub fn freeze(self) -> Result<(ClockControlConfig, watchdog::WatchDog), Error> {
-        let res = ClockControlConfig {
+        // can only occur one time as ClockControl is moved by this function and
+        // the RTCNTRL and APBCNTRL peripherals are moved when ClockControl is created
+        unsafe { CLOCK_CONTROL = Some(self) };
+
+        let res = ClockControlConfig {};
+        Ok((res, watchdog::WatchDog::new(res)))
+    }
+
+    fn update_current_config(&mut self) {
+        self.current = ClockControlCurrent {
             cpu_frequency: self.cpu_frequency(),
             apb_frequency: self.apb_frequency(),
             ref_frequency: self.ref_frequency(),
@@ -258,11 +450,9 @@ impl ClockControl {
             rtc_frequency: 0.Hz(),
 
             cpu_source: self.cpu_source(),
-            slow_rtc_source: self.slow_rtc_source()?,
+            slow_rtc_source: self.slow_rtc_source().unwrap_or(SlowRTCSource::RTC150k),
             fast_rtc_source: self.fast_rtc_source(),
         };
-
-        Ok((res, watchdog::WatchDog::new(res)))
     }
 
     /// Initialize clock configuration
@@ -272,7 +462,18 @@ impl ClockControl {
                 .unwrap();
         }
 
+        self.update_current_config();
+
         self
+    }
+
+    fn time_to_cpu_cycles<T: Into<NanoSeconds>>(&self, time: T) -> u32 {
+        (((self.current.cpu_frequency / 1000000.Hz()) as u64) * (u32::from(time.into()) as u64)
+            / 1000) as u32
+    }
+
+    fn delay<T: Into<NanoSeconds>>(&self, time: T) {
+        delay_cycles(self.time_to_cpu_cycles(time));
     }
 
     /// Check if a value from RTC_XTAL_FREQ_REG or RTC_APB_FREQ_REG are valid clocks
@@ -280,21 +481,14 @@ impl ClockControl {
         (val & 0xffff) == ((val >> 16) & 0xffff) && val != 0 && val != u32::max_value()
     }
 
-    /// Sets the CPU frequency to closest possible frequency (rounding up).
+    /// Sets the CPU frequency using the Xtal to closest possible frequency (rounding up).
     ///
-    /// Up to the Xtal frequency this is used directly (with possibly an integer division).
-    /// The AHB frequency follows the CPU frequency.
+    /// The APB frequency follows the CPU frequency.
     /// Below 10MHz, the ref clock is not guaranteed to be at 1MHz
     ///
-    /// Above the PLL is used and 80, 160, 240MHz are possible configurations.
-    /// The AHB frequency is fixed at 80MHz.
-    ///
-    /// So for a 40Mhz Xtal, valid frequencies are: 240, 160, 80, 40, 20, 13.33, 10, 8, 6.67, 5.71, 5, 4.44, 4, ...
-    /// So for a 26Mhz Xtal, valid frequencies are: 240, 160, 80, 26, 13, 8.67, 6.5, 5.2, 4.33, 3.71, ...
-    /// So for a 24Mhz Xtal, valid frequencies are: 240, 160, 80, 24, 12, 8, 6, 4.8, 4, ...
-    ///
-    /// # TODO
-    /// - PLL Frequency
+    /// So for a 40Mhz Xtal, valid frequencies are: 40, 20, 13.33, 10, 8, 6.67, 5.71, 5, 4.44, 4, ...
+    /// So for a 26Mhz Xtal, valid frequencies are: 26, 13, 8.67, 6.5, 5.2, 4.33, 3.71, ...
+    /// So for a 24Mhz Xtal, valid frequencies are: 24, 12, 8, 6, 4.8, 4, ...
     pub fn set_cpu_frequency_to_xtal<T: Into<Hertz> + Copy + PartialOrd>(
         &mut self,
         frequency: T,
@@ -342,10 +536,18 @@ impl ClockControl {
             _ => return Err(Error::FrequencyTooHigh),
         }
 
-        unsafe { CPU_FREQUENCY = self.cpu_frequency() };
+        self.update_current_config();
+
+        self.wait_for_slow_cycle();
+
+        self.pll_disable();
+
         Ok(self)
     }
 
+    /// Sets the CPU frequency using the PLL to closest possible frequency (rounding up).
+    ///
+    /// The APB frequency is fixed at 80MHz.
     pub fn set_cpu_frequency_to_pll<T>(&mut self, frequency: T) -> Result<&mut Self, Error>
     where
         T: Into<Hertz> + Copy + PartialOrd,
@@ -366,7 +568,7 @@ impl ClockControl {
             .cpu_per_conf()
             .modify(|_, w| w.cpuperiod_sel().variant(cpuperiod_sel));
 
-        self.set_pll_frequency(pll_frequency_high);
+        self.set_pll_frequency(pll_frequency_high)?;
 
         // switch clock source
         self.rtc_control
@@ -376,33 +578,16 @@ impl ClockControl {
         self.set_apb_frequency_to_scratch(80.MHz());
         self.wait_for_slow_cycle();
 
-        unsafe { CPU_FREQUENCY = self.cpu_frequency() };
+        self.update_current_config();
         Ok(self)
     }
 
     fn wait_for_slow_cycle(&mut self) {
-        //TODO: properly implement wat_for_slow_cycles
-        delay(10.ms());
+        // TODO: properly implement wait_for_slow_cycles (https://github.com/espressif/esp-idf/blob/c1d0daf36d0dca81c23c226001560edfa51c30ea/components/soc/src/esp32/rtc_time.c#L155)
+        self.delay(100.ms());
         //      unimplemented!()
     }
-    /*
-        void rtc_clk_wait_for_slow_cycle(void)
-        {
-            REG_CLR_BIT(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_START_CYCLING | TIMG_RTC_CALI_START);
-            REG_CLR_BIT(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_RDY);
-            REG_SET_FIELD(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_CLK_SEL, RTC_CAL_RTC_MUX);
-            /* Request to run calibration for 0 slow clock cycles.
-             * RDY bit will be set on the nearest slow clock cycle.
-             */
 
-            REG_SET_FIELD(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_MAX, 0);
-            REG_SET_BIT(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_START);
-            ets_delay_us(1); /* RDY needs some time to go low */
-            while (!GET_PERI_REG_MASK(TIMG_RTCCALICFG_REG(0), TIMG_RTC_CALI_RDY)) {
-                ets_delay_us(1);
-            }
-        }
-    */
     /// Get Ref Tick frequency
     ///
     /// This frequency is usually 1MHz, but cannot be maintained when the APB_CLK is < 10MHz
@@ -483,7 +668,7 @@ impl ClockControl {
                 .clk_conf
                 .modify(|_, w| w.ana_clk_rtc_sel().ck8m_d256_out()),
         }
-        delay(DELAY_SLOW_CLK_SWITCH);
+        self.delay(DELAY_SLOW_CLK_SWITCH);
         self
     }
 
@@ -497,7 +682,7 @@ impl ClockControl {
             .variant()
         {
             FAST_CLK_RTC_SEL_A::CK8M => FastRTCSource::RTC8M,
-            FAST_CLK_RTC_SEL_A::XTAL => FastRTCSource::Xtal,
+            FAST_CLK_RTC_SEL_A::XTAL => FastRTCSource::XtalD4,
         }
     }
 
@@ -505,7 +690,7 @@ impl ClockControl {
     pub fn fast_rtc_frequency(&self) -> Hertz {
         match self.fast_rtc_source() {
             FastRTCSource::RTC8M => RTC_FAST_CLK_FREQ_8M,
-            FastRTCSource::Xtal => self.xtal_frequency() / 4,
+            FastRTCSource::XtalD4 => self.xtal_frequency() / 4,
         }
     }
 
@@ -516,12 +701,12 @@ impl ClockControl {
                 .rtc_control
                 .clk_conf
                 .modify(|_, w| w.fast_clk_rtc_sel().ck8m()),
-            FastRTCSource::Xtal => self
+            FastRTCSource::XtalD4 => self
                 .rtc_control
                 .clk_conf
                 .modify(|_, w| w.fast_clk_rtc_sel().xtal()),
         }
-        delay(DELAY_FAST_CLK_SWITCH);
+        self.delay(DELAY_FAST_CLK_SWITCH);
         self
     }
 
@@ -533,7 +718,7 @@ impl ClockControl {
         let xtal_freq_reg = self.rtc_control.store4.read().scratch4().bits();
         if !Self::clk_val_is_valid(xtal_freq_reg) {
             // return 40MHz as default (this is recommended )
-            return 40.MHz().into();
+            return DEFAULT_XTAL_FREQUENCY;
         }
 
         (xtal_freq_reg & 0x7fff).MHz().into() // bit15 is RTC_DISABLE_ROM_LOG flag
@@ -594,11 +779,11 @@ impl ClockControl {
 
     fn write_pll_i2c(address: u8, data: u8) {
         unsafe {
-            crate::rom::rom_i2c_writeReg(PLL_BLOCK, PLL_HOSTID, address, data);
+            crate::rom::rom_i2c_writeReg(PLL_I2C_BLOCK, PLL_I2C_HOSTID, address, data);
         }
     }
 
-    pub fn pll_disable(&mut self) {
+    fn pll_disable(&mut self) {
         self.rtc_control.options0.modify(|_, w| {
             w.bias_i2c_force_pd()
                 // is APLL under force power down? then also power down the internal I2C bus
@@ -612,7 +797,7 @@ impl ClockControl {
         });
     }
 
-    pub fn pll_enable(&mut self) {
+    fn pll_enable(&mut self) {
         self.rtc_control.options0.modify(|_, w| {
             w.bias_i2c_force_pd()
                 .clear_bit()
@@ -625,14 +810,14 @@ impl ClockControl {
         });
 
         /* reset BBPLL configuration */
-        Self::write_pll_i2c(PllI2C::IR_CAL_DELAY, PllVal::IR_CAL_DELAY_VAL);
-        Self::write_pll_i2c(PllI2C::IR_CAL_EXT_CAP, PllVal::IR_CAL_EXT_CAP_VAL);
-        Self::write_pll_i2c(PllI2C::OC_ENB_FCAL, PllVal::OC_ENB_FCAL_VAL);
-        Self::write_pll_i2c(PllI2C::OC_ENB_VCON, PllVal::OC_ENB_VCON_VAL);
-        Self::write_pll_i2c(PllI2C::BBADC_CAL_7_0, PllVal::BBADC_CAL_7_0_VAL);
+        Self::write_pll_i2c(pll_i2c::IR_CAL_DELAY, pll_val::IR_CAL_DELAY_VAL);
+        Self::write_pll_i2c(pll_i2c::IR_CAL_EXT_CAP, pll_val::IR_CAL_EXT_CAP_VAL);
+        Self::write_pll_i2c(pll_i2c::OC_ENB_FCAL, pll_val::OC_ENB_FCAL_VAL);
+        Self::write_pll_i2c(pll_i2c::OC_ENB_VCON, pll_val::OC_ENB_VCON_VAL);
+        Self::write_pll_i2c(pll_i2c::BBADC_CAL_7_0, pll_val::BBADC_CAL_7_0_VAL);
     }
 
-    pub fn set_pll_frequency(&mut self, high: bool) {
+    pub fn set_pll_frequency(&mut self, high: bool) -> Result<(), Error> {
         let pll_config = match high {
             false => {
                 // TODO: adjust bias if flash at 80MHz
@@ -640,14 +825,14 @@ impl ClockControl {
                     .bias_conf
                     .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_80M_160M));
 
-                Self::write_pll_i2c(PllI2C::ENDIV5, PllVal::ENDIV5_VAL_320M);
-                Self::write_pll_i2c(PllI2C::BBADC_DSMP, PllVal::BBADC_DSMP_VAL_320M);
+                Self::write_pll_i2c(pll_i2c::ENDIV5, pll_val::ENDIV5_VAL_320M);
+                Self::write_pll_i2c(pll_i2c::BBADC_DSMP, pll_val::BBADC_DSMP_VAL_320M);
 
                 match self.xtal_frequency() {
-                    Hertz(40_000_000) => PLL_CONFIG_320M_XTAL_40M,
-                    Hertz(26_000_000) => PLL_CONFIG_320M_XTAL_26M,
-                    Hertz(24_000_000) => PLL_CONFIG_320M_XTAL_24M,
-                    _ => PLL_CONFIG_320M_XTAL_UNKNOWN,
+                    Hertz(40_000_000) => PLLConfig::PLL_320M_XTAL_40M,
+                    Hertz(26_000_000) => PLLConfig::PLL_320M_XTAL_26M,
+                    Hertz(24_000_000) => PLLConfig::PLL_320M_XTAL_24M,
+                    _ => return Err(Error::UnsupportedPLLConfig),
                 }
             }
             true => {
@@ -655,21 +840,21 @@ impl ClockControl {
                     .bias_conf
                     .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_240M_OR_FLASH_80M));
 
-                Self::write_pll_i2c(PllI2C::ENDIV5, PllVal::ENDIV5_VAL_480M);
-                Self::write_pll_i2c(PllI2C::BBADC_DSMP, PllVal::BBADC_DSMP_VAL_480M);
+                Self::write_pll_i2c(pll_i2c::ENDIV5, pll_val::ENDIV5_VAL_480M);
+                Self::write_pll_i2c(pll_i2c::BBADC_DSMP, pll_val::BBADC_DSMP_VAL_480M);
 
                 match self.xtal_frequency() {
-                    Hertz(40_000_000) => PLL_CONFIG_480M_XTAL_40M,
-                    Hertz(26_000_000) => PLL_CONFIG_480M_XTAL_26M,
-                    Hertz(24_000_000) => PLL_CONFIG_480M_XTAL_24M,
-                    _ => PLL_CONFIG_480M_XTAL_UNKNOWN,
+                    Hertz(40_000_000) => PLLConfig::PLL_480M_XTAL_40M,
+                    Hertz(26_000_000) => PLLConfig::PLL_480M_XTAL_26M,
+                    Hertz(24_000_000) => PLLConfig::PLL_480M_XTAL_24M,
+                    _ => return Err(Error::UnsupportedPLLConfig),
                 }
             }
         };
 
-        Self::write_pll_i2c(PllI2C::OC_LREF, pll_config.get_lref());
-        Self::write_pll_i2c(PllI2C::OC_DIV_7_0, pll_config.get_div7_0());
-        Self::write_pll_i2c(PllI2C::OC_DCUR, pll_config.get_dcur());
+        Self::write_pll_i2c(pll_i2c::OC_LREF, pll_config.get_lref());
+        Self::write_pll_i2c(pll_i2c::OC_DIV_7_0, pll_config.get_div7_0());
+        Self::write_pll_i2c(pll_i2c::OC_DCUR, pll_config.get_dcur());
 
         let delay_us = if let Ok(SlowRTCSource::RTC150k) = self.slow_rtc_source() {
             DELAY_PLL_ENABLE_WITH_150K
@@ -677,6 +862,7 @@ impl ClockControl {
             DELAY_PLL_ENABLE_WITH_32K
         };
 
-        delay(delay_us);
+        self.delay(delay_us);
+        Ok(())
     }
 }

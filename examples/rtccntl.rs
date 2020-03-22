@@ -8,18 +8,10 @@ use esp32_hal::prelude::*;
 
 use esp32_hal::clock_control::{delay, ClockControl};
 use esp32_hal::dport::Split;
+use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 
 const BLINK_HZ: Hertz = Hertz(1);
-
-struct Context {
-    watchdog: esp32_hal::clock_control::watchdog::WatchDog,
-    rx: esp32_hal::serial::Rx<esp32::UART0>,
-    tx: esp32_hal::serial::Tx<esp32::UART0>,
-}
-
-// TODO: replace spinning mutex as it is not thread or interrupt safe
-static GLOBAL_CONTEXT: spin::Mutex<Option<Context>> = spin::Mutex::new(None);
 
 #[no_mangle]
 fn main() -> ! {
@@ -39,9 +31,12 @@ fn main() -> ! {
 
     // setup clocks & watchdog
     let mut clock_control = ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control);
-    clock_control.set_cpu_frequency_to_pll(240.MHz()).unwrap();
+
+    clock_control.set_cpu_frequency_to_pll(80.MHz()).unwrap();
+    //clock_control.set_cpu_frequency_to_xtal(26.MHz()).unwrap();
     let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
-    watchdog.start(3.s());
+
+    watchdog.start(5.s());
 
     // setup serial controller
     let mut uart0 = Serial::uart0(
@@ -54,43 +49,54 @@ fn main() -> ! {
     .unwrap();
 
     uart0.change_baudrate(115200).unwrap();
+    dprintln!("\n\ntest C");
 
-    let (mut tx, rx) = uart0.split();
+    let (mut tx, _rx) = uart0.split();
 
     // print startup message
     writeln!(tx, "\n\nReboot!\n").unwrap();
 
     writeln!(tx, "Running on core {:0x}\n", xtensa_lx6_rt::get_core_id()).unwrap();
+
+    delay(100.ms());
     writeln!(tx, "{:?}\n", clock_control_config).unwrap();
+
+    delay(100.ms());
+
     writeln!(tx, "{:?}\n", watchdog.config().unwrap()).unwrap();
 
-    // move to global context to allow access in panic handler
-    *GLOBAL_CONTEXT.lock() = Some(Context { watchdog, rx, tx });
+    /*  clock_control_config
+        .add_callback(&|| dprintln!("callback"))
+        .unwrap();
+
+    let lock = clock_control_config.lock_cpu_frequency();
+
+    drop(lock);*/
 
     // uncomment next line to test panic exit
     // panic!("panic test");
 
-    let mut x = 1;
+    let mut x: u32 = 0;
     let mut prev_ccount = 0;
 
     loop {
+        x = x.wrapping_add(1);
+
         let ccount = xtensa_lx6_rt::get_cycle_count();
+        let ccount_diff = ccount.wrapping_sub(prev_ccount);
         writeln!(
-            GLOBAL_CONTEXT.lock().as_mut().unwrap().tx,
-            "Loop: {}, CCOUNT: {}, {}",
-            x,
-            ccount,
-            ccount - prev_ccount
+            tx,
+            "Loop: {}, cycles: {}, cycles since previous {}",
+            x, ccount, ccount_diff
         )
         .unwrap();
 
         prev_ccount = ccount;
-        x += 1;
 
         delay((Hertz(1_000_000) / BLINK_HZ).us());
 
         // comment out next line to check watchdog behavior
-        GLOBAL_CONTEXT.lock().as_mut().unwrap().watchdog.feed();
+        watchdog.feed();
     }
 }
 
@@ -108,14 +114,8 @@ fn disable_timg_wdts(timg0: &mut esp32::TIMG0, timg1: &mut esp32::TIMG1) {
     timg1.wdtconfig0.write(|w| unsafe { w.bits(0x0) });
 }
 
-/// panic handler using static tx
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    writeln!(
-        GLOBAL_CONTEXT.lock().as_mut().unwrap().tx,
-        "\n\n*** {:?}",
-        info
-    )
-    .unwrap();
+    dprintln!("\n\n*** {:?}", info);
     loop {}
 }

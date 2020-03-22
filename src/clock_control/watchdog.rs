@@ -69,13 +69,13 @@ impl WatchDog {
 
     fn calc_period(&self, value: u32) -> MicroSeconds {
         return (((1000000u64 * value as u64)
-            / (u32::from(self.clock_control_config.slow_rtc_frequency) as u64))
+            / (u32::from(self.clock_control_config.slow_rtc_frequency()) as u64))
             as u32)
             .us();
     }
     fn calc_ticks(&self, value: MicroSeconds) -> u32 {
         return (u32::from(value) as u64
-            * u32::from(self.clock_control_config.slow_rtc_frequency) as u64
+            * u32::from(self.clock_control_config.slow_rtc_frequency()) as u64
             / 1000000u64) as u32;
     }
 

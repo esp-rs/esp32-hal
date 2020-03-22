@@ -271,25 +271,25 @@ macro_rules! halUart {
                 pub fn change_baudrate <T: Into<Hertz> + Copy>(&mut self, baudrate: T) -> Result<&mut Self,Error> {
                     let mut use_apb_frequency = false;
 
-                    // if APB frequency is <10MHz (according to documentation, in practice 5MHz), the ref clock is no longer accurate
-                    // or if the baudrate > Ref frequency
-                    if self.clock_control.apb_frequency < 10_000_000.Hz()
-                            || baudrate.into() > self.clock_control.ref_frequency {
+                    // if APB frequency is <10MHz (according to documentation, in practice 5MHz),
+                    // the ref clock is no longer accurate or if the baudrate > Ref frequency
+                    if self.clock_control.max_apb_frequency() < 10_000_000.Hz()
+                            || baudrate.into() > self.clock_control.ref_frequency() {
                         use_apb_frequency = true;
-                    } else if baudrate.into() < self.clock_control.apb_frequency/(1<<20-1) {
+                    } else if baudrate.into() < self.clock_control.max_apb_frequency()/(1<<20-1) {
                         // if baudrate is lower then can be achieved via the APB frequency
                         use_apb_frequency = false;
                     }
                     else {
                         let clk_div =
-                            (self.clock_control.ref_frequency * 16 + baudrate.into() / 2) / baudrate.into();
+                            (self.clock_control.ref_frequency() * 16 + baudrate.into() / 2) / baudrate.into();
                         // if baudrate too high use APB clock
                         if clk_div == 0 {
                             use_apb_frequency = true
                         } else {
                             // if baudrate cannot be reached within 1.5% use APB frequency
                             // use 203 as multiplier (2*101.5), because 1Mhz * 16 * 203 still fits in 2^32
-                            let calc_baudrate = (self.clock_control.ref_frequency * 16 * 200) / clk_div;
+                            let calc_baudrate = (self.clock_control.ref_frequency() * 16 * 200) / clk_div;
                             if calc_baudrate > baudrate.into() * 203
                                 || calc_baudrate < baudrate.into() * 197
                             {
@@ -301,7 +301,7 @@ macro_rules! halUart {
                     // set clock source
                     self.uart.conf0.modify(|_, w| w.tick_ref_always_on().bit(use_apb_frequency));
 
-                    let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency} else {self.clock_control.ref_frequency};
+                    let sclk_freq = if use_apb_frequency {self.clock_control.max_apb_frequency()} else {self.clock_control.ref_frequency()};
 
                     // calculate nearest divider
                     let clk_div = (sclk_freq * 16 + baudrate.into()/2 ) / baudrate.into();
@@ -327,7 +327,7 @@ macro_rules! halUart {
 
                 pub fn get_baudrate(& self) -> Hertz {
                     let use_apb_frequency = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
-                    let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency} else {self.clock_control.ref_frequency};
+                    let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency()} else {self.clock_control.ref_frequency()};
                     let div = self.uart.clkdiv.read().clkdiv().bits()<<4 | (self.uart.clkdiv.read().clkdiv_frag().bits() as u32);
 
                     // round to nearest integer baudrate
@@ -379,19 +379,17 @@ macro_rules! halUart {
 
 
             impl  Rx<$UARTX> {
-                pub fn count(& self) -> u16 {
+                pub fn count(& self) -> u8 {
                     unsafe {
-                        ((*$UARTX::ptr()).mem_cnt_status.read().rx_mem_cnt().bits() as u16) << 8
-                            | (*$UARTX::ptr()).status.read().rxfifo_cnt().bits() as u16
+                            (*$UARTX::ptr()).status.read().rxfifo_cnt().bits()
                         }
                 }
             }
 
             impl  Tx<$UARTX> {
-                pub fn count(& self) -> u16 {
+                pub fn count(& self) -> u8 {
                     unsafe {
-                        ((*$UARTX::ptr()).mem_cnt_status.read().tx_mem_cnt().bits() as u16) << 8
-                            | (*$UARTX::ptr()).status.read().txfifo_cnt().bits() as u16
+                            (*$UARTX::ptr()).status.read().txfifo_cnt().bits()
                         }
                 }
             }

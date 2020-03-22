@@ -5,13 +5,10 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
-use embedded_hal::watchdog::WatchdogDisable;
-
 use esp32_hal::prelude::*;
 
 use esp32_hal::clock_control::delay;
 use esp32_hal::dport::Split;
-use esp32_hal::gpio::GpioExt;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 
 const BLINK_HZ: Hertz = Hertz(2);
