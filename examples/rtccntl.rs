@@ -6,11 +6,10 @@ use core::panic::PanicInfo;
 
 use esp32_hal::prelude::*;
 
-use esp32_hal::clock_control::{delay, ClockControl};
+use esp32_hal::clock_control::{delay, CPUSource, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
-
 const BLINK_HZ: Hertz = Hertz(1);
 
 #[no_mangle]
@@ -32,7 +31,16 @@ fn main() -> ! {
     // setup clocks & watchdog
     let mut clock_control = ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control);
 
-    clock_control.set_cpu_frequency_to_pll(80.MHz()).unwrap();
+    clock_control
+        .set_cpu_frequencies(
+            CPUSource::Xtal,
+            26.MHz(),
+            CPUSource::PLL,
+            80.MHz(),
+            CPUSource::PLL,
+            240.MHz(),
+        )
+        .unwrap();
     //clock_control.set_cpu_frequency_to_xtal(26.MHz()).unwrap();
     let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
 
@@ -80,23 +88,46 @@ fn main() -> ! {
     let mut prev_ccount = 0;
 
     loop {
-        x = x.wrapping_add(1);
+        for j in 0..2 {
+            let apb_guard = if j == 0 {
+                Some(clock_control_config.lock_apb_frequency())
+            } else {
+                None
+            };
 
-        let ccount = xtensa_lx6_rt::get_cycle_count();
-        let ccount_diff = ccount.wrapping_sub(prev_ccount);
-        writeln!(
-            tx,
-            "Loop: {}, cycles: {}, cycles since previous {}",
-            x, ccount, ccount_diff
-        )
-        .unwrap();
+            for i in 0..2 {
+                let cpu_guard = if i == 0 {
+                    Some(clock_control_config.lock_cpu_frequency())
+                } else {
+                    None
+                };
 
-        prev_ccount = ccount;
+                x = x.wrapping_add(1);
 
-        delay((Hertz(1_000_000) / BLINK_HZ).us());
+                let ccount = xtensa_lx6_rt::get_cycle_count();
+                let ccount_diff = ccount.wrapping_sub(prev_ccount);
+                writeln!(
+                    tx,
+                    "Loop: {}, cycles: {}, cycles since previous {}",
+                    x, ccount, ccount_diff
+                )
+                .unwrap();
 
-        // comment out next line to check watchdog behavior
-        watchdog.feed();
+                prev_ccount = ccount;
+
+                delay((Hertz(1_000_000) / BLINK_HZ).us());
+
+                // comment out next line to check watchdog behavior
+                watchdog.feed();
+
+                if cpu_guard.is_some() {
+                    drop(cpu_guard.unwrap())
+                }
+            }
+            if apb_guard.is_some() {
+                drop(apb_guard.unwrap())
+            }
+        }
     }
 }
 

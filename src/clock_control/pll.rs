@@ -1,12 +1,12 @@
 //! PLL control
 //!
 
+use super::Error;
 use crate::prelude::*;
 
 // Delays (in microseconds) for changing pll settings
 // TODO according to esp-idf: some of these are excessive, and should be reduced.
 
-const DELAY_PLL_DBIAS_RAISE: MicroSeconds = MicroSeconds(3);
 const DELAY_PLL_ENABLE_WITH_150K: MicroSeconds = MicroSeconds(80);
 const DELAY_PLL_ENABLE_WITH_32K: MicroSeconds = MicroSeconds(160);
 
@@ -64,8 +64,6 @@ impl Config {
         (self.5 << 6) | self.4
     }
 }
-
-use super::Error;
 
 impl super::ClockControl {
     fn write_i2c(address: u8, data: u8) {

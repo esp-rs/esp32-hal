@@ -12,7 +12,7 @@ pub mod prelude;
 pub mod serial;
 pub mod units;
 
-mod lock_execute;
+pub mod lock_execute;
 
 mod rom;
 

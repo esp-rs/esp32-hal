@@ -1,44 +1,59 @@
-pub struct LockExecute {
+//! Multi core safe lock which runs function at start and stop
+//! when first lock acquired or last lock released
+//!
+pub struct LockExecute<T> {
     mutex: spin::Mutex<usize>,
-    start: fn(),
-    stop: fn(),
+    phantom: core::marker::PhantomData<T>,
 }
 
-pub struct LockExecuteGuard<'a> {
-    lock_execute: &'a LockExecute,
+pub struct LockExecuteGuard<'a, T> {
+    lock_execute: &'a LockExecute<T>,
+    stop: fn(&mut T),
+    t: &'a mut T,
 }
 
-impl LockExecute {
-    pub const fn new(start: fn(), stop: fn()) -> Self {
+impl<T> LockExecute<T> {
+    pub const fn new() -> Self {
         LockExecute {
             mutex: spin::Mutex::new(0),
-            start,
-            stop,
+            phantom: core::marker::PhantomData,
         }
     }
 
-    pub fn lock(&self) -> LockExecuteGuard {
-        if 1 == xtensa_lx6_rt::interrupt::free(|_| {
+    pub fn lock<'a>(
+        &'a self,
+        t: &'a mut T,
+        start: fn(&mut T),
+        stop: fn(&mut T),
+    ) -> LockExecuteGuard<'a, T> {
+        xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = self.mutex.lock();
             *data += 1;
-            *data
-        }) {
-            (self.start)();
-        }
+            if *data == 1 {
+                (start)(t)
+            }
+        });
+
         LockExecuteGuard {
             lock_execute: &self,
+            stop: stop,
+            t: t,
         }
+    }
+
+    pub fn count(&self) -> usize {
+        *(self.mutex.lock())
     }
 }
 
-impl<'a> Drop for LockExecuteGuard<'a> {
+impl<'a, T> Drop for LockExecuteGuard<'a, T> {
     fn drop(&mut self) {
-        if 0 == xtensa_lx6_rt::interrupt::free(|_| {
+        xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = self.lock_execute.mutex.lock();
             *data -= 1;
-            *data
-        }) {
-            (self.lock_execute.stop)();
-        }
+            if *data == 0 {
+                (self.stop)(self.t)
+            }
+        });
     }
 }

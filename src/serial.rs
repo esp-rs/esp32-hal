@@ -273,10 +273,10 @@ macro_rules! halUart {
 
                     // if APB frequency is <10MHz (according to documentation, in practice 5MHz),
                     // the ref clock is no longer accurate or if the baudrate > Ref frequency
-                    if self.clock_control.max_apb_frequency() < 10_000_000.Hz()
+                    if self.clock_control.apb_frequency_max() < 10_000_000.Hz()
                             || baudrate.into() > self.clock_control.ref_frequency() {
                         use_apb_frequency = true;
-                    } else if baudrate.into() < self.clock_control.max_apb_frequency()/(1<<20-1) {
+                    } else if baudrate.into() < self.clock_control.apb_frequency_max()/(1<<20-1) {
                         // if baudrate is lower then can be achieved via the APB frequency
                         use_apb_frequency = false;
                     }
@@ -301,7 +301,7 @@ macro_rules! halUart {
                     // set clock source
                     self.uart.conf0.modify(|_, w| w.tick_ref_always_on().bit(use_apb_frequency));
 
-                    let sclk_freq = if use_apb_frequency {self.clock_control.max_apb_frequency()} else {self.clock_control.ref_frequency()};
+                    let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency_max()} else {self.clock_control.ref_frequency()};
 
                     // calculate nearest divider
                     let clk_div = (sclk_freq * 16 + baudrate.into()/2 ) / baudrate.into();
