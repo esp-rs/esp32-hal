@@ -12,8 +12,6 @@ pub mod prelude;
 pub mod serial;
 pub mod units;
 
-pub mod lock_execute;
-
 mod rom;
 
 #[macro_use]
