@@ -12,7 +12,5 @@ pub mod prelude;
 pub mod serial;
 pub mod units;
 
-mod rom;
-
 #[macro_use]
 pub mod dprint;

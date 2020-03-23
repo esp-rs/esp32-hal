@@ -12,7 +12,6 @@ const DELAY_PLL_ENABLE_WITH_32K: MicroSeconds = MicroSeconds(160);
 
 // Addresses for internal I2C bus for PLL
 const I2C_BLOCK: u8 = 0x66;
-const I2C_HOSTID: u8 = 4;
 
 // Register addresses for internal I2C bus
 mod i2c {
@@ -66,10 +65,34 @@ impl Config {
 }
 
 impl super::ClockControl {
-    fn write_i2c(address: u8, data: u8) {
-        unsafe {
-            crate::rom::rom_i2c_writeReg(I2C_BLOCK, I2C_HOSTID, address, data);
-        }
+    fn write_i2c(&mut self, address: u8, data: u8) {
+        self.rtc_control.pll.write(|w| unsafe {
+            w.block()
+                .bits(I2C_BLOCK)
+                .addr()
+                .bits(address)
+                .data()
+                .bits(data)
+                .write()
+                .set_bit()
+        });
+
+        while self.rtc_control.pll.read().busy().bit_is_set() {}
+    }
+
+    fn _read_i2c(&mut self, address: u8) -> u8 {
+        self.rtc_control.pll.write(|w| unsafe {
+            w.block()
+                .bits(I2C_BLOCK)
+                .addr()
+                .bits(address)
+                .write()
+                .clear_bit()
+        });
+
+        while self.rtc_control.pll.read().busy().bit_is_set() {}
+
+        self.rtc_control.pll.read().data().bits()
     }
 
     pub(crate) fn pll_disable(&mut self) {
@@ -99,18 +122,18 @@ impl super::ClockControl {
         });
 
         /* reset BBPLL configuration */
-        Self::write_i2c(i2c::IR_CAL_DELAY, val::IR_CAL_DELAY_VAL);
-        Self::write_i2c(i2c::IR_CAL_EXT_CAP, val::IR_CAL_EXT_CAP_VAL);
-        Self::write_i2c(i2c::OC_ENB_FCAL, val::OC_ENB_FCAL_VAL);
-        Self::write_i2c(i2c::OC_ENB_VCON, val::OC_ENB_VCON_VAL);
-        Self::write_i2c(i2c::BBADC_CAL_7_0, val::BBADC_CAL_7_0_VAL);
+        self.write_i2c(i2c::IR_CAL_DELAY, val::IR_CAL_DELAY_VAL);
+        self.write_i2c(i2c::IR_CAL_EXT_CAP, val::IR_CAL_EXT_CAP_VAL);
+        self.write_i2c(i2c::OC_ENB_FCAL, val::OC_ENB_FCAL_VAL);
+        self.write_i2c(i2c::OC_ENB_VCON, val::OC_ENB_VCON_VAL);
+        self.write_i2c(i2c::BBADC_CAL_7_0, val::BBADC_CAL_7_0_VAL);
     }
 
     pub(crate) fn set_pll_frequency(&mut self, high: bool) -> Result<(), Error> {
         let pll_config = match high {
             false => {
-                Self::write_i2c(i2c::ENDIV5, val::ENDIV5_VAL_320M);
-                Self::write_i2c(i2c::BBADC_DSMP, val::BBADC_DSMP_VAL_320M);
+                self.write_i2c(i2c::ENDIV5, val::ENDIV5_VAL_320M);
+                self.write_i2c(i2c::BBADC_DSMP, val::BBADC_DSMP_VAL_320M);
 
                 match self.xtal_frequency() {
                     Hertz(40_000_000) => Config::PLL_320M_XTAL_40M,
@@ -120,8 +143,8 @@ impl super::ClockControl {
                 }
             }
             true => {
-                Self::write_i2c(i2c::ENDIV5, val::ENDIV5_VAL_480M);
-                Self::write_i2c(i2c::BBADC_DSMP, val::BBADC_DSMP_VAL_480M);
+                self.write_i2c(i2c::ENDIV5, val::ENDIV5_VAL_480M);
+                self.write_i2c(i2c::BBADC_DSMP, val::BBADC_DSMP_VAL_480M);
 
                 match self.xtal_frequency() {
                     Hertz(40_000_000) => Config::PLL_480M_XTAL_40M,
@@ -132,9 +155,9 @@ impl super::ClockControl {
             }
         };
 
-        Self::write_i2c(i2c::OC_LREF, pll_config.get_lref());
-        Self::write_i2c(i2c::OC_DIV_7_0, pll_config.get_div7_0());
-        Self::write_i2c(i2c::OC_DCUR, pll_config.get_dcur());
+        self.write_i2c(i2c::OC_LREF, pll_config.get_lref());
+        self.write_i2c(i2c::OC_DIV_7_0, pll_config.get_div7_0());
+        self.write_i2c(i2c::OC_DCUR, pll_config.get_dcur());
 
         let delay_us = if let Ok(super::SlowRTCSource::RTC150k) = self.slow_rtc_source() {
             DELAY_PLL_ENABLE_WITH_150K

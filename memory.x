@@ -9,6 +9,3 @@ MEMORY
   dram_seg ( RW )       : ORIGIN = 0x3FFF0000, len = 0x10000
 
 }
-
-PROVIDE ( rom_i2c_writeReg = 0x400041a4 );
-PROVIDE ( uart_tx_one_char = 0x40009200 );

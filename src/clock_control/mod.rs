@@ -555,7 +555,7 @@ impl ClockControl {
 
         // TODO: optimize speed of switching temporarily to xtal when pll frequency needs to change
         if pll_frequency_high != (self.pll_frequency() == 480.MHz().into()) {
-            self.set_cpu_frequency_to_xtal(self.xtal_frequency());
+            self.set_cpu_frequency_to_xtal(self.xtal_frequency())?;
         }
 
         self.pll_enable();
