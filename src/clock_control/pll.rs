@@ -6,7 +6,6 @@ use crate::prelude::*;
 
 // Delays (in microseconds) for changing pll settings
 // TODO according to esp-idf: some of these are excessive, and should be reduced.
-
 const DELAY_PLL_ENABLE_WITH_150K: MicroSeconds = MicroSeconds(80);
 const DELAY_PLL_ENABLE_WITH_32K: MicroSeconds = MicroSeconds(160);
 
@@ -65,6 +64,7 @@ impl Config {
 }
 
 impl super::ClockControl {
+    /// write to internal I2C PLL bus
     fn write_i2c(&mut self, address: u8, data: u8) {
         self.rtc_control.pll.write(|w| unsafe {
             w.block()
@@ -80,6 +80,7 @@ impl super::ClockControl {
         while self.rtc_control.pll.read().busy().bit_is_set() {}
     }
 
+    /// read from internal I2C PLL bus
     fn _read_i2c(&mut self, address: u8) -> u8 {
         self.rtc_control.pll.write(|w| unsafe {
             w.block()
@@ -95,6 +96,7 @@ impl super::ClockControl {
         self.rtc_control.pll.read().data().bits()
     }
 
+    /// disable the PLL
     pub(crate) fn pll_disable(&mut self) {
         self.rtc_control.options0.modify(|_, w| {
             w.bias_i2c_force_pd()
@@ -109,6 +111,7 @@ impl super::ClockControl {
         });
     }
 
+    /// enable the PLL
     pub(crate) fn pll_enable(&mut self) {
         self.rtc_control.options0.modify(|_, w| {
             w.bias_i2c_force_pd()
@@ -121,7 +124,7 @@ impl super::ClockControl {
                 .clear_bit()
         });
 
-        /* reset BBPLL configuration */
+        // reset BBPLL configuration
         self.write_i2c(i2c::IR_CAL_DELAY, val::IR_CAL_DELAY_VAL);
         self.write_i2c(i2c::IR_CAL_EXT_CAP, val::IR_CAL_EXT_CAP_VAL);
         self.write_i2c(i2c::OC_ENB_FCAL, val::OC_ENB_FCAL_VAL);
@@ -129,6 +132,7 @@ impl super::ClockControl {
         self.write_i2c(i2c::BBADC_CAL_7_0, val::BBADC_CAL_7_0_VAL);
     }
 
+    /// change PLL frequency between low (320MHz) and high (480MHz)
     pub(crate) fn set_pll_frequency(&mut self, high: bool) -> Result<(), Error> {
         let pll_config = match high {
             false => {

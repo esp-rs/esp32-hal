@@ -1,10 +1,12 @@
-//! Dynamic Frequency Shifting control
+//! Dynamic Frequency Switching control
 //!
 
 use super::Error;
 
-const MAX_CALLBACKS: usize = 10;
+/// maximum number of callbacks
+pub const MAX_CALLBACKS: usize = 10;
 
+/// number of cpu, apb and awake locks
 #[derive(Copy, Clone)]
 struct Locks {
     cpu: usize,
@@ -18,18 +20,39 @@ static DFS_MUTEX: spin::Mutex<Locks> = spin::Mutex::new(Locks {
     awake: 0,
 });
 
+/// DFS structure
 pub(super) struct DFS {
     callbacks: [&'static dyn Fn(); MAX_CALLBACKS],
-
     nr_callbacks: spin::Mutex<usize>,
 }
 
+impl DFS {
+    pub(crate) fn new() -> Self {
+        DFS {
+            callbacks: [&|| {}; MAX_CALLBACKS],
+
+            nr_callbacks: spin::Mutex::new(0),
+        }
+    }
+}
+
+/// A RAII implementation of a "scoped lock" for CPU frequency.
+/// When this structure is dropped (falls out of scope), the lock will be unlocked.
+/// This structure is created by the lock_cpu_frequency method on ClockControlConfig
 pub struct ExecuteGuardCPU<'a> {
     clock_control: &'a mut super::ClockControl,
 }
+
+/// A RAII implementation of a "scoped lock" for APB frequency.
+/// When this structure is dropped (falls out of scope), the lock will be unlocked.
+/// This structure is created by the lock_apb_frequency method on ClockControlConfig
 pub struct ExecuteGuardAPB<'a> {
     clock_control: &'a mut super::ClockControl,
 }
+
+/// A RAII implementation of a "scoped lock" for Awake state.
+/// When this structure is dropped (falls out of scope), the lock will be unlocked.
+/// This structure is created by the lock_awake method on ClockControlConfig
 pub struct ExecuteGuardAwake<'a> {
     clock_control: &'a mut super::ClockControl,
 }
@@ -52,16 +75,6 @@ impl<'a> Drop for ExecuteGuardAwake<'a> {
     }
 }
 
-impl DFS {
-    pub(crate) fn new() -> Self {
-        DFS {
-            callbacks: [&|| {}; MAX_CALLBACKS],
-
-            nr_callbacks: spin::Mutex::new(0),
-        }
-    }
-}
-
 impl<'a> super::ClockControl {
     fn do_callbacks(&self) {
         // copy the callbacks to prevent needing to have interrupts disabled the entire time
@@ -76,6 +89,7 @@ impl<'a> super::ClockControl {
         }
     }
 
+    // lock the CPU to maximum frequency
     pub(crate) fn lock_cpu_frequency(&'a mut self) -> ExecuteGuardCPU {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
@@ -107,6 +121,7 @@ impl<'a> super::ClockControl {
         });
     }
 
+    // lock the CPU to APB frequency
     pub(crate) fn lock_apb_frequency(&'a mut self) -> ExecuteGuardAPB {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
@@ -134,6 +149,7 @@ impl<'a> super::ClockControl {
         });
     }
 
+    // lock in awake state
     pub(crate) fn lock_awake(&'a mut self) -> ExecuteGuardAwake {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();

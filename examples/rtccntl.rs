@@ -57,7 +57,6 @@ fn main() -> ! {
     .unwrap();
 
     uart0.change_baudrate(115200).unwrap();
-    dprintln!("\n\ntest C");
 
     let (mut tx, _rx) = uart0.split();
 
