@@ -94,6 +94,10 @@ const DIG_DBIAS_80M_160M: DBIAS_WAK_A = DBIAS_WAK_A::BIAS_1V10;
 const DIG_DBIAS_XTAL: DBIAS_WAK_A = DBIAS_WAK_A::BIAS_1V10;
 const DIG_DBIAS_2M: DBIAS_WAK_A = DBIAS_WAK_A::BIAS_1V00;
 
+// Default for clock tuning
+const SCK_DCAP_DEFAULT: u8 = 255;
+const CK8M_DFREQ_DEFAULT: u8 = 172;
+
 /// RTC Clock errors
 #[derive(Debug)]
 pub enum Error {
@@ -790,26 +794,6 @@ impl ClockControl {
             SOC_CLK_SEL_A::PLL => CPUSource::PLL,
             SOC_CLK_SEL_A::APLL => CPUSource::APLL,
             SOC_CLK_SEL_A::CK8M => CPUSource::RTC8M,
-        }
-    }
-
-    /// Get PLL frequency
-    pub fn pll_frequency(&self) -> Hertz {
-        if self.rtc_control.options0.read().bbpll_force_pd().bit() {
-            return FREQ_OFF;
-        }
-
-        match self
-            .dport_control
-            .cpu_per_conf()
-            .read()
-            .cpuperiod_sel()
-            .variant()
-        {
-            Val(CPUPERIOD_SEL_A::SEL_80) => PLL_FREQ_320M,
-            Val(CPUPERIOD_SEL_A::SEL_160) => PLL_FREQ_320M,
-            Val(CPUPERIOD_SEL_A::SEL_240) => PLL_FREQ_480M,
-            _ => FREQ_OFF,
         }
     }
 

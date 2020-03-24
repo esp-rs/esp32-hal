@@ -105,10 +105,16 @@ fn main() -> ! {
 
                 let ccount = xtensa_lx6_rt::get_cycle_count();
                 let ccount_diff = ccount.wrapping_sub(prev_ccount);
+
                 writeln!(
                     tx,
-                    "Loop: {}, cycles: {}, cycles since previous {}",
-                    x, ccount, ccount_diff
+                    "Loop: {}, cycles: {}, cycles since previous {}, CPU: {}, PLL: {}, APB: {}",
+                    x,
+                    ccount,
+                    ccount_diff,
+                    clock_control_config.cpu_frequency(),
+                    clock_control_config.pll_frequency(),
+                    clock_control_config.apb_frequency()
                 )
                 .unwrap();
 

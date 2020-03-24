@@ -3,6 +3,7 @@
 
 use super::Error;
 use crate::prelude::*;
+use esp32::generic::Variant::Val;
 
 // Delays (in microseconds) for changing pll settings
 // TODO according to esp-idf: some of these are excessive, and should be reduced.
@@ -171,5 +172,25 @@ impl super::ClockControl {
 
         self.delay(delay_us);
         Ok(())
+    }
+
+    /// Get PLL frequency
+    pub fn pll_frequency(&self) -> Hertz {
+        if self.rtc_control.options0.read().bbpll_force_pd().bit() {
+            return super::FREQ_OFF;
+        }
+
+        match self
+            .dport_control
+            .cpu_per_conf()
+            .read()
+            .cpuperiod_sel()
+            .variant()
+        {
+            Val(super::CPUPERIOD_SEL_A::SEL_80) => super::PLL_FREQ_320M,
+            Val(super::CPUPERIOD_SEL_A::SEL_160) => super::PLL_FREQ_320M,
+            Val(super::CPUPERIOD_SEL_A::SEL_240) => super::PLL_FREQ_480M,
+            _ => super::FREQ_OFF,
+        }
     }
 }
