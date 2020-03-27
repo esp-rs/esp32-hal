@@ -12,12 +12,14 @@ struct Locks {
     cpu: usize,
     apb: usize,
     awake: usize,
+    pll_d2: usize,
 }
 
 static DFS_MUTEX: spin::Mutex<Locks> = spin::Mutex::new(Locks {
     cpu: 0,
     apb: 0,
     awake: 0,
+    pll_d2: 0,
 });
 
 /// DFS structure
@@ -57,6 +59,13 @@ pub struct ExecuteGuardAwake<'a> {
     clock_control: &'a mut super::ClockControl,
 }
 
+/// A RAII implementation of a "scoped lock" for PLL/2 frequency.
+/// When this structure is dropped (falls out of scope), the lock will be unlocked.
+/// This structure is created by the lock_plld2 method on ClockControlConfig
+pub struct ExecuteGuardPllD2<'a> {
+    clock_control: &'a mut super::ClockControl,
+}
+
 impl<'a> Drop for ExecuteGuardCPU<'a> {
     fn drop(&mut self) {
         self.clock_control.unlock_cpu_frequency();
@@ -72,6 +81,12 @@ impl<'a> Drop for ExecuteGuardAPB<'a> {
 impl<'a> Drop for ExecuteGuardAwake<'a> {
     fn drop(&mut self) {
         self.clock_control.unlock_awake();
+    }
+}
+
+impl<'a> Drop for ExecuteGuardPllD2<'a> {
+    fn drop(&mut self) {
+        self.clock_control.unlock_plld2();
     }
 }
 
@@ -156,7 +171,7 @@ impl<'a> super::ClockControl {
             data.awake += 1;
         });
 
-        //TODO: unimplemented!();
+        unimplemented!();
         ExecuteGuardAwake {
             clock_control: self,
         }
@@ -167,7 +182,35 @@ impl<'a> super::ClockControl {
             let mut data = DFS_MUTEX.lock();
             data.awake -= 1;
 
-            //TODO: unimplemented!();
+            unimplemented!();
+        });
+    }
+
+    // lock in awake state
+    pub(crate) fn lock_plld2(&'a mut self) -> ExecuteGuardPllD2 {
+        xtensa_lx6_rt::interrupt::free(|_| {
+            let mut data = DFS_MUTEX.lock();
+            data.pll_d2 += 1;
+            if data.pll_d2 == 1 && self.pll_frequency == super::FREQ_OFF {
+                self.pll_enable(false);
+                self.do_callbacks();
+            }
+        });
+
+        ExecuteGuardPllD2 {
+            clock_control: self,
+        }
+    }
+
+    fn unlock_plld2(&'a mut self) {
+        xtensa_lx6_rt::interrupt::free(|_| {
+            let mut data = DFS_MUTEX.lock();
+            data.pll_d2 -= 1;
+
+            if data.pll_d2 == 0 && super::CPUSource::PLL != self.cpu_source() {
+                self.pll_disable();
+                self.do_callbacks();
+            }
         });
     }
 

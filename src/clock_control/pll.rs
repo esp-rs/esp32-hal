@@ -110,10 +110,12 @@ impl super::ClockControl {
                 .bbpll_i2c_force_pd()
                 .set_bit()
         });
+        self.pll_frequency = super::FREQ_OFF;
+        self.pll_d2_frequency = super::FREQ_OFF;
     }
 
     /// enable the PLL
-    pub(crate) fn pll_enable(&mut self) {
+    pub(crate) fn pll_enable(&mut self, high: bool) -> Result<(), Error> {
         self.rtc_control.options0.modify(|_, w| {
             w.bias_i2c_force_pd()
                 .clear_bit()
@@ -131,16 +133,21 @@ impl super::ClockControl {
         self.write_i2c(i2c::OC_ENB_FCAL, val::OC_ENB_FCAL_VAL);
         self.write_i2c(i2c::OC_ENB_VCON, val::OC_ENB_VCON_VAL);
         self.write_i2c(i2c::BBADC_CAL_7_0, val::BBADC_CAL_7_0_VAL);
+
+        self.set_pll_frequency(high)
     }
 
     /// change PLL frequency between low (320MHz) and high (480MHz)
     pub(crate) fn set_pll_frequency(&mut self, high: bool) -> Result<(), Error> {
         let pll_config = match high {
             false => {
+                self.pll_frequency = super::PLL_FREQ_320M;
+                self.pll_d2_frequency = self.pll_frequency / 2;
+
                 self.write_i2c(i2c::ENDIV5, val::ENDIV5_VAL_320M);
                 self.write_i2c(i2c::BBADC_DSMP, val::BBADC_DSMP_VAL_320M);
 
-                match self.xtal_frequency() {
+                match self.xtal_frequency {
                     Hertz(40_000_000) => Config::PLL_320M_XTAL_40M,
                     Hertz(26_000_000) => Config::PLL_320M_XTAL_26M,
                     Hertz(24_000_000) => Config::PLL_320M_XTAL_24M,
@@ -148,10 +155,13 @@ impl super::ClockControl {
                 }
             }
             true => {
+                self.pll_frequency = super::PLL_FREQ_480M;
+                self.pll_d2_frequency = self.pll_frequency / 2;
+
                 self.write_i2c(i2c::ENDIV5, val::ENDIV5_VAL_480M);
                 self.write_i2c(i2c::BBADC_DSMP, val::BBADC_DSMP_VAL_480M);
 
-                match self.xtal_frequency() {
+                match self.xtal_frequency {
                     Hertz(40_000_000) => Config::PLL_480M_XTAL_40M,
                     Hertz(26_000_000) => Config::PLL_480M_XTAL_26M,
                     Hertz(24_000_000) => Config::PLL_480M_XTAL_24M,

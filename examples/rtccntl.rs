@@ -32,10 +32,11 @@ fn main() -> ! {
     let mut clock_control =
         ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control).unwrap();
 
+    // BUG: why does setting clock to Xtal not work?
     clock_control
         .set_cpu_frequencies(
             CPUSource::Xtal,
-            26.MHz(),
+            40.MHz(),
             CPUSource::PLL,
             80.MHz(),
             CPUSource::PLL,
@@ -45,7 +46,7 @@ fn main() -> ! {
     //clock_control.set_cpu_frequency_to_xtal(26.MHz()).unwrap();
     let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
 
-    watchdog.start(3.s());
+    watchdog.start(100.s());
 
     // setup serial controller
     let mut uart0 = Serial::uart0(
