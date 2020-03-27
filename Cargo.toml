@@ -26,10 +26,5 @@ name = "serial"
 [[example]]
 name = "rtccntl"
 
-[profile.dev]
-incremental = false
-
-[profile.release]
-lto = true
-incremental = false
-codegen-units = 1
+[[example]]
+name = "watchdog"
