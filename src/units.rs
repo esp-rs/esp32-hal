@@ -76,6 +76,14 @@ macro_rules! define {
                 }
             }
 
+            impl core::ops::Mul<$quantity> for $primitive {
+                type Output = $quantity;
+                fn mul(self, rhs: $quantity) -> Self::Output {
+                    $quantity(self*rhs.0)
+                }
+            }
+
+
             impl core::ops::Div for $quantity {
                 type Output = $primitive;
                 fn div(self, rhs: Self) -> Self::Output {
