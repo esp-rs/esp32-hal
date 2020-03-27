@@ -6,7 +6,7 @@ use core::panic::PanicInfo;
 
 use esp32_hal::prelude::*;
 
-use esp32_hal::clock_control::{delay, CPUSource, ClockControl};
+use esp32_hal::clock_control::{sleep, CPUSource, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
@@ -29,7 +29,8 @@ fn main() -> ! {
     disable_timg_wdts(&mut timg0, &mut timg1);
 
     // setup clocks & watchdog
-    let mut clock_control = ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control);
+    let mut clock_control =
+        ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control).unwrap();
 
     clock_control
         .set_cpu_frequencies(
@@ -44,7 +45,7 @@ fn main() -> ! {
     //clock_control.set_cpu_frequency_to_xtal(26.MHz()).unwrap();
     let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
 
-    watchdog.start(5.s());
+    watchdog.start(3.s());
 
     // setup serial controller
     let mut uart0 = Serial::uart0(
@@ -65,10 +66,10 @@ fn main() -> ! {
 
     writeln!(tx, "Running on core {:0x}\n", xtensa_lx6_rt::get_core_id()).unwrap();
 
-    delay(100.ms());
+    sleep(100.ms());
     writeln!(tx, "{:?}\n", clock_control_config).unwrap();
 
-    delay(100.ms());
+    sleep(100.ms());
 
     writeln!(tx, "{:?}\n", watchdog.config().unwrap()).unwrap();
 
@@ -120,7 +121,7 @@ fn main() -> ! {
 
                 prev_ccount = ccount;
 
-                delay((Hertz(1_000_000) / BLINK_HZ).us());
+                sleep((Hertz(1_000_000) / BLINK_HZ).us());
 
                 // comment out next line to check watchdog behavior
                 watchdog.feed();

@@ -19,11 +19,9 @@ const WATCHDOG_BLOCK_VALUE: u32 = 0x89ABCDEF;
 
 pub struct WatchDog {
     clock_control_config: super::ClockControlConfig,
-    //    rtc_control: &'static esp32::rtccntl::RegisterBlock,
 }
 
 /// Watchdog configuration
-// TODO: make T for different periods independent
 #[derive(Debug)]
 pub struct WatchdogConfig<
     T1: Into<MicroSeconds>,
@@ -77,17 +75,15 @@ impl WatchDog {
 
     /// Calculate period from ref ticks
     fn calc_period(&self, value: u32) -> MicroSeconds {
-        return (((1000000u64 * value as u64)
-            / (u32::from(self.clock_control_config.slow_rtc_frequency()) as u64))
-            as u32)
-            .us();
+        (((1000000u64 * value as u64)
+            / (u32::from(self.clock_control_config.slow_rtc_frequency()) as u64)) as u32)
+            .us()
     }
 
     /// Calculate ref ticks from period
     fn calc_ticks(&self, value: MicroSeconds) -> u32 {
-        return (u32::from(value) as u64
-            * u32::from(self.clock_control_config.slow_rtc_frequency()) as u64
-            / 1000000u64) as u32;
+        (u32::from(value) as u64 * u32::from(self.clock_control_config.slow_rtc_frequency()) as u64
+            / 1000000u64) as u32
     }
 
     /// Get watchdog configuration

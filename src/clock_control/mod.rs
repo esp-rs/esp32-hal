@@ -4,25 +4,28 @@
 //! Also controls RTC watchdog timer.
 //!
 //! # TODO
-//! - Auto detect CPU frequency
 //! - Auto detect flash frequency
-//! - Calibrate internal oscillators
-//! - Changing clock sources
 //! - Low Power Clock (LPClock, regs: DPORT_BT_LPCK_DIV_FRAC_REG,DPORT_BT_LPCK_DIV_INT_REG)
 //! - LED clock selection in ledc peripheral
 //! - 8M and 8MD256 enable/disable
+//! - 150kHz enable/disable
 //! - CPU from 8M
 //! - APLL support
 //! - Implement light sleep
-//! - Check possibility of 40M or 26M APB clock from PLL
+//! - 32kHz Xtal support
+//! - Allow clock frequency to be forced
+//!
 
 use crate::prelude::*;
 use core::fmt;
 use esp32::dport::cpu_per_conf::CPUPERIOD_SEL_A;
 use esp32::generic::Variant::*;
-use esp32::rtccntl::bias_conf::*;
 use esp32::rtccntl::clk_conf::*;
-use esp32::{APB_CTRL, RTCCNTL};
+use esp32::rtccntl::cntl::*;
+use esp32::{APB_CTRL, RTCCNTL, TIMG0};
+
+use crate::dprintln;
+use core::fmt::Write;
 
 mod dfs;
 mod pll;
@@ -33,8 +36,7 @@ pub mod watchdog;
 //
 
 // default Xtal frequency
-// TODO should be auto-detected and/or configurable as feature
-const DEFAULT_XTAL_FREQUENCY: Hertz = Hertz(26_000_000);
+const DEFAULT_XTAL_FREQUENCY: Hertz = Hertz(40_000_000);
 
 // default frequencies for Dynamic Frequency Switching
 const CPU_SOURCE_MIN_DEFAULT: CPUSource = CPUSource::Xtal;
@@ -56,6 +58,17 @@ const REF_CLK_FREQ_1M: Hertz = Hertz(1_000_000);
 // PLL slow (for 80 and 160MHz CPU) and fast (for 240MHz CPU) frequency
 const PLL_FREQ_320M: Hertz = Hertz(320_000_000);
 const PLL_FREQ_480M: Hertz = Hertz(480_000_000);
+
+// Possible Xtal frequencies
+const XTAL_FREQUENCY_40M: Hertz = Hertz(40_000_000);
+const XTAL_FREQUENCY_26M: Hertz = Hertz(26_000_000);
+const XTAL_FREQUENCY_24M: Hertz = Hertz(24_000_000);
+
+// Thresholds for auto frequency detection
+const XTAL_FREQUENCY_THRESHOLD: Hertz = Hertz(50_000_000);
+const XTAL_FREQUENCY_40M_THRESHOLD: Hertz = Hertz(33_000_000);
+const XTAL_FREQUENCY_26M_THRESHOLD: Hertz = Hertz(24_500_000);
+const XTAL_FREQUENCY_24M_THRESHOLD: Hertz = Hertz(20_000_000);
 
 // minimum CPU frequency
 const CPU_FREQ_MIN: Hertz = Hertz(1_000);
@@ -88,6 +101,9 @@ const DELAY_SLOW_CLK_SWITCH: MicroSeconds = MicroSeconds(300);
 const DELAY_8M_ENABLE: MicroSeconds = MicroSeconds(50);
 const DELAY_DBIAS_RAISE: MicroSeconds = MicroSeconds(3);
 
+// number of wait cycles when enabling 8MHz clock
+const CK8M_WAIT_DEFAULT: u8 = 20;
+
 // Bias voltages for various clock speeds
 const DIG_DBIAS_240M_OR_FLASH_80M: DBIAS_WAK_A = DBIAS_WAK_A::BIAS_1V25;
 const DIG_DBIAS_80M_160M: DBIAS_WAK_A = DBIAS_WAK_A::BIAS_1V10;
@@ -97,6 +113,9 @@ const DIG_DBIAS_2M: DBIAS_WAK_A = DBIAS_WAK_A::BIAS_1V00;
 // Default for clock tuning
 const SCK_DCAP_DEFAULT: u8 = 255;
 const CK8M_DFREQ_DEFAULT: u8 = 172;
+
+// Number of slow cycles to measure for Xtal frequency measurement
+const CYCLES_XTAL_CALIBRATION: u16 = 10;
 
 /// RTC Clock errors
 #[derive(Debug)]
@@ -109,6 +128,8 @@ pub enum Error {
     FrequencyTooLow,
     LockAlreadyReleased,
     TooManyCallbacks,
+    CalibrationTimeOut,
+    CalibrationSetupError,
 }
 
 /// CPU/APB/REF clock source
@@ -144,6 +165,17 @@ pub enum FastRTCSource {
     XtalD4,
 }
 
+/// Slow RTC clock source
+#[derive(Debug, Copy, Clone)]
+enum CalibrateRTCSource {
+    /// Slow RTC Source
+    SlowRTC,
+    /// Low frequency Xtal (32kHz)
+    Xtal32k,
+    /// 8MHz internal oscillator (divided by 256)
+    RTC8MD256,
+}
+
 #[derive(Debug)]
 struct ClockControlCurrent {
     /// CPU Frequency
@@ -167,6 +199,9 @@ struct ClockControlCurrent {
     pub xtal32k_frequency: Hertz,
     /// RTC8M Frequency
     pub rtc8m_frequency: Hertz,
+    /// RTC8M/256 Frequency
+    pub rtc8md256_frequency: Hertz,
+
     /// RTC Frequency
     pub rtc_frequency: Hertz,
     /// PLL Frequency
@@ -195,6 +230,7 @@ impl Default for ClockControlCurrent {
             xtal_frequency: Hertz(0),
             xtal32k_frequency: Hertz(0),
             rtc8m_frequency: Hertz(0),
+            rtc8md256_frequency: Hertz(0),
             rtc_frequency: Hertz(0),
             pll_frequency: Hertz(0),
 
@@ -257,6 +293,9 @@ impl<'a> ClockControlConfig {
     }
     pub fn rtc8m_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().current.rtc8m_frequency }
+    }
+    pub fn rtc8md256_frequency(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().current.rtc8md256_frequency }
     }
     pub fn rtc_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().current.rtc_frequency }
@@ -326,11 +365,15 @@ pub struct ClockControl {
 
     apb_frequency_locked: Hertz,
 
+    rtc8md256_frequency_measured: Hertz,
+    rtc_frequency_measured: Hertz,
+
     current: ClockControlCurrent,
     dfs: dfs::DFS,
 }
 
-pub fn delay<T: Into<NanoSeconds>>(time: T) {
+/// Function only available once clock if frozen
+pub fn sleep<T: Into<NanoSeconds>>(time: T) {
     unsafe { CLOCK_CONTROL.as_ref().unwrap().delay(time) };
 }
 
@@ -340,7 +383,7 @@ impl ClockControl {
         rtc_control: RTCCNTL,
         apb_control: APB_CTRL,
         dport_control: crate::dport::ClockControl,
-    ) -> Self {
+    ) -> Result<Self, Error> {
         let mut cc = ClockControl {
             rtc_control,
             apb_control,
@@ -352,14 +395,18 @@ impl ClockControl {
             cpu_source_max: CPU_SOURCE_MAX_DEFAULT,
             cpu_frequency_apb: CPU_FREQ_APB_DEFAULT,
             cpu_source_apb: CPU_SOURCE_APB_DEFAULT,
+            light_sleep_enabled: false,
+
             apb_frequency_locked: APB_FREQ_PLL,
 
-            light_sleep_enabled: false,
+            rtc8md256_frequency_measured: FREQ_OFF,
+            rtc_frequency_measured: FREQ_OFF,
+
             current: ClockControlCurrent::default(),
             dfs: dfs::DFS::new(),
         };
-        cc.init();
-        cc
+        cc.init()?;
+        Ok(cc)
     }
 
     /// Freeze clock settings and return ClockControlConfig
@@ -386,8 +433,17 @@ impl ClockControl {
             xtal_frequency: self.xtal_frequency(),
             xtal32k_frequency: FREQ_OFF,
             pll_frequency: self.pll_frequency(),
-            rtc8m_frequency: FREQ_OFF,
-            rtc_frequency: FREQ_OFF,
+            rtc8m_frequency: if self.is_rtc8m_enabled() {
+                self.rtc8md256_frequency_measured * 256
+            } else {
+                FREQ_OFF
+            },
+            rtc8md256_frequency: if self.is_rtc8md256_enabled() {
+                self.rtc8md256_frequency_measured
+            } else {
+                FREQ_OFF
+            },
+            rtc_frequency: self.rtc_frequency_measured,
 
             cpu_source: self.cpu_source(),
             slow_rtc_source: self.slow_rtc_source().unwrap_or(SlowRTCSource::RTC150k),
@@ -395,16 +451,214 @@ impl ClockControl {
         };
     }
 
+    // Check if 8MHz oscillator is enabled
+    fn is_rtc8m_enabled(&self) -> bool {
+        self.rtc_control.clk_conf.read().enb_ck8m().bit_is_clear()
+    }
+
+    // Check if 8MHz oscillator is enabled
+    fn is_rtc8md256_enabled(&self) -> bool {
+        self.rtc_control
+            .clk_conf
+            .read()
+            .enb_ck8m_div()
+            .bit_is_clear()
+    }
+
+    // Enable 8MHz oscillator
+    fn rtc8m_enable(&mut self) -> &mut Self {
+        if self.is_rtc8m_enabled() {
+            return self;
+        }
+
+        self.rtc_control
+            .clk_conf
+            .modify(|_, w| w.enb_ck8m().clear_bit().enb_ck8m_div().set_bit());
+
+        // no need to wait for auto enable if enabled by software
+        unsafe { self.rtc_control.timer1.modify(|_, w| w.ck8m_wait().bits(1)) };
+
+        self.delay(DELAY_8M_ENABLE);
+
+        self
+    }
+
+    // Enable 8MHz oscillator and 8MHz/256
+    fn rtc8md256_enable(&mut self) -> &mut Self {
+        let rtc8m_enabled = self.is_rtc8m_enabled();
+
+        self.rtc_control
+            .clk_conf
+            .modify(|_, w| w.enb_ck8m().clear_bit().enb_ck8m_div().clear_bit());
+
+        if !rtc8m_enabled {
+            // no need to wait for auto enable if enabled by software
+            unsafe { self.rtc_control.timer1.modify(|_, w| w.ck8m_wait().bits(1)) };
+
+            self.delay(DELAY_8M_ENABLE);
+        }
+
+        self
+    }
+
+    // Disable 8MHz/256
+    fn rtc8md256_disable(&mut self) -> &mut Self {
+        self.rtc_control
+            .clk_conf
+            .modify(|_, w| w.enb_ck8m_div().set_bit());
+        self
+    }
+
+    /// Disable 8MHz oscillator (and therefore also 8MHz/256)
+    fn rtc8m_disable(&mut self) -> &mut Self {
+        self.rtc_control
+            .clk_conf
+            .modify(|_, w| w.enb_ck8m().set_bit());
+
+        // need to wait for auto enable when disabled
+        unsafe {
+            self.rtc_control
+                .timer1
+                .modify(|_, w| w.ck8m_wait().bits(CK8M_WAIT_DEFAULT));
+        }
+
+        self
+    }
+
+    /// Function to calibrate clocks against each other.
+    /// Returns the number of XTAL clock cycles within the number of slow clock cycles.
+    /// Clock must already be enabled on entry to this routine
+    fn measure_clock_ticks(
+        &mut self,
+        source: CalibrateRTCSource,
+        slow_cycles: u16,
+    ) -> Result<u32, Error> {
+        if slow_cycles > 32767 {
+            return Err(Error::CalibrationSetupError);
+        }
+
+        // enable proper clock: should be done in advance
+
+        let slow_freq = match source {
+            CalibrateRTCSource::SlowRTC => self.slow_rtc_frequency(),
+            CalibrateRTCSource::RTC8MD256 => RTC_SLOW_CLK_FREQ_8MD256,
+            CalibrateRTCSource::Xtal32k => RTC_SLOW_CLK_FREQ_32K,
+        };
+
+        let estimated_time = (Hertz(1_000_000) * (slow_cycles as u32) / slow_freq).us();
+        let estimated_cycle_count = 2 * self.time_to_cpu_cycles(estimated_time);
+
+        let max_cycle_count = 0x01FFFFFF; // bit 7:31 = 25 bits
+        if estimated_cycle_count > max_cycle_count {
+            return Err(Error::CalibrationSetupError);
+        }
+
+        let rtc_source = match source {
+            CalibrateRTCSource::SlowRTC => esp32::timg::rtccalicfg::CLK_SEL_A::RTC_MUX,
+            CalibrateRTCSource::RTC8MD256 => esp32::timg::rtccalicfg::CLK_SEL_A::CK8M_D256,
+            CalibrateRTCSource::Xtal32k => esp32::timg::rtccalicfg::CLK_SEL_A::XTAL32K,
+        };
+
+        // get timer group 0 registers, do it this way instead of
+        // having to pass in yet another peripheral for this clock control
+        let timg0 = unsafe { &(*TIMG0::ptr()) };
+
+        // setup measurement
+        unsafe {
+            timg0.rtccalicfg.modify(|_, w| {
+                w.clk_sel()
+                    .variant(rtc_source)
+                    .max()
+                    .bits(slow_cycles)
+                    .start_cycling()
+                    .clear_bit()
+                    .start()
+                    .clear_bit()
+            })
+        };
+
+        // start measurement
+        timg0.rtccalicfg.modify(|_, w| w.start().set_bit());
+
+        // check if finished or timeout
+        let start = xtensa_lx6_rt::get_cycle_count();
+        while timg0.rtccalicfg.read().rdy().bit_is_clear() {
+            if xtensa_lx6_rt::get_cycle_count().wrapping_sub(start) > estimated_cycle_count {
+                return Err(Error::CalibrationTimeOut);
+            }
+        }
+
+        Ok(timg0.rtccalicfg1.read().value().bits())
+    }
+
+    /// Measure an estimated Xtal frequency based on the 8MHz oscillator
+    fn measure_xtal_frequency(&mut self) -> Result<Hertz, Error> {
+        let ticks =
+            self.measure_clock_ticks(CalibrateRTCSource::RTC8MD256, CYCLES_XTAL_CALIBRATION)?;
+
+        Ok(RTC_SLOW_CLK_FREQ_8MD256 * ticks / (CYCLES_XTAL_CALIBRATION as u32))
+    }
+
+    /// Measure the frequency of one of the clock oscillators based on the Xtal frequency
+    fn measure_slow_frequency(&mut self, source: CalibrateRTCSource) -> Result<Hertz, Error> {
+        let ticks = self.measure_clock_ticks(source, CYCLES_XTAL_CALIBRATION)?;
+
+        Ok(self.xtal_frequency() * (CYCLES_XTAL_CALIBRATION as u32) / ticks)
+    }
+
     /// Initialize clock configuration
-    fn init(&mut self) -> &mut Self {
+    fn init(&mut self) -> Result<&mut Self, Error> {
+        // switch from pll to xtal (pll can still be enabled when previously in deep sleep)
+        // xtal_frequency might be incorrect here, but by setting teh cpu to current xtal frequency
+        // divider will be initialized to 1
         if self.rtc_control.clk_conf.read().soc_clk_sel().is_pll() {
             self.set_cpu_frequency_to_xtal(self.xtal_frequency())
                 .unwrap();
         }
 
+        // update the current cpu frequency as this is used in delays during init
+        self.current.cpu_frequency = self.xtal_frequency();
+
+        // set default calibration for 150kHz and 8MHz oscillators
+        unsafe {
+            self.rtc_control
+                .cntl
+                .modify(|_, w| w.sck_dcap().bits(SCK_DCAP_DEFAULT));
+            self.rtc_control
+                .clk_conf
+                .modify(|_, w| w.ck8m_dfreq().bits(CK8M_DFREQ_DEFAULT));
+        }
+
+        // TODO: Enable the internal bus used to configure PLL's: seems to be done by default,
+        // but maybe not during deep sleep?
+        // SET_PERI_REG_BITS(ANA_CONFIG_REG, ANA_CONFIG_M, ANA_CONFIG_M, ANA_CONFIG_S);
+        // CLEAR_PERI_REG_MASK(ANA_CONFIG_REG, I2C_APLL_M | I2C_BBPLL_M);
+
+        let xtal_frequency = self.measure_xtal_frequency()?;
+
+        if xtal_frequency > XTAL_FREQUENCY_THRESHOLD {
+            return Err(Error::FrequencyTooHigh);
+        } else if xtal_frequency > XTAL_FREQUENCY_40M_THRESHOLD {
+            self.set_xtal_frequency_to_scratch(XTAL_FREQUENCY_40M);
+        } else if xtal_frequency > XTAL_FREQUENCY_26M_THRESHOLD {
+            self.set_xtal_frequency_to_scratch(XTAL_FREQUENCY_26M);
+        } else if xtal_frequency > XTAL_FREQUENCY_24M_THRESHOLD {
+            self.set_xtal_frequency_to_scratch(XTAL_FREQUENCY_24M);
+        } else {
+            return Err(Error::FrequencyTooLow);
+        }
+
+        self.rtc8md256_frequency_measured =
+            self.measure_slow_frequency(CalibrateRTCSource::RTC8MD256)?;
+
+        self.set_slow_rtc_source(SlowRTCSource::RTC150k);
+        self.rtc_frequency_measured = self.measure_slow_frequency(CalibrateRTCSource::SlowRTC)?;
+        self.set_slow_rtc_source(SlowRTCSource::RTC8MD256);
+
+        // update all clock frequencies
         self.update_current_config();
 
-        self
+        Ok(self)
     }
 
     fn time_to_cpu_cycles<T: Into<NanoSeconds>>(&self, time: T) -> u32 {
@@ -548,7 +802,7 @@ impl ClockControl {
         // select appropriate voltage
         if actual_frequency > CPU_FREQ_2M {
             self.rtc_control
-                .bias_conf
+                .cntl
                 .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_XTAL))
         };
 
@@ -570,11 +824,9 @@ impl ClockControl {
         // select appropriate voltage
         if actual_frequency <= CPU_FREQ_2M {
             self.rtc_control
-                .bias_conf
+                .cntl
                 .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_2M))
         };
-
-        self.pll_disable();
 
         self.set_apb_frequency_to_scratch(actual_frequency);
 
@@ -613,10 +865,10 @@ impl ClockControl {
         // if high frequency requested raise voltage first
         if pll_frequency_high {
             self.rtc_control
-                .bias_conf
+                .cntl
                 .modify(|_, w| w.dig_dbias_wak().variant(dbias));
 
-            delay(DELAY_DBIAS_RAISE);
+            self.delay(DELAY_DBIAS_RAISE);
         }
 
         self.set_pll_frequency(pll_frequency_high)?;
@@ -628,7 +880,7 @@ impl ClockControl {
         // if low frequency requested lower voltage after
         if !pll_frequency_high {
             self.rtc_control
-                .bias_conf
+                .cntl
                 .modify(|_, w| w.dig_dbias_wak().variant(dbias));
         }
 
@@ -647,7 +899,7 @@ impl ClockControl {
     /// wait for slow clock cycle to synchronize
     fn wait_for_slow_cycle(&mut self) {
         // TODO: properly implement wait_for_slow_cycles (https://github.com/espressif/esp-idf/blob/c1d0daf36d0dca81c23c226001560edfa51c30ea/components/soc/src/esp32/rtc_time.c#L155)
-        self.delay(100.ms());
+        self.delay(200.ms());
         //      unimplemented!()
     }
 
@@ -696,16 +948,6 @@ impl ClockControl {
         self
     }
 
-    /// Get Slow RTC source
-    pub fn slow_rtc_source(&self) -> Result<SlowRTCSource, Error> {
-        match self.rtc_control.clk_conf.read().ana_clk_rtc_sel().variant() {
-            Val(ANA_CLK_RTC_SEL_A::SLOW_CK) => Ok(SlowRTCSource::RTC150k),
-            Val(ANA_CLK_RTC_SEL_A::CK_XTAL_32K) => Ok(SlowRTCSource::Xtal32k),
-            Val(ANA_CLK_RTC_SEL_A::CK8M_D256_OUT) => Ok(SlowRTCSource::RTC8MD256),
-            _ => Err(Error::UnsupportedFreqConfig),
-        }
-    }
-
     /// Get Slow RTC frequency
     pub fn slow_rtc_frequency(&self) -> Hertz {
         match self.slow_rtc_source() {
@@ -713,6 +955,16 @@ impl ClockControl {
             Ok(SlowRTCSource::Xtal32k) => RTC_SLOW_CLK_FREQ_32K,
             Ok(SlowRTCSource::RTC8MD256) => RTC_SLOW_CLK_FREQ_8MD256,
             _ => FREQ_OFF,
+        }
+    }
+
+    /// Get Slow RTC source
+    pub fn slow_rtc_source(&self) -> Result<SlowRTCSource, Error> {
+        match self.rtc_control.clk_conf.read().ana_clk_rtc_sel().variant() {
+            Val(ANA_CLK_RTC_SEL_A::SLOW_CK) => Ok(SlowRTCSource::RTC150k),
+            Val(ANA_CLK_RTC_SEL_A::CK_XTAL_32K) => Ok(SlowRTCSource::Xtal32k),
+            Val(ANA_CLK_RTC_SEL_A::CK8M_D256_OUT) => Ok(SlowRTCSource::RTC8MD256),
+            _ => Err(Error::UnsupportedFreqConfig),
         }
     }
 
@@ -736,6 +988,14 @@ impl ClockControl {
         self
     }
 
+    /// Get Fast RTC frequency
+    pub fn fast_rtc_frequency(&self) -> Hertz {
+        match self.fast_rtc_source() {
+            FastRTCSource::RTC8M => RTC_FAST_CLK_FREQ_8M,
+            FastRTCSource::XtalD4 => self.xtal_frequency() / 4,
+        }
+    }
+
     /// Get the Fast RTC clock source
     pub fn fast_rtc_source(&self) -> FastRTCSource {
         match self
@@ -747,14 +1007,6 @@ impl ClockControl {
         {
             FAST_CLK_RTC_SEL_A::CK8M => FastRTCSource::RTC8M,
             FAST_CLK_RTC_SEL_A::XTAL => FastRTCSource::XtalD4,
-        }
-    }
-
-    /// Get Fast RTC frequency
-    pub fn fast_rtc_frequency(&self) -> Hertz {
-        match self.fast_rtc_source() {
-            FastRTCSource::RTC8M => RTC_FAST_CLK_FREQ_8M,
-            FastRTCSource::XtalD4 => self.xtal_frequency() / 4,
         }
     }
 
@@ -781,14 +1033,32 @@ impl ClockControl {
         // We may have already written Xtal value into RTC_XTAL_FREQ_REG
         let xtal_freq_reg = self.rtc_control.store4.read().scratch4().bits();
         if !Self::clk_val_is_valid(xtal_freq_reg) {
-            // return 40MHz as default (this is recommended )
+            // return 40MHz as default (this is the recommended xtal)
             return DEFAULT_XTAL_FREQUENCY;
         }
 
-        (xtal_freq_reg & 0x7fff).MHz().into() // bit15 is RTC_DISABLE_ROM_LOG flag
+        (xtal_freq_reg & 0xfffe).MHz().into() // bit0 is RTC_DISABLE_ROM_LOG flag
     }
 
-    pub fn cpu_source(&self) -> CPUSource {
+    /// Set Xtal frequency.
+    ///
+    /// This sets the Xtal frequency to a scratch register, which is initialized during the clock calibration
+    fn set_xtal_frequency_to_scratch<T: Into<Hertz>>(&mut self, frequency: T) -> &mut Self {
+        // Write CPU value into RTC_XTAL_FREQ_REG for compatibility with esp-idf
+        // bit 0 is RTC_ROM_DISABLE_ROM_LOG flag
+        let mut val = ((frequency.into() / Hertz(1_000_000)) & 0xfffe)
+            | (self.rtc_control.store4.read().scratch4().bits() & 0x1);
+
+        val = val | (val << 16); // value needs to be copied in lower and upper 16 bits
+        self.rtc_control
+            .store4
+            .write(|w| unsafe { w.scratch4().bits(val) });
+
+        self
+    }
+
+    /// Set CPU frequency source
+    fn cpu_source(&self) -> CPUSource {
         match self.rtc_control.clk_conf.read().soc_clk_sel().variant() {
             SOC_CLK_SEL_A::XTAL => CPUSource::Xtal,
             SOC_CLK_SEL_A::PLL => CPUSource::PLL,
@@ -798,7 +1068,7 @@ impl ClockControl {
     }
 
     /// Get CPU frequency
-    pub fn cpu_frequency(&self) -> Hertz {
+    fn cpu_frequency(&self) -> Hertz {
         match self.cpu_source() {
             CPUSource::Xtal => {
                 let divider = self.apb_control.sysclk_conf.read().pre_div_cnt().bits() + 1;

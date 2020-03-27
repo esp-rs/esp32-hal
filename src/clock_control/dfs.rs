@@ -129,7 +129,7 @@ impl<'a> super::ClockControl {
 
             if data.apb == 1 && data.cpu == 0 {
                 self.set_cpu_frequency_apb().unwrap();
-                self.do_callbacks()
+                self.do_callbacks();
             }
         });
         ExecuteGuardAPB {

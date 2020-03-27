@@ -7,7 +7,7 @@ use core::panic::PanicInfo;
 
 use esp32_hal::prelude::*;
 
-use esp32_hal::clock_control::delay;
+use esp32_hal::clock_control::sleep;
 use esp32_hal::dport::Split;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 
@@ -28,7 +28,8 @@ fn main() -> ! {
     disable_timg_wdts(&mut timg0, &mut timg1);
 
     let clkcntrl =
-        esp32_hal::clock_control::ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control);
+        esp32_hal::clock_control::ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control)
+            .unwrap();
 
     let (clkcntrl_config, mut watchdog) = clkcntrl.freeze().unwrap();
     watchdog.disable();
@@ -58,9 +59,9 @@ fn main() -> ! {
         writeln!(tx, "").unwrap();
 
         blinky.set_high().unwrap();
-        delay((Hertz(1_000_000) / BLINK_HZ).us());
+        sleep((Hertz(1_000_000) / BLINK_HZ).us());
         blinky.set_low().unwrap();
-        delay((Hertz(1_000_000) / BLINK_HZ).us());
+        sleep((Hertz(1_000_000) / BLINK_HZ).us());
     }
 }
 
