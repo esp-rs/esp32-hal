@@ -24,10 +24,10 @@ use esp32::rtccntl::clk_conf::*;
 use esp32::rtccntl::cntl::*;
 use esp32::{APB_CTRL, RTCCNTL, TIMG0};
 
-use crate::dprintln;
+use crate::{dflush, dprintln};
 use core::fmt::Write;
 
-mod dfs;
+pub mod dfs;
 mod pll;
 pub mod watchdog;
 
@@ -113,7 +113,8 @@ const DIG_DBIAS_2M: DBIAS_WAK_A = DBIAS_WAK_A::BIAS_1V00;
 
 // Default for clock tuning
 const SCK_DCAP_DEFAULT: u8 = 255;
-const CK8M_DFREQ_DEFAULT: u8 = 172;
+const CK8M_DFREQ_DEFAULT: u8 = 231;
+//172
 
 // Number of slow cycles to measure for Xtal frequency measurement
 const CYCLES_XTAL_CALIBRATION: u16 = 10;
@@ -186,75 +187,129 @@ static mut CLOCK_CONTROL: Option<ClockControl> = None;
 pub struct ClockControlConfig {}
 
 impl<'a> ClockControlConfig {
+    /// The current CPU frequency
     pub fn cpu_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency }
     }
+
+    /// The current APB frequency
     pub fn apb_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().apb_frequency }
     }
-    pub fn cpu_frequency_min(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency_min }
+
+    /// The CPU frequency in the default state
+    pub fn cpu_frequency_default(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency_default }
     }
-    pub fn cpu_frequency_max(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency_max }
+
+    /// The CPU frequency in the CPU lock state
+    pub fn cpu_frequency_locked(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency_locked }
     }
-    pub fn cpu_frequency_apb(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency_apb }
+
+    /// The CPU frequency in the APB lock state
+    pub fn cpu_frequency_apb_locked(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency_apb_locked }
     }
-    pub fn apb_frequency_locked(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().apb_frequency_locked }
+
+    /// The APB frequency in the APB lock state
+    pub fn apb_frequency_apb_locked(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().apb_frequency_apb_locked }
     }
+
+    /// The lowest APB frequency in all states
+    pub fn apb_frequency_min(&self) -> Hertz {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().apb_frequency_min }
+    }
+
+    /// The current reference frequency
     pub fn ref_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().ref_frequency }
     }
+
+    /// The current slow RTC frequency
     pub fn slow_rtc_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().slow_rtc_frequency }
     }
+
+    /// The current fast RTC frequency
     pub fn fast_rtc_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().fast_rtc_frequency }
     }
+
+    /// The current APLL frequency
     pub fn apll_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().apll_frequency }
     }
+
+    /// The current PLL/2 frequency
     pub fn pll_d2_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().pll_d2_frequency }
     }
+
+    /// The Xtal frequency
     pub fn xtal_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().xtal_frequency }
     }
+
+    /// The 32kHz Xtal frequency
     pub fn xtal32k_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().xtal32k_frequency }
     }
+
+    /// The current PLL frequency
     pub fn pll_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().pll_frequency }
     }
+
+    /// The current 8MHz oscillator frequency
     pub fn rtc8m_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().rtc8m_frequency }
     }
+
+    /// The current 8MHz oscillator frequency / 256
     pub fn rtc8md256_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().rtc8md256_frequency }
     }
+
+    /// The current 150kHz oscillator frequency
     pub fn rtc_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().rtc_frequency }
     }
+
+    /// The current source for the CPU and APB frequencies
     pub fn cpu_source(&self) -> CPUSource {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_source }
     }
+
+    /// The current source for the slow RTC frequency
     pub fn slow_rtc_source(&self) -> SlowRTCSource {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().slow_rtc_source }
     }
+
+    /// The current source for the fast RTC frequency
     pub fn fast_rtc_source(&self) -> FastRTCSource {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().fast_rtc_source }
     }
 
-    pub fn lock_cpu_frequency(&self) -> dfs::ExecuteGuardCPU {
+    /// Obtain a RAII lock to use the high CPU frequency
+    pub fn lock_cpu_frequency(&self) -> dfs::LockCPU {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().lock_cpu_frequency() }
     }
-    pub fn lock_apb_frequency(&self) -> dfs::ExecuteGuardAPB {
+
+    /// Obtain a RAII lock to use the APB CPU frequency
+    pub fn lock_apb_frequency(&self) -> dfs::LockAPB {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().lock_apb_frequency() }
     }
-    pub fn lock_awake(&self) -> dfs::ExecuteGuardAwake {
+
+    /// Obtain a RAII lock to keep the CPU from sleeping
+    pub fn lock_awake(&self) -> dfs::LockAwake {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().lock_awake() }
+    }
+
+    /// Obtain a RAII lock to keep the PLL/2 from being turned off
+    pub fn lock_plld2(&self) -> dfs::LockPllD2 {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().lock_plld2() }
     }
 
     /// Add callback which will be called when clock speeds are changed.
@@ -309,22 +364,28 @@ impl fmt::Debug for ClockControl {
     }
 }
 
-/// Clock Control
+/// Clock Control for initialization. Once initialization is done, call the freeze function to lock
+/// the clock configuration. This will return a [ClockControlConfig](ClockControlConfig), which can
+/// be copied for e.g. use in multiple peripherals. The ClockControlConfig allows thread and
+///  interrupt safe way to switch between default, high CPU and APB frequency configuration.
+///
 pub struct ClockControl {
     rtc_control: RTCCNTL,
     apb_control: APB_CTRL,
     dport_control: crate::dport::ClockControl,
 
-    cpu_frequency_min: Hertz,
+    cpu_frequency_default: Hertz,
     cpu_source_min: CPUSource,
-    cpu_frequency_max: Hertz,
+    cpu_frequency_locked: Hertz,
     cpu_source_max: CPUSource,
-    cpu_frequency_apb: Hertz,
+    cpu_frequency_apb_locked: Hertz,
     cpu_source_apb: CPUSource,
     light_sleep_enabled: bool,
 
-    apb_frequency_locked: Hertz,
+    apb_frequency_min: Hertz,
+    apb_frequency_apb_locked: Hertz,
 
+    rtc8m_frequency_measured: Hertz,
     rtc8md256_frequency_measured: Hertz,
     rtc_frequency_measured: Hertz,
 
@@ -368,16 +429,18 @@ impl ClockControl {
             apb_control,
             dport_control,
 
-            cpu_frequency_min: CPU_FREQ_MIN_DEFAULT,
+            cpu_frequency_default: CPU_FREQ_MIN_DEFAULT,
             cpu_source_min: CPU_SOURCE_MIN_DEFAULT,
-            cpu_frequency_max: CPU_FREQ_MAX_DEFAULT,
+            cpu_frequency_locked: CPU_FREQ_MAX_DEFAULT,
             cpu_source_max: CPU_SOURCE_MAX_DEFAULT,
-            cpu_frequency_apb: CPU_FREQ_APB_DEFAULT,
+            cpu_frequency_apb_locked: CPU_FREQ_APB_DEFAULT,
             cpu_source_apb: CPU_SOURCE_APB_DEFAULT,
             light_sleep_enabled: false,
 
-            apb_frequency_locked: APB_FREQ_PLL,
+            apb_frequency_apb_locked: APB_FREQ_PLL,
+            apb_frequency_min: CPU_FREQ_MIN_DEFAULT,
 
+            rtc8m_frequency_measured: FREQ_OFF,
             rtc8md256_frequency_measured: FREQ_OFF,
             rtc_frequency_measured: FREQ_OFF,
 
@@ -417,40 +480,6 @@ impl ClockControl {
         Ok((res, watchdog::WatchDog::new(res)))
     }
 
-    /*
-    fn update_current_config(&mut self) {
-        self.current = ClockControlCurrent {
-            cpu_frequency: self.cpu_frequency(),
-            apb_frequency: self.apb_frequency(),
-            ref_frequency: self.ref_frequency(),
-            slow_rtc_frequency: self.slow_rtc_frequency(),
-            fast_rtc_frequency: self.fast_rtc_frequency(),
-
-            apll_frequency: FREQ_OFF,
-            pll_d2_frequency: self.pll_frequency() / 2,
-
-            xtal_frequency: self.xtal_frequency(),
-            xtal32k_frequency: FREQ_OFF,
-            pll_frequency: self.pll_frequency(),
-            rtc8m_frequency: if self.is_rtc8m_enabled() {
-                self.rtc8md256_frequency_measured * 256
-            } else {
-                FREQ_OFF
-            },
-            rtc8md256_frequency: if self.is_rtc8md256_enabled() {
-                self.rtc8md256_frequency_measured
-            } else {
-                FREQ_OFF
-            },
-            rtc_frequency: self.rtc_frequency_measured,
-
-            cpu_source: self.cpu_source(),
-            slow_rtc_source: self.slow_rtc_source().unwrap_or(SlowRTCSource::RTC150k),
-            fast_rtc_source: self.fast_rtc_source(),
-        };
-    }
-    */
-
     // Check if 8MHz oscillator is enabled
     fn is_rtc8m_enabled(&self) -> bool {
         self.rtc_control.clk_conf.read().enb_ck8m().bit_is_clear()
@@ -476,7 +505,7 @@ impl ClockControl {
 
         self.delay(DELAY_8M_ENABLE);
 
-        self.rtc8m_frequency = self.rtc8md256_frequency_measured * 256;
+        self.rtc8m_frequency = self.rtc8m_frequency_measured;
 
         self
     }
@@ -666,6 +695,7 @@ impl ClockControl {
 
         self.rtc8md256_frequency_measured =
             self.measure_slow_frequency(CalibrateRTCSource::RTC8MD256)?;
+        self.rtc8m_frequency_measured = self.rtc8md256_frequency_measured * 256;
 
         self.set_slow_rtc_source(SlowRTCSource::RTC150k);
         self.rtc_frequency_measured = self.measure_slow_frequency(CalibrateRTCSource::SlowRTC)?;
@@ -677,7 +707,7 @@ impl ClockControl {
         self.set_slow_rtc_source(SlowRTCSource::RTC8MD256);
         self.set_fast_rtc_source(FastRTCSource::RTC8M);
 
-        self.set_cpu_frequency_min()?;
+        self.set_cpu_frequency_default()?;
 
         Ok(self)
     }
@@ -702,11 +732,11 @@ impl ClockControl {
     pub fn set_cpu_frequencies<T1, T2, T3>(
         &mut self,
         cpu_source_min: CPUSource,
-        cpu_frequency_min: T1,
+        cpu_frequency_default: T1,
         cpu_source_max: CPUSource,
-        cpu_frequency_max: T2,
+        cpu_frequency_locked: T2,
         cpu_source_apb: CPUSource,
-        cpu_frequency_apb: T3,
+        cpu_frequency_apb_locked: T3,
     ) -> Result<&mut Self, Error>
     where
         T1: Into<Hertz> + Copy + PartialOrd,
@@ -714,69 +744,104 @@ impl ClockControl {
         T3: Into<Hertz> + Copy + PartialOrd,
     {
         match cpu_source_min {
-            CPUSource::APLL | CPUSource::RTC8M => return Err(Error::UnsupportedFreqConfig),
+            CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
             _ => {}
         }
         match cpu_source_max {
-            CPUSource::APLL | CPUSource::RTC8M => return Err(Error::UnsupportedFreqConfig),
+            CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
             _ => {}
         }
         match cpu_source_apb {
-            CPUSource::APLL | CPUSource::RTC8M => return Err(Error::UnsupportedFreqConfig),
+            CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
             _ => {}
         }
 
-        if cpu_frequency_min.into() < CPU_FREQ_MIN
-            || cpu_frequency_max.into() < CPU_FREQ_MIN
-            || cpu_frequency_apb.into() < CPU_FREQ_MIN
+        if cpu_frequency_default.into() < CPU_FREQ_MIN
+            || cpu_frequency_locked.into() < CPU_FREQ_MIN
+            || cpu_frequency_apb_locked.into() < CPU_FREQ_MIN
         {
             return Err(Error::FrequencyTooLow);
         }
 
-        if cpu_frequency_min.into() > CPU_FREQ_240M
-            || cpu_frequency_max.into() > CPU_FREQ_240M
-            || cpu_frequency_apb.into() > CPU_FREQ_240M
+        if cpu_frequency_default.into() > CPU_FREQ_240M
+            || cpu_frequency_locked.into() > CPU_FREQ_240M
+            || cpu_frequency_apb_locked.into() > CPU_FREQ_240M
         {
             return Err(Error::FrequencyTooHigh);
         }
 
-        self.cpu_source_min = cpu_source_min;
-        self.cpu_frequency_min = cpu_frequency_min.into();
+        self.cpu_source_min = self.cpu_source_min;
+        self.cpu_frequency_default = cpu_frequency_default.into();
         self.cpu_source_max = cpu_source_max;
-        self.cpu_frequency_max = cpu_frequency_max.into();
+        self.cpu_frequency_locked = cpu_frequency_locked.into();
         self.cpu_source_apb = cpu_source_apb;
-        self.cpu_frequency_apb = cpu_frequency_apb.into();
+        self.cpu_frequency_apb_locked = cpu_frequency_apb_locked.into();
 
-        match self.cpu_source_apb {
-            CPUSource::PLL => self.apb_frequency_locked = APB_FREQ_PLL,
-            CPUSource::Xtal => {
-                let div = core::cmp::max(1, self.xtal_frequency / self.cpu_frequency_apb);
-                self.apb_frequency_locked = self.xtal_frequency / div;
-            }
-            _ => return Err(Error::UnsupportedFreqConfig),
-        }
+        self.apb_frequency_min = self.calc_apb_frequency_min();
 
-        self.set_cpu_frequency_min()?;
+        self.set_cpu_frequency_default()?;
         Ok(self)
     }
 
+    fn calc_apb_frequency_min(&self) -> Hertz {
+        core::cmp::min(
+            self.round_cpu_frequency(self.cpu_source_min, self.cpu_frequency_default),
+            core::cmp::min(
+                self.round_cpu_frequency(self.cpu_source_max, self.cpu_frequency_locked),
+                self.round_cpu_frequency(self.cpu_source_apb, self.cpu_frequency_apb_locked),
+            ),
+        )
+    }
+
+    fn round_cpu_frequency<T: Into<Hertz>>(&self, source: CPUSource, frequency: T) -> Hertz {
+        let f_hz = frequency.into();
+        match source {
+            CPUSource::PLL => {
+                if f_hz <= CPU_FREQ_80M {
+                    CPU_FREQ_80M
+                } else if f_hz <= CPU_FREQ_160M {
+                    CPU_FREQ_160M
+                } else {
+                    CPU_FREQ_240M
+                }
+            }
+            CPUSource::Xtal => {
+                let div = core::cmp::min(
+                    u16::max_value() as u32,
+                    core::cmp::max(1, self.xtal_frequency / f_hz),
+                );
+
+                self.xtal_frequency / div
+            }
+            CPUSource::RTC8M => {
+                let div = core::cmp::min(
+                    u16::max_value() as u32,
+                    core::cmp::max(1, self.rtc8m_frequency_measured / f_hz),
+                );
+
+                self.rtc8m_frequency_measured / div
+            }
+            _ => unimplemented!(),
+        }
+    }
+
     /// Set CPU to minimum frequency
-    fn set_cpu_frequency_min(&mut self) -> Result<&mut Self, Error> {
-        self.set_cpu_frequency(self.cpu_source_min, self.cpu_frequency_min)
+    fn set_cpu_frequency_default(&mut self) -> Result<&mut Self, Error> {
+        self.set_cpu_frequency(self.cpu_source_min, self.cpu_frequency_default)
     }
 
     /// Set CPU to maximum frequency
-    fn set_cpu_frequency_max(&mut self) -> Result<&mut Self, Error> {
-        self.set_cpu_frequency(self.cpu_source_max, self.cpu_frequency_max)
+    fn set_cpu_frequency_locked(&mut self) -> Result<&mut Self, Error> {
+        self.set_cpu_frequency(self.cpu_source_max, self.cpu_frequency_locked)
     }
 
     /// Set CPU to apb frequency
-    fn set_cpu_frequency_apb(&mut self) -> Result<&mut Self, Error> {
-        self.set_cpu_frequency(self.cpu_source_apb, self.cpu_frequency_apb)
+    fn set_cpu_frequency_apb_locked(&mut self) -> Result<&mut Self, Error> {
+        self.set_cpu_frequency(self.cpu_source_apb, self.cpu_frequency_apb_locked)
     }
 
     /// Set CPU source and frequency
-    fn set_cpu_frequency<T: Into<Hertz> + Copy + PartialOrd>(
+    fn set_cpu_frequency<T: Into<Hertz> + Copy + PartialOrd + core::fmt::Debug>(
         &mut self,
         source: CPUSource,
         frequency: T,
@@ -784,8 +849,96 @@ impl ClockControl {
         match source {
             CPUSource::Xtal => self.set_cpu_frequency_to_xtal(frequency),
             CPUSource::PLL => self.set_cpu_frequency_to_pll(frequency),
-            _ => Err(Error::UnsupportedFreqConfig),
+            CPUSource::RTC8M => self.set_cpu_frequency_to_8m(frequency),
+            CPUSource::APLL => Err(Error::UnsupportedFreqConfig),
         }
+    }
+
+    /// Sets the CPU frequency using the 8MHz internal oscillator to closest possible frequency (rounding up).
+    ///
+    /// The APB frequency follows the CPU frequency.
+    /// The ref clock is not guaranteed to be at 1MHz
+    fn set_cpu_frequency_to_8m<T: Into<Hertz> + Copy + PartialOrd>(
+        &mut self,
+        frequency: T,
+    ) -> Result<&mut Self, Error> {
+        let mut f_hz: Hertz = frequency.into();
+
+        if f_hz < 1.kHz().into() {
+            return Err(Error::FrequencyTooLow);
+        }
+
+        if f_hz > self.rtc8m_frequency_measured {
+            f_hz = self.rtc8m_frequency_measured;
+        }
+
+        // calculate divider, only integer fractions of xtal_frequency are possible
+        let div = core::cmp::max(1, self.rtc8m_frequency_measured / f_hz);
+
+        if div > u16::max_value() as u32 {
+            return Err(Error::FrequencyTooLow);
+        }
+
+        self.cpu_frequency = self.rtc8m_frequency_measured / (div as u32);
+
+        let div_1m = (self.cpu_frequency + REF_CLK_FREQ_1M / 2) / REF_CLK_FREQ_1M;
+
+        self.ref_frequency = self.cpu_frequency / div_1m;
+
+        // select appropriate voltage
+        if self.cpu_frequency > CPU_FREQ_2M {
+            self.rtc_control
+                .cntl
+                .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_XTAL))
+        };
+
+        self.rtc_control.clk_conf.modify(|_, w| {
+            w.ck8m_force_pu()
+                .set_bit()
+                .ck8m_force_pd()
+                .clear_bit()
+                .enb_ck8m()
+                .clear_bit()
+                .enb_ck8m_div()
+                .clear_bit()
+                .dig_clk8m_en()
+                .set_bit()
+                .dig_clk8m_d256_en()
+                .set_bit()
+        });
+
+        // set divider from 8MHz to CPU clock
+        self.apb_control
+            .sysclk_conf
+            .modify(|_, w| unsafe { w.pre_div_cnt().bits(div as u16 - 1) });
+
+        // adjust ref tick
+        self.apb_control
+            .ck8m_tick_conf
+            .write(|w| unsafe { w.ck8m_tick_num().bits(div_1m as u8 - 1) });
+
+        // switch clock source
+        self.rtc_control
+            .clk_conf
+            .modify(|_, w| w.soc_clk_sel().ck8m());
+
+        // select appropriate voltage
+        if self.cpu_frequency <= CPU_FREQ_2M {
+            self.rtc_control
+                .cntl
+                .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_2M))
+        };
+
+        self.cpu_source = CPUSource::RTC8M;
+        self.apb_frequency = self.cpu_frequency;
+        self.set_apb_frequency_to_scratch(self.apb_frequency);
+
+        self.wait_for_slow_cycle();
+
+        // TODO: keep enabled if PLL_D2 is used in peripherals?
+        self.pll_disable();
+
+        Ok(self)
     }
 
     /// Sets the CPU frequency using the Xtal to closest possible frequency (rounding up).
@@ -809,6 +962,7 @@ impl ClockControl {
         if f_hz > self.xtal_frequency {
             f_hz = self.xtal_frequency;
         }
+
         // calculate divider, only integer fractions of xtal_frequency are possible
         let div = core::cmp::max(1, self.xtal_frequency / f_hz);
 
@@ -818,7 +972,7 @@ impl ClockControl {
 
         self.cpu_frequency = self.xtal_frequency / (div as u32);
 
-        let div_1m = self.cpu_frequency / REF_CLK_FREQ_1M;
+        let div_1m = (self.cpu_frequency + REF_CLK_FREQ_1M / 2) / REF_CLK_FREQ_1M;
 
         self.ref_frequency = self.cpu_frequency / div_1m;
 
@@ -916,6 +1070,11 @@ impl ClockControl {
                     .modify(|_, w| w.cpuperiod_sel().variant(cpuperiod_sel));
             }
 
+            // adjust ref tick
+            self.apb_control
+                .pll_tick_conf
+                .write(|w| unsafe { w.pll_tick_num().bits(80 - 1) });
+
             // unwrap because switch leaves things in undefined state
             if self.pll_frequency == FREQ_OFF {
                 self.pll_enable(pll_frequency_high).unwrap();
@@ -1003,12 +1162,12 @@ impl ClockControl {
             CPUSource::RTC8M => {
                 let div = self
                     .apb_control
-                    .xtal_tick_conf
+                    .ck8m_tick_conf
                     .read()
-                    .xtal_tick_num()
+                    .ck8m_tick_num()
                     .bits();
 
-                self.rtc8md256_frequency_measured * 256 / (div + 1) as u32
+                self.rtc8m_frequency_measured / (div + 1) as u32
             }
         }
     }
@@ -1088,7 +1247,7 @@ impl ClockControl {
     /// Get Fast RTC frequency
     pub fn fast_rtc_frequency(&self) -> Hertz {
         match self.fast_rtc_source() {
-            FastRTCSource::RTC8M => self.rtc8md256_frequency_measured * 256,
+            FastRTCSource::RTC8M => self.rtc8m_frequency_measured,
             FastRTCSource::XtalD4 => self.xtal_frequency / 4,
         }
     }
@@ -1114,7 +1273,7 @@ impl ClockControl {
                 self.rtc_control
                     .clk_conf
                     .modify(|_, w| w.fast_clk_rtc_sel().ck8m());
-                self.fast_rtc_frequency = self.rtc8md256_frequency_measured * 256;
+                self.fast_rtc_frequency = self.rtc8m_frequency_measured;
             }
             FastRTCSource::XtalD4 => {
                 self.rtc_control
@@ -1187,7 +1346,7 @@ impl ClockControl {
                 Val(CPUPERIOD_SEL_A::SEL_240) => CPU_FREQ_240M,
                 _ => FREQ_OFF,
             },
-            CPUSource::RTC8M => self.rtc8md256_frequency_measured * 256,
+            CPUSource::RTC8M => self.rtc8m_frequency_measured,
             CPUSource::APLL => unimplemented!(),
         }
     }

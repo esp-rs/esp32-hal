@@ -32,21 +32,26 @@ fn main() -> ! {
     let mut clock_control =
         ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control).unwrap();
 
+    let a = clock_control.ref_frequency();
+
     // BUG: why does setting clock to Xtal not work?
     clock_control
         .set_cpu_frequencies(
+            CPUSource::RTC8M,
+            10.MHz(),
             CPUSource::Xtal,
-            40.MHz(),
+            20.MHz(),
             CPUSource::PLL,
             80.MHz(),
-            CPUSource::PLL,
-            240.MHz(),
         )
         .unwrap();
-    //clock_control.set_cpu_frequency_to_xtal(26.MHz()).unwrap();
-    let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
 
-    watchdog.start(100.s());
+    let b = clock_control.ref_frequency();
+    let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
+    let c = clock_control_config.ref_frequency();
+    let d = clock_control_config.apb_frequency_apb_locked();
+
+    watchdog.start(10.s());
 
     // setup serial controller
     let mut uart0 = Serial::uart0(
@@ -59,13 +64,24 @@ fn main() -> ! {
     .unwrap();
 
     uart0.change_baudrate(115200).unwrap();
+    let serial_apb = uart0.is_clock_apb();
+    let baudrate = uart0.baudrate();
 
     let (mut tx, _rx) = uart0.split();
 
     // print startup message
     writeln!(tx, "\n\nReboot!\n").unwrap();
 
+    writeln!(tx, "a {:?} {:?} {:?} {:?}\n", a, b, c, d).unwrap();
+
     writeln!(tx, "Running on core {:0x}\n", xtensa_lx6_rt::get_core_id()).unwrap();
+
+    writeln!(
+        tx,
+        "UART0 baudrate: {}, clock apb: {}\n",
+        baudrate, serial_apb
+    )
+    .unwrap();
 
     sleep(100.ms());
     writeln!(tx, "{:?}\n", clock_control_config).unwrap();
@@ -90,14 +106,14 @@ fn main() -> ! {
 
     loop {
         for j in 0..2 {
-            let apb_guard = if j == 0 {
+            let apb_guard = if j == 1 {
                 Some(clock_control_config.lock_apb_frequency())
             } else {
                 None
             };
 
             for i in 0..2 {
-                let cpu_guard = if i == 0 {
+                let cpu_guard = if i == 1 {
                     Some(clock_control_config.lock_cpu_frequency())
                 } else {
                     None
@@ -110,10 +126,11 @@ fn main() -> ! {
 
                 writeln!(
                     tx,
-                    "Loop: {}, cycles: {}, cycles since previous {}, CPU: {}, PLL: {}, APB: {}",
+                    "Loop: {}, cycles: {}, cycles since previous {}, REF: {}, CPU: {}, PLL: {}, APB: {}",
                     x,
                     ccount,
                     ccount_diff,
+                    clock_control_config.ref_frequency(),
                     clock_control_config.cpu_frequency(),
                     clock_control_config.pll_frequency(),
                     clock_control_config.apb_frequency()

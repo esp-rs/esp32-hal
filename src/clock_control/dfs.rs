@@ -41,50 +41,50 @@ impl DFS {
 /// A RAII implementation of a "scoped lock" for CPU frequency.
 /// When this structure is dropped (falls out of scope), the lock will be unlocked.
 /// This structure is created by the lock_cpu_frequency method on ClockControlConfig
-pub struct ExecuteGuardCPU<'a> {
+pub struct LockCPU<'a> {
     clock_control: &'a mut super::ClockControl,
 }
 
 /// A RAII implementation of a "scoped lock" for APB frequency.
 /// When this structure is dropped (falls out of scope), the lock will be unlocked.
 /// This structure is created by the lock_apb_frequency method on ClockControlConfig
-pub struct ExecuteGuardAPB<'a> {
+pub struct LockAPB<'a> {
     clock_control: &'a mut super::ClockControl,
 }
 
 /// A RAII implementation of a "scoped lock" for Awake state.
 /// When this structure is dropped (falls out of scope), the lock will be unlocked.
 /// This structure is created by the lock_awake method on ClockControlConfig
-pub struct ExecuteGuardAwake<'a> {
+pub struct LockAwake<'a> {
     clock_control: &'a mut super::ClockControl,
 }
 
 /// A RAII implementation of a "scoped lock" for PLL/2 frequency.
 /// When this structure is dropped (falls out of scope), the lock will be unlocked.
 /// This structure is created by the lock_plld2 method on ClockControlConfig
-pub struct ExecuteGuardPllD2<'a> {
+pub struct LockPllD2<'a> {
     clock_control: &'a mut super::ClockControl,
 }
 
-impl<'a> Drop for ExecuteGuardCPU<'a> {
+impl<'a> Drop for LockCPU<'a> {
     fn drop(&mut self) {
         self.clock_control.unlock_cpu_frequency();
     }
 }
 
-impl<'a> Drop for ExecuteGuardAPB<'a> {
+impl<'a> Drop for LockAPB<'a> {
     fn drop(&mut self) {
         self.clock_control.unlock_apb_frequency();
     }
 }
 
-impl<'a> Drop for ExecuteGuardAwake<'a> {
+impl<'a> Drop for LockAwake<'a> {
     fn drop(&mut self) {
         self.clock_control.unlock_awake();
     }
 }
 
-impl<'a> Drop for ExecuteGuardPllD2<'a> {
+impl<'a> Drop for LockPllD2<'a> {
     fn drop(&mut self) {
         self.clock_control.unlock_plld2();
     }
@@ -105,17 +105,17 @@ impl<'a> super::ClockControl {
     }
 
     // lock the CPU to maximum frequency
-    pub(crate) fn lock_cpu_frequency(&'a mut self) -> ExecuteGuardCPU {
+    pub(crate) fn lock_cpu_frequency(&'a mut self) -> LockCPU {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.cpu += 1;
 
             if data.cpu == 1 {
-                self.set_cpu_frequency_max().unwrap();
+                self.set_cpu_frequency_locked().unwrap();
                 self.do_callbacks()
             }
         });
-        ExecuteGuardCPU {
+        LockCPU {
             clock_control: self,
         }
     }
@@ -127,9 +127,9 @@ impl<'a> super::ClockControl {
 
             if data.cpu == 0 {
                 if data.apb == 0 {
-                    self.set_cpu_frequency_min().unwrap();
+                    self.set_cpu_frequency_default().unwrap();
                 } else {
-                    self.set_cpu_frequency_apb().unwrap();
+                    self.set_cpu_frequency_apb_locked().unwrap();
                 }
                 self.do_callbacks()
             }
@@ -137,17 +137,17 @@ impl<'a> super::ClockControl {
     }
 
     // lock the CPU to APB frequency
-    pub(crate) fn lock_apb_frequency(&'a mut self) -> ExecuteGuardAPB {
+    pub(crate) fn lock_apb_frequency(&'a mut self) -> LockAPB {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.apb += 1;
 
             if data.apb == 1 && data.cpu == 0 {
-                self.set_cpu_frequency_apb().unwrap();
+                self.set_cpu_frequency_apb_locked().unwrap();
                 self.do_callbacks();
             }
         });
-        ExecuteGuardAPB {
+        LockAPB {
             clock_control: self,
         }
     }
@@ -158,21 +158,21 @@ impl<'a> super::ClockControl {
             data.apb -= 1;
 
             if data.apb == 0 && data.cpu == 0 {
-                self.set_cpu_frequency_min().unwrap();
+                self.set_cpu_frequency_default().unwrap();
                 self.do_callbacks()
             }
         });
     }
 
     // lock in awake state
-    pub(crate) fn lock_awake(&'a mut self) -> ExecuteGuardAwake {
+    pub(crate) fn lock_awake(&'a mut self) -> LockAwake {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.awake += 1;
         });
 
         unimplemented!();
-        ExecuteGuardAwake {
+        LockAwake {
             clock_control: self,
         }
     }
@@ -187,7 +187,7 @@ impl<'a> super::ClockControl {
     }
 
     // lock in awake state
-    pub(crate) fn lock_plld2(&'a mut self) -> ExecuteGuardPllD2 {
+    pub(crate) fn lock_plld2(&'a mut self) -> LockPllD2 {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.pll_d2 += 1;
@@ -197,7 +197,7 @@ impl<'a> super::ClockControl {
             }
         });
 
-        ExecuteGuardPllD2 {
+        LockPllD2 {
             clock_control: self,
         }
     }

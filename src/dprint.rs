@@ -8,14 +8,14 @@ use esp32::UART0;
 
 pub struct DebugLog {}
 
-enum Error {}
+pub enum Error {}
 
 impl DebugLog {
-    fn count(&mut self) -> u8 {
+    pub fn count(&mut self) -> u8 {
         unsafe { (*UART0::ptr()).status.read().txfifo_cnt().bits() }
     }
 
-    fn write(&mut self, byte: u8) -> nb::Result<(), Error> {
+    pub fn write(&mut self, byte: u8) -> nb::Result<(), Error> {
         if self.count() < 128 {
             unsafe { (*UART0::ptr()).tx_fifo.write_with_zero(|w| w.bits(byte)) }
             Ok(())
@@ -58,5 +58,13 @@ macro_rules! dprintln {
     };
     ($fmt:expr, $($arg:tt)*) => {
         unsafe {$crate::dprint::DEBUG_LOG.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap()};
+    };
+}
+
+/// Macro for sending a formatted string to UART0 for debugging, with a newline.
+#[macro_export]
+macro_rules! dflush {
+    () => {
+        unsafe { while $crate::dprint::DEBUG_LOG.count() > 0 {} };
     };
 }
