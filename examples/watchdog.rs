@@ -34,11 +34,11 @@ fn main() -> ! {
     clock_control
         .set_cpu_frequencies(
             CPUSource::Xtal,
-            26.MHz(),
-            CPUSource::PLL,
-            80.MHz(),
+            40.MHz(),
             CPUSource::PLL,
             240.MHz(),
+            CPUSource::PLL,
+            80.MHz(),
         )
         .unwrap();
 
@@ -58,13 +58,56 @@ fn main() -> ! {
 
     uart0.change_baudrate(115200).unwrap();
 
-    let (mut tx, _rx) = uart0.split();
-
     // print startup message
-    writeln!(tx, "\n\nReboot!\n").unwrap();
-    writeln!(tx, "Running on core {:0x}\n", xtensa_lx6_rt::get_core_id()).unwrap();
-    writeln!(tx, "{:?}\n", clock_control_config).unwrap();
-    writeln!(tx, "{:?}\n", watchdog.config().unwrap()).unwrap();
+    writeln!(uart0, "\n\nReboot!\n").unwrap();
+    writeln!(
+        uart0,
+        "Running on core {:0x}\n",
+        xtensa_lx6_rt::get_core_id()
+    )
+    .unwrap();
+    writeln!(uart0, "{:?}\n", clock_control_config).unwrap();
+    writeln!(uart0, "{:?}\n", watchdog.config().unwrap()).unwrap();
+
+    writeln!(
+        uart0,
+        "uart0: {:?}, {:?}, {:?}, {:?} {:?}\n",
+        uart0.baudrate(),
+        uart0.is_clock_apb(),
+        clock_control_config.cpu_frequency(),
+        clock_control_config.get_lock_count(),
+        clock_control_config.apb_frequency_apb_locked()
+    )
+    .unwrap();
+    sleep(100.ms());
+
+    uart0.change_baudrate_force_clock(115200, true).unwrap();
+
+    writeln!(
+        uart0,
+        "uart0: {:?}, {:?}, {:?}, {:?}\n",
+        uart0.baudrate(),
+        uart0.is_clock_apb(),
+        clock_control_config.cpu_frequency(),
+        clock_control_config.get_lock_count()
+    )
+    .unwrap();
+    sleep(100.ms());
+
+    uart0.change_baudrate_force_clock(115200, false).unwrap();
+
+    writeln!(
+        uart0,
+        "uart0: {:?}, {:?}, {:?}, {:?}\n",
+        uart0.baudrate(),
+        uart0.is_clock_apb(),
+        clock_control_config.cpu_frequency(),
+        clock_control_config.get_lock_count()
+    )
+    .unwrap();
+    sleep(100.ms());
+
+    let (mut tx, _rx) = uart0.split();
 
     // uncomment next line to test panic exit
     // panic!("panic test");

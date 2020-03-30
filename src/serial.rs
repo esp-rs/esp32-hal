@@ -154,6 +154,7 @@ pub struct Serial<UART, PINS> {
     uart: UART,
     pins: PINS,
     clock_control: crate::clock_control::ClockControlConfig,
+    apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
 
 /// Serial receiver
@@ -182,7 +183,7 @@ macro_rules! halUart {
                 where
                     PINS: Pins<$UARTX>,
                 {
-                        let mut serial=Serial { uart, pins, clock_control };
+                        let mut serial=Serial { uart, pins, clock_control, apb_lock:None };
 
                         serial
                             .reset(dport)
@@ -268,15 +269,24 @@ macro_rules! halUart {
                     self
                 }
 
+
+                /// Change the baudrate.
+                ///
+                /// Will automatically select the clock source. WHen possible the reference clock (1MHz) will be used,
+                /// because this is constant when the clock source/frequency changes.
+                /// However if one of the clock frequencies is below 10MHz
+                /// or if the baudrate is above the reference clock or if the baudrate cannot be set within 1.5%
+                /// then use the APB clock.
                 pub fn change_baudrate <T: Into<Hertz> + Copy>(&mut self, baudrate: T) -> Result<&mut Self,Error> {
                     let mut use_apb_frequency = false;
 
-                    // if APB frequency is <10MHz (according to documentation, in practice 5MHz),
-                    // the ref clock is no longer accurate or if the baudrate > Ref frequency
-                    if self.clock_control.apb_frequency_locked() < 10_000_000.Hz()
-                            || baudrate.into() > self.clock_control.ref_frequency() {
+                    // if APB frequency is <10MHz the ref clock is no longer accurate
+                    // or if the baudrate > Ref frequency then use the APB frequency
+                    if self.clock_control.apb_frequency_min() < 10_000_000.Hz()
+                        || baudrate.into() > self.clock_control.ref_frequency()
+                    {
                         use_apb_frequency = true;
-                    } else if baudrate.into() < self.clock_control.apb_frequency_locked()/(1<<20-1) {
+                    } else if baudrate.into() < self.clock_control.apb_frequency_apb_locked()/(1<<20-1) {
                         // if baudrate is lower then can be achieved via the APB frequency
                         use_apb_frequency = false;
                     }
@@ -298,10 +308,28 @@ macro_rules! halUart {
                         }
                     }
 
+                    self.change_baudrate_force_clock(baudrate, use_apb_frequency)
+                }
+
+                /// Change the baudrate choosing the reference or APB clock manually
+                pub fn change_baudrate_force_clock <T: Into<Hertz> + Copy>(&mut self, baudrate: T, use_apb_frequency: bool) -> Result<&mut Self,Error> {
+
+                    if let None=self.apb_lock  {
+                        if use_apb_frequency {
+                            let cc=self.clock_control;
+                            let lock=cc.lock_apb_frequency();
+                            self.apb_lock=Some(lock);
+                        }
+                    } else {
+                        if (!use_apb_frequency) {
+                            self.apb_lock=None;
+                        }
+                    }
+
                     // set clock source
                     self.uart.conf0.modify(|_, w| w.tick_ref_always_on().bit(use_apb_frequency));
 
-                    let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency_locked()} else {self.clock_control.ref_frequency()};
+                    let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency_apb_locked()} else {self.clock_control.ref_frequency()};
 
                     // calculate nearest divider
                     let clk_div = (sclk_freq * 16 + baudrate.into()/2 ) / baudrate.into();
@@ -325,7 +353,11 @@ macro_rules! halUart {
                     Ok(self)
                 }
 
-                pub fn get_baudrate(& self) -> Hertz {
+                pub fn is_clock_apb(& self) -> bool {
+                    self.uart.conf0.read().tick_ref_always_on().bit_is_set()
+                }
+
+                pub fn baudrate(& self) -> Hertz {
                     let use_apb_frequency = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
                     let sclk_freq = if use_apb_frequency {self.clock_control.apb_frequency()} else {self.clock_control.ref_frequency()};
                     let div = self.uart.clkdiv.read().clkdiv().bits()<<4 | (self.uart.clkdiv.read().clkdiv_frag().bits() as u32);
@@ -446,6 +478,19 @@ macro_rules! halUart {
                     }
                 }
             }
+
+            impl<PINS> core::fmt::Write for Serial<$UARTX, PINS>
+            {
+                fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                    use embedded_hal::serial::Write;
+                    s.as_bytes()
+                        .iter()
+                        .try_for_each(|c| nb::block!(self.write(*c)))
+                        .map_err(|_| core::fmt::Error)
+                }
+            }
+
+
         )+
     }
 }

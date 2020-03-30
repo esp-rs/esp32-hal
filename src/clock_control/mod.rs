@@ -39,11 +39,11 @@ pub mod watchdog;
 const DEFAULT_XTAL_FREQUENCY: Hertz = Hertz(40_000_000);
 
 // default frequencies for Dynamic Frequency Switching
-const CPU_SOURCE_MIN_DEFAULT: CPUSource = CPUSource::Xtal;
+const cpu_source_default_DEFAULT: CPUSource = CPUSource::Xtal;
 const CPU_FREQ_MIN_DEFAULT: Hertz = Hertz(10_000_000);
-const CPU_SOURCE_MAX_DEFAULT: CPUSource = CPUSource::PLL;
+const cpu_source_locked_DEFAULT: CPUSource = CPUSource::PLL;
 const CPU_FREQ_MAX_DEFAULT: Hertz = Hertz(240_000_000);
-const CPU_SOURCE_APB_DEFAULT: CPUSource = CPUSource::PLL;
+const cpu_source_apb_locked_DEFAULT: CPUSource = CPUSource::PLL;
 const CPU_FREQ_APB_DEFAULT: Hertz = Hertz(80_000_000);
 
 /////////////////////////////////
@@ -323,6 +323,11 @@ impl<'a> ClockControlConfig {
     {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().add_callback(f) }
     }
+
+    /// Get the current count of the PCU, APB, Awake and PLL/2 locks
+    pub fn get_lock_count(&self) -> dfs::Locks {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().get_lock_count() }
+    }
 }
 
 impl fmt::Debug for ClockControlConfig {
@@ -375,11 +380,11 @@ pub struct ClockControl {
     dport_control: crate::dport::ClockControl,
 
     cpu_frequency_default: Hertz,
-    cpu_source_min: CPUSource,
+    cpu_source_default: CPUSource,
     cpu_frequency_locked: Hertz,
-    cpu_source_max: CPUSource,
+    cpu_source_locked: CPUSource,
     cpu_frequency_apb_locked: Hertz,
-    cpu_source_apb: CPUSource,
+    cpu_source_apb_locked: CPUSource,
     light_sleep_enabled: bool,
 
     apb_frequency_min: Hertz,
@@ -430,11 +435,11 @@ impl ClockControl {
             dport_control,
 
             cpu_frequency_default: CPU_FREQ_MIN_DEFAULT,
-            cpu_source_min: CPU_SOURCE_MIN_DEFAULT,
+            cpu_source_default: cpu_source_default_DEFAULT,
             cpu_frequency_locked: CPU_FREQ_MAX_DEFAULT,
-            cpu_source_max: CPU_SOURCE_MAX_DEFAULT,
+            cpu_source_locked: cpu_source_locked_DEFAULT,
             cpu_frequency_apb_locked: CPU_FREQ_APB_DEFAULT,
-            cpu_source_apb: CPU_SOURCE_APB_DEFAULT,
+            cpu_source_apb_locked: cpu_source_apb_locked_DEFAULT,
             light_sleep_enabled: false,
 
             apb_frequency_apb_locked: APB_FREQ_PLL,
@@ -480,12 +485,12 @@ impl ClockControl {
         Ok((res, watchdog::WatchDog::new(res)))
     }
 
-    // Check if 8MHz oscillator is enabled
+    /// Check if 8MHz oscillator is enabled
     fn is_rtc8m_enabled(&self) -> bool {
         self.rtc_control.clk_conf.read().enb_ck8m().bit_is_clear()
     }
 
-    // Check if 8MHz oscillator is enabled
+    /// Check if 8MHz oscillator is enabled
     fn is_rtc8md256_enabled(&self) -> bool {
         self.rtc_control
             .clk_conf
@@ -494,7 +499,7 @@ impl ClockControl {
             .bit_is_clear()
     }
 
-    // Enable 8MHz oscillator
+    /// Enable 8MHz oscillator
     fn rtc8m_enable(&mut self) -> &mut Self {
         self.rtc_control
             .clk_conf
@@ -510,7 +515,7 @@ impl ClockControl {
         self
     }
 
-    // Enable 8MHz oscillator and 8MHz/256
+    /// Enable 8MHz oscillator and 8MHz/256
     fn rtc8md256_enable(&mut self) -> &mut Self {
         if !self.is_rtc8m_enabled() {
             self.rtc8m_enable();
@@ -526,7 +531,7 @@ impl ClockControl {
         self
     }
 
-    // Disable 8MHz/256
+    /// Disable 8MHz/256
     fn rtc8md256_disable(&mut self) -> &mut Self {
         self.rtc_control
             .clk_conf
@@ -712,11 +717,13 @@ impl ClockControl {
         Ok(self)
     }
 
+    /// calculate the number of cpu cycles from a time at the current CPU frequency
     fn time_to_cpu_cycles<T: Into<NanoSeconds>>(&self, time: T) -> u32 {
         (((self.cpu_frequency / Hertz(1_000_000)) as u64) * (u32::from(time.into()) as u64) / 1000)
             as u32
     }
 
+    /// delay a certain time by spinning
     fn delay<T: Into<NanoSeconds>>(&self, time: T) {
         delay_cycles(self.time_to_cpu_cycles(time));
     }
@@ -731,11 +738,11 @@ impl ClockControl {
     /// This does not actually switch the frequency.
     pub fn set_cpu_frequencies<T1, T2, T3>(
         &mut self,
-        cpu_source_min: CPUSource,
+        cpu_source_default: CPUSource,
         cpu_frequency_default: T1,
-        cpu_source_max: CPUSource,
+        cpu_source_locked: CPUSource,
         cpu_frequency_locked: T2,
-        cpu_source_apb: CPUSource,
+        cpu_source_apb_locked: CPUSource,
         cpu_frequency_apb_locked: T3,
     ) -> Result<&mut Self, Error>
     where
@@ -743,15 +750,15 @@ impl ClockControl {
         T2: Into<Hertz> + Copy + PartialOrd,
         T3: Into<Hertz> + Copy + PartialOrd,
     {
-        match cpu_source_min {
+        match cpu_source_default {
             CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
             _ => {}
         }
-        match cpu_source_max {
+        match cpu_source_locked {
             CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
             _ => {}
         }
-        match cpu_source_apb {
+        match cpu_source_apb_locked {
             CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
             _ => {}
         }
@@ -770,29 +777,31 @@ impl ClockControl {
             return Err(Error::FrequencyTooHigh);
         }
 
-        self.cpu_source_min = self.cpu_source_min;
-        self.cpu_frequency_default = cpu_frequency_default.into();
-        self.cpu_source_max = cpu_source_max;
-        self.cpu_frequency_locked = cpu_frequency_locked.into();
-        self.cpu_source_apb = cpu_source_apb;
-        self.cpu_frequency_apb_locked = cpu_frequency_apb_locked.into();
+        self.cpu_source_default = self.cpu_source_default;
+        self.cpu_frequency_default =
+            self.round_cpu_frequency(cpu_source_default, cpu_frequency_default);
+        self.cpu_source_locked = cpu_source_locked;
+        self.cpu_frequency_locked =
+            self.round_cpu_frequency(cpu_source_locked, cpu_frequency_locked);
+        self.cpu_source_apb_locked = cpu_source_apb_locked;
+        self.cpu_frequency_apb_locked =
+            self.round_cpu_frequency(cpu_source_apb_locked, cpu_frequency_apb_locked);
 
-        self.apb_frequency_min = self.calc_apb_frequency_min();
+        self.apb_frequency_apb_locked = match cpu_source_apb_locked {
+            CPUSource::PLL => APB_FREQ_PLL,
+            _ => self.cpu_frequency_apb_locked,
+        };
+
+        self.apb_frequency_min = core::cmp::min(
+            self.cpu_frequency_default,
+            core::cmp::min(self.cpu_frequency_locked, self.cpu_frequency_apb_locked),
+        );
 
         self.set_cpu_frequency_default()?;
         Ok(self)
     }
 
-    fn calc_apb_frequency_min(&self) -> Hertz {
-        core::cmp::min(
-            self.round_cpu_frequency(self.cpu_source_min, self.cpu_frequency_default),
-            core::cmp::min(
-                self.round_cpu_frequency(self.cpu_source_max, self.cpu_frequency_locked),
-                self.round_cpu_frequency(self.cpu_source_apb, self.cpu_frequency_apb_locked),
-            ),
-        )
-    }
-
+    /// Calculate the nearest actually realizable frequency
     fn round_cpu_frequency<T: Into<Hertz>>(&self, source: CPUSource, frequency: T) -> Hertz {
         let f_hz = frequency.into();
         match source {
@@ -827,17 +836,17 @@ impl ClockControl {
 
     /// Set CPU to minimum frequency
     fn set_cpu_frequency_default(&mut self) -> Result<&mut Self, Error> {
-        self.set_cpu_frequency(self.cpu_source_min, self.cpu_frequency_default)
+        self.set_cpu_frequency(self.cpu_source_default, self.cpu_frequency_default)
     }
 
     /// Set CPU to maximum frequency
     fn set_cpu_frequency_locked(&mut self) -> Result<&mut Self, Error> {
-        self.set_cpu_frequency(self.cpu_source_max, self.cpu_frequency_locked)
+        self.set_cpu_frequency(self.cpu_source_locked, self.cpu_frequency_locked)
     }
 
     /// Set CPU to apb frequency
     fn set_cpu_frequency_apb_locked(&mut self) -> Result<&mut Self, Error> {
-        self.set_cpu_frequency(self.cpu_source_apb, self.cpu_frequency_apb_locked)
+        self.set_cpu_frequency(self.cpu_source_apb_locked, self.cpu_frequency_apb_locked)
     }
 
     /// Set CPU source and frequency

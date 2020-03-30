@@ -1,14 +1,17 @@
 //! Dynamic Frequency Switching control
 //!
+//! # TODO
+//! - implement pll_d2 keep awake properly
+//!
 
 use super::Error;
 
 /// maximum number of callbacks
 pub const MAX_CALLBACKS: usize = 10;
 
-/// number of cpu, apb and awake locks
-#[derive(Copy, Clone)]
-struct Locks {
+/// number of cpu, apb, awake and pll_d2 locks
+#[derive(Copy, Clone, Debug)]
+pub struct Locks {
     cpu: usize,
     apb: usize,
     awake: usize,
@@ -41,56 +44,67 @@ impl DFS {
 /// A RAII implementation of a "scoped lock" for CPU frequency.
 /// When this structure is dropped (falls out of scope), the lock will be unlocked.
 /// This structure is created by the lock_cpu_frequency method on ClockControlConfig
-pub struct LockCPU<'a> {
-    clock_control: &'a mut super::ClockControl,
-}
+pub struct LockCPU {}
 
 /// A RAII implementation of a "scoped lock" for APB frequency.
 /// When this structure is dropped (falls out of scope), the lock will be unlocked.
 /// This structure is created by the lock_apb_frequency method on ClockControlConfig
-pub struct LockAPB<'a> {
-    clock_control: &'a mut super::ClockControl,
-}
+pub struct LockAPB {}
 
 /// A RAII implementation of a "scoped lock" for Awake state.
 /// When this structure is dropped (falls out of scope), the lock will be unlocked.
 /// This structure is created by the lock_awake method on ClockControlConfig
-pub struct LockAwake<'a> {
-    clock_control: &'a mut super::ClockControl,
-}
+pub struct LockAwake {}
 
 /// A RAII implementation of a "scoped lock" for PLL/2 frequency.
 /// When this structure is dropped (falls out of scope), the lock will be unlocked.
 /// This structure is created by the lock_plld2 method on ClockControlConfig
-pub struct LockPllD2<'a> {
-    clock_control: &'a mut super::ClockControl,
-}
+pub struct LockPllD2 {}
 
-impl<'a> Drop for LockCPU<'a> {
+/// Drop of the RAII to unlock the CPU frequency
+impl<'a> Drop for LockCPU {
     fn drop(&mut self) {
-        self.clock_control.unlock_cpu_frequency();
+        unsafe {
+            super::CLOCK_CONTROL
+                .as_mut()
+                .unwrap()
+                .unlock_cpu_frequency();
+        }
     }
 }
 
-impl<'a> Drop for LockAPB<'a> {
+/// Drop of the RAII to unlock the APB frequency
+impl<'a> Drop for LockAPB {
     fn drop(&mut self) {
-        self.clock_control.unlock_apb_frequency();
+        unsafe {
+            super::CLOCK_CONTROL
+                .as_mut()
+                .unwrap()
+                .unlock_apb_frequency();
+        }
     }
 }
 
-impl<'a> Drop for LockAwake<'a> {
+/// Drop of the RAII to unlock the Awake state
+impl<'a> Drop for LockAwake {
     fn drop(&mut self) {
-        self.clock_control.unlock_awake();
+        unsafe {
+            super::CLOCK_CONTROL.as_mut().unwrap().unlock_awake();
+        }
     }
 }
 
-impl<'a> Drop for LockPllD2<'a> {
+/// Drop of the RAII to unlock the PLL/2 frequency
+impl<'a> Drop for LockPllD2 {
     fn drop(&mut self) {
-        self.clock_control.unlock_plld2();
+        unsafe {
+            super::CLOCK_CONTROL.as_mut().unwrap().unlock_plld2();
+        }
     }
 }
 
 impl<'a> super::ClockControl {
+    /// call all the callbacks
     fn do_callbacks(&self) {
         // copy the callbacks to prevent needing to have interrupts disabled the entire time
         // as callback cannot be deleted this is ok.
@@ -104,7 +118,7 @@ impl<'a> super::ClockControl {
         }
     }
 
-    // lock the CPU to maximum frequency
+    /// lock the CPU to maximum frequency
     pub(crate) fn lock_cpu_frequency(&'a mut self) -> LockCPU {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
@@ -115,11 +129,10 @@ impl<'a> super::ClockControl {
                 self.do_callbacks()
             }
         });
-        LockCPU {
-            clock_control: self,
-        }
+        LockCPU {}
     }
 
+    /// unlock the CPU frequency
     fn unlock_cpu_frequency(&'a mut self) {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
@@ -147,11 +160,10 @@ impl<'a> super::ClockControl {
                 self.do_callbacks();
             }
         });
-        LockAPB {
-            clock_control: self,
-        }
+        LockAPB {}
     }
 
+    /// unlock the CPU from APB
     fn unlock_apb_frequency(&'a mut self) {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
@@ -172,11 +184,10 @@ impl<'a> super::ClockControl {
         });
 
         unimplemented!();
-        LockAwake {
-            clock_control: self,
-        }
+        LockAwake {}
     }
 
+    /// unlock from the awake state
     fn unlock_awake(&'a mut self) {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
@@ -186,7 +197,7 @@ impl<'a> super::ClockControl {
         });
     }
 
-    // lock in awake state
+    /// lock the PLL/2 frequency
     pub(crate) fn lock_plld2(&'a mut self) -> LockPllD2 {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
@@ -197,11 +208,10 @@ impl<'a> super::ClockControl {
             }
         });
 
-        LockPllD2 {
-            clock_control: self,
-        }
+        LockPllD2 {}
     }
 
+    /// unlock the PLL/2 frequency
     fn unlock_plld2(&'a mut self) {
         xtensa_lx6_rt::interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
@@ -238,5 +248,11 @@ impl<'a> super::ClockControl {
             *nr += 1;
             Ok(())
         })
+    }
+
+    /// Get the current count of the PCU, APB, Awake and PLL/2 locks
+    pub fn get_lock_count(&self) -> Locks {
+        let info = DFS_MUTEX.lock();
+        *info
     }
 }
