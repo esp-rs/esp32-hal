@@ -5,7 +5,7 @@ MEMORY
   /* TODO: Use human-readable lengths */
   /* TODO: Use the full memory map - this is just a test */
   /* vectors ( RX )       : ORIGIN = 0x40080000, len = 0x400 */
-  iram_seg ( RX )       : ORIGIN = 0x40080400, len = 0xFC00
-  dram_seg ( RW )       : ORIGIN = 0x3FFF0000, len = 0x10000
+  iram_seg ( RX )       : ORIGIN = 0x40080400, len = 0x1fC00
+  dram_seg ( RW )       : ORIGIN = 0x3FFB0000, len = 0x2c200
 
 }
