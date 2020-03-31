@@ -15,6 +15,10 @@ impl DebugLog {
         unsafe { (*UART0::ptr()).status.read().txfifo_cnt().bits() }
     }
 
+    pub fn is_idle(&mut self) -> bool {
+        unsafe { (*UART0::ptr()).status.read().st_utx_out().is_tx_idle() }
+    }
+
     pub fn write(&mut self, byte: u8) -> nb::Result<(), Error> {
         if self.count() < 128 {
             unsafe { (*UART0::ptr()).tx_fifo.write_with_zero(|w| w.bits(byte)) }
@@ -65,6 +69,6 @@ macro_rules! dprintln {
 #[macro_export]
 macro_rules! dflush {
     () => {
-        unsafe { while $crate::dprint::DEBUG_LOG.count() > 0 {} };
+        unsafe { while !$crate::dprint::DEBUG_LOG.is_idle() {} };
     };
 }

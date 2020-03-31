@@ -7,9 +7,8 @@
 //!
 //! # TODO
 //! - Automatic GPIO configuration
-//! - Use clock_control for clock frequency detection
 //! - Add all extra features esp32 supports (eg rs485, etc. etc.)
-//! - Create separate dport peripheral (as otherwise risk for race conditions)
+//! - Free APB lock when TX is idle (and no RX used)
 
 use core::convert::Infallible;
 use core::marker::PhantomData;
@@ -18,6 +17,8 @@ use embedded_hal::serial;
 
 use crate::esp32::{UART0, UART1, UART2};
 use crate::units::*;
+
+const UART_FIFO_SIZE: u8 = 128;
 
 /// Serial error
 #[derive(Debug)]
@@ -160,11 +161,13 @@ pub struct Serial<UART, PINS> {
 /// Serial receiver
 pub struct Rx<UART> {
     _uart: PhantomData<UART>,
+    apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
 
 /// Serial transmitter
 pub struct Tx<UART> {
     _uart: PhantomData<UART>,
+    apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
 
 macro_rules! halUart {
@@ -184,7 +187,6 @@ macro_rules! halUart {
                     PINS: Pins<$UARTX>,
                 {
                         let mut serial=Serial { uart, pins, clock_control, apb_lock:None };
-
                         serial
                             .reset(dport)
                             .enable(dport)
@@ -192,7 +194,6 @@ macro_rules! halUart {
                             .change_data_bits(config.data_bits)
                             .change_parity(config.parity)
                             .change_baudrate(config.baudrate)?;
-
                         Ok(serial)
                 }
 
@@ -282,7 +283,7 @@ macro_rules! halUart {
 
                     // if APB frequency is <10MHz the ref clock is no longer accurate
                     // or if the baudrate > Ref frequency then use the APB frequency
-                    if self.clock_control.apb_frequency_min() < 10_000_000.Hz()
+                    if !self.clock_control.is_ref_clock_stable()
                         || baudrate.into() > self.clock_control.ref_frequency()
                     {
                         use_apb_frequency = true;
@@ -316,9 +317,7 @@ macro_rules! halUart {
 
                     if let None=self.apb_lock  {
                         if use_apb_frequency {
-                            let cc=self.clock_control;
-                            let lock=cc.lock_apb_frequency();
-                            self.apb_lock=Some(lock);
+                            self.apb_lock=Some(self.clock_control.lock_apb_frequency());
                         }
                     } else {
                         if (!use_apb_frequency) {
@@ -376,18 +375,26 @@ macro_rules! halUart {
                     unimplemented!();
                 }
 
-                /// Return true if the line idle status is set
-                pub fn is_idle(& self) -> bool {
+                /// Return true if the receiver is idle
+                pub fn is_rx_idle(& self) -> bool {
                     self.uart.status.read().st_urx_out().is_rx_idle()
+                }
+
+                /// Return true if the transmitter is idle
+                pub fn is_tx_idle(& self) -> bool {
+                    self.uart.status.read().st_utx_out().is_tx_idle()
                 }
 
                 pub fn split(self) -> (Tx<$UARTX>, Rx<$UARTX>) {
                     (
+
                         Tx {
                             _uart: PhantomData,
+                            apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                         },
                         Rx {
                             _uart: PhantomData,
+                            apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                         },
                     )
                 }
@@ -404,6 +411,7 @@ macro_rules! halUart {
                 fn read(&mut self) -> nb::Result<u8, Self::Error> {
                     let mut rx: Rx<$UARTX> = Rx {
                         _uart: PhantomData,
+                        apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                     };
                     rx.read()
                 }
@@ -416,12 +424,24 @@ macro_rules! halUart {
                             (*$UARTX::ptr()).status.read().rxfifo_cnt().bits()
                         }
                 }
+
+                pub fn is_idle(& self) -> bool {
+                    unsafe {
+                            (*$UARTX::ptr()).status.read().st_urx_out().is_rx_idle()
+                        }
+                }
             }
 
             impl  Tx<$UARTX> {
                 pub fn count(& self) -> u8 {
                     unsafe {
                             (*$UARTX::ptr()).status.read().txfifo_cnt().bits()
+                        }
+                }
+
+                pub fn is_idle(& self) -> bool {
+                    unsafe {
+                            (*$UARTX::ptr()).status.read().st_utx_out().is_tx_idle()
                         }
                 }
             }
@@ -445,6 +465,7 @@ macro_rules! halUart {
                 fn flush(&mut self) -> nb::Result<(), Self::Error> {
                     let mut tx: Tx<$UARTX> = Tx {
                         _uart: PhantomData,
+                        apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                     };
                     tx.flush()
                 }
@@ -452,6 +473,7 @@ macro_rules! halUart {
                 fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error> {
                     let mut tx: Tx<$UARTX> = Tx {
                         _uart: PhantomData,
+                        apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                     };
                     tx.write(byte)
                 }
@@ -461,7 +483,7 @@ macro_rules! halUart {
                 type Error = Infallible;
 
                 fn flush(&mut self) -> nb::Result<(), Self::Error> {
-                    if self.count()==0 {
+                    if self.is_idle() {
                         Ok(())
                     }
                     else {
@@ -470,7 +492,7 @@ macro_rules! halUart {
                 }
 
                 fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error> {
-                    if self.count()<128 {
+                    if self.count()<UART_FIFO_SIZE {
                         unsafe { (*$UARTX::ptr()).tx_fifo.write_with_zero(|w| { w.bits(byte)}) }
                         Ok(())
                     } else {
