@@ -1,8 +1,7 @@
 //! Dynamic Frequency Switching control
 //!
-//! # TODO
-//! - implement pll_d2 keep awake properly
-//!
+//! #TODO
+//! - Sleep functionality/Awake lock
 
 use super::Error;
 
@@ -125,8 +124,10 @@ impl<'a> super::ClockControl {
             data.cpu += 1;
 
             if data.cpu == 1 {
-                self.set_cpu_frequency_locked().unwrap();
-                self.do_callbacks()
+                if data.apb == 0 || self.cpu_frequency_locked > self.cpu_frequency_apb_locked {
+                    self.set_cpu_frequency_locked(data.pll_d2 > 0).unwrap();
+                    self.do_callbacks()
+                }
             }
         });
         LockCPU {}
@@ -140,9 +141,9 @@ impl<'a> super::ClockControl {
 
             if data.cpu == 0 {
                 if data.apb == 0 {
-                    self.set_cpu_frequency_default().unwrap();
+                    self.set_cpu_frequency_default(data.pll_d2 > 0).unwrap();
                 } else {
-                    self.set_cpu_frequency_apb_locked().unwrap();
+                    self.set_cpu_frequency_apb_locked(data.pll_d2 > 0).unwrap();
                 }
                 self.do_callbacks()
             }
@@ -155,9 +156,11 @@ impl<'a> super::ClockControl {
             let mut data = DFS_MUTEX.lock();
             data.apb += 1;
 
-            if data.apb == 1 && data.cpu == 0 {
-                self.set_cpu_frequency_apb_locked().unwrap();
-                self.do_callbacks();
+            if data.apb == 1 {
+                if data.cpu == 0 || self.cpu_frequency_apb_locked > self.cpu_frequency_locked {
+                    self.set_cpu_frequency_apb_locked(data.pll_d2 > 0).unwrap();
+                    self.do_callbacks();
+                }
             }
         });
         LockAPB {}
@@ -169,8 +172,12 @@ impl<'a> super::ClockControl {
             let mut data = DFS_MUTEX.lock();
             data.apb -= 1;
 
-            if data.apb == 0 && data.cpu == 0 {
-                self.set_cpu_frequency_default().unwrap();
+            if data.apb == 0 {
+                if data.cpu == 0 {
+                    self.set_cpu_frequency_default(data.pll_d2 > 0).unwrap();
+                } else {
+                    self.set_cpu_frequency_locked(data.pll_d2 > 0).unwrap();
+                }
                 self.do_callbacks()
             }
         });
@@ -183,6 +190,7 @@ impl<'a> super::ClockControl {
             data.awake += 1;
         });
 
+        // TODO: implement actual locking
         unimplemented!();
         LockAwake {}
     }
@@ -193,6 +201,7 @@ impl<'a> super::ClockControl {
             let mut data = DFS_MUTEX.lock();
             data.awake -= 1;
 
+            // TODO: implement actual unlocking
             unimplemented!();
         });
     }
@@ -203,7 +212,7 @@ impl<'a> super::ClockControl {
             let mut data = DFS_MUTEX.lock();
             data.pll_d2 += 1;
             if data.pll_d2 == 1 && self.pll_frequency == super::FREQ_OFF {
-                self.pll_enable(false);
+                self.pll_enable(false).unwrap();
                 self.do_callbacks();
             }
         });
@@ -217,7 +226,7 @@ impl<'a> super::ClockControl {
             let mut data = DFS_MUTEX.lock();
             data.pll_d2 -= 1;
 
-            if data.pll_d2 == 0 && super::CPUSource::PLL != self.cpu_source() {
+            if data.pll_d2 == 0 && self.cpu_source() != super::CPUSource::PLL {
                 self.pll_disable();
                 self.do_callbacks();
             }
