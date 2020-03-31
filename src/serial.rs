@@ -50,7 +50,7 @@ pub enum Event {
 pub mod config {
     use crate::units::*;
 
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub enum DataBits {
         DataBits5,
         DataBits6,
@@ -58,14 +58,14 @@ pub mod config {
         DataBits8,
     }
 
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub enum Parity {
         ParityNone,
         ParityEven,
         ParityOdd,
     }
 
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub enum StopBits {
         #[doc = "1 stop bit"]
         STOP1,
@@ -75,6 +75,7 @@ pub mod config {
         STOP2,
     }
 
+    #[derive(Debug, Copy, Clone)]
     pub struct Config {
         pub baudrate: Hertz,
         pub data_bits: DataBits,
@@ -161,13 +162,13 @@ pub struct Serial<UART, PINS> {
 /// Serial receiver
 pub struct Rx<UART> {
     _uart: PhantomData<UART>,
-    apb_lock: Option<crate::clock_control::dfs::LockAPB>,
+    _apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
 
 /// Serial transmitter
 pub struct Tx<UART> {
     _uart: PhantomData<UART>,
-    apb_lock: Option<crate::clock_control::dfs::LockAPB>,
+    _apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
 
 macro_rules! halUart {
@@ -390,11 +391,11 @@ macro_rules! halUart {
 
                         Tx {
                             _uart: PhantomData,
-                            apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
+                            _apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                         },
                         Rx {
                             _uart: PhantomData,
-                            apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
+                            _apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                         },
                     )
                 }
@@ -411,7 +412,7 @@ macro_rules! halUart {
                 fn read(&mut self) -> nb::Result<u8, Self::Error> {
                     let mut rx: Rx<$UARTX> = Rx {
                         _uart: PhantomData,
-                        apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
+                        _apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                     };
                     rx.read()
                 }
@@ -465,7 +466,7 @@ macro_rules! halUart {
                 fn flush(&mut self) -> nb::Result<(), Self::Error> {
                     let mut tx: Tx<$UARTX> = Tx {
                         _uart: PhantomData,
-                        apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
+                        _apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                     };
                     tx.flush()
                 }
@@ -473,7 +474,7 @@ macro_rules! halUart {
                 fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error> {
                     let mut tx: Tx<$UARTX> = Tx {
                         _uart: PhantomData,
-                        apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
+                        _apb_lock: if let None=self.apb_lock { None } else { Some(self.clock_control.lock_apb_frequency()) }
                     };
                     tx.write(byte)
                 }
