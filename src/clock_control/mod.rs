@@ -13,7 +13,7 @@
 //! - APLL support
 //! - Implement light sleep
 //! - 32kHz Xtal support
-//! - Allow clock frequency to be forced
+//! - Allow 8.5MHz clock to be tuned
 //!
 
 use crate::prelude::*;
@@ -23,9 +23,6 @@ use esp32::generic::Variant::*;
 use esp32::rtccntl::clk_conf::*;
 use esp32::rtccntl::cntl::*;
 use esp32::{APB_CTRL, RTCCNTL, TIMG0};
-
-use crate::{dflush, dprintln};
-use core::fmt::Write;
 
 pub mod dfs;
 mod pll;
@@ -39,11 +36,11 @@ pub mod watchdog;
 const DEFAULT_XTAL_FREQUENCY: Hertz = Hertz(40_000_000);
 
 // default frequencies for Dynamic Frequency Switching
-const cpu_source_default_DEFAULT: CPUSource = CPUSource::Xtal;
+const CPU_SOURCE_DEFAULT_DEFAULT: CPUSource = CPUSource::Xtal;
 const CPU_FREQ_MIN_DEFAULT: Hertz = Hertz(10_000_000);
-const cpu_source_locked_DEFAULT: CPUSource = CPUSource::PLL;
+const CPU_SOURCE_LOCKED_DEFAULT: CPUSource = CPUSource::PLL;
 const CPU_FREQ_MAX_DEFAULT: Hertz = Hertz(240_000_000);
-const cpu_source_apb_locked_DEFAULT: CPUSource = CPUSource::PLL;
+const CPU_SOURCE_APB_LOCKED_DEFAULT: CPUSource = CPUSource::PLL;
 const CPU_FREQ_APB_DEFAULT: Hertz = Hertz(80_000_000);
 
 /////////////////////////////////
@@ -113,11 +110,16 @@ const DIG_DBIAS_2M: DBIAS_WAK_A = DBIAS_WAK_A::BIAS_1V00;
 
 // Default for clock tuning
 const SCK_DCAP_DEFAULT: u8 = 255;
-const CK8M_DFREQ_DEFAULT: u8 = 231;
-//172
+const CK8M_DFREQ_DEFAULT: u8 = 172;
 
 // Number of slow cycles to measure for Xtal frequency measurement
 const CYCLES_XTAL_CALIBRATION: u16 = 10;
+
+// The minimum APB frequency to guarantee proper ref clock (10MHz according to documentation)
+const MINIMUM_APB_FREQ_FOR_STABLE_REF_CLK: Hertz = Hertz(10_000_000);
+// The accuracy of the clock to guarantee proper ref clock (as denominator for fraction,
+// so 1/100 = 1%, 1/50 = 2%)
+const MINIMUM_REF_CLOCK_ACCURACY_FOR_STABLE_REF_CLOCK: u32 = 100;
 
 /// RTC Clock errors
 #[derive(Debug)]
@@ -182,7 +184,9 @@ enum CalibrateRTCSource {
 // static ClockControl to allow DFS, etc.
 static mut CLOCK_CONTROL: Option<ClockControl> = None;
 
-/// Clock configuration & locking for Dynamic Frequency Switching
+/// Clock configuration & locking for Dynamic Frequency Switching.
+/// It allows thread and interrupt safe way to switch between default,
+/// high CPU and APB frequency configuration.
 #[derive(Copy, Clone)]
 pub struct ClockControlConfig {}
 
@@ -217,9 +221,9 @@ impl<'a> ClockControlConfig {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().apb_frequency_apb_locked }
     }
 
-    /// The lowest APB frequency in all states
-    pub fn apb_frequency_min(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().apb_frequency_min }
+    /// Is the reference clock 1MHz under all clock conditions
+    pub fn is_ref_clock_stable(&self) -> bool {
+        unsafe { CLOCK_CONTROL.as_ref().unwrap().ref_clock_stable }
     }
 
     /// The current reference frequency
@@ -371,8 +375,7 @@ impl fmt::Debug for ClockControl {
 
 /// Clock Control for initialization. Once initialization is done, call the freeze function to lock
 /// the clock configuration. This will return a [ClockControlConfig](ClockControlConfig), which can
-/// be copied for e.g. use in multiple peripherals. The ClockControlConfig allows thread and
-///  interrupt safe way to switch between default, high CPU and APB frequency configuration.
+/// be copied for e.g. use in multiple peripherals.
 ///
 pub struct ClockControl {
     rtc_control: RTCCNTL,
@@ -387,7 +390,6 @@ pub struct ClockControl {
     cpu_source_apb_locked: CPUSource,
     light_sleep_enabled: bool,
 
-    apb_frequency_min: Hertz,
     apb_frequency_apb_locked: Hertz,
 
     rtc8m_frequency_measured: Hertz,
@@ -414,6 +416,8 @@ pub struct ClockControl {
     slow_rtc_source: SlowRTCSource,
     fast_rtc_source: FastRTCSource,
 
+    ref_clock_stable: bool,
+
     dfs: dfs::DFS,
 }
 
@@ -435,15 +439,14 @@ impl ClockControl {
             dport_control,
 
             cpu_frequency_default: CPU_FREQ_MIN_DEFAULT,
-            cpu_source_default: cpu_source_default_DEFAULT,
+            cpu_source_default: CPU_SOURCE_DEFAULT_DEFAULT,
             cpu_frequency_locked: CPU_FREQ_MAX_DEFAULT,
-            cpu_source_locked: cpu_source_locked_DEFAULT,
+            cpu_source_locked: CPU_SOURCE_LOCKED_DEFAULT,
             cpu_frequency_apb_locked: CPU_FREQ_APB_DEFAULT,
-            cpu_source_apb_locked: cpu_source_apb_locked_DEFAULT,
+            cpu_source_apb_locked: CPU_SOURCE_APB_LOCKED_DEFAULT,
             light_sleep_enabled: false,
 
             apb_frequency_apb_locked: APB_FREQ_PLL,
-            apb_frequency_min: CPU_FREQ_MIN_DEFAULT,
 
             rtc8m_frequency_measured: FREQ_OFF,
             rtc8md256_frequency_measured: FREQ_OFF,
@@ -468,6 +471,8 @@ impl ClockControl {
             cpu_source: CPUSource::Xtal,
             slow_rtc_source: SlowRTCSource::RTC150k,
             fast_rtc_source: FastRTCSource::XtalD4,
+
+            ref_clock_stable: true,
 
             dfs: dfs::DFS::new(),
         };
@@ -712,7 +717,7 @@ impl ClockControl {
         self.set_slow_rtc_source(SlowRTCSource::RTC8MD256);
         self.set_fast_rtc_source(FastRTCSource::RTC8M);
 
-        self.set_cpu_frequency_default()?;
+        self.set_cpu_frequency_default(false)?;
 
         Ok(self)
     }
@@ -733,9 +738,18 @@ impl ClockControl {
         (val & 0xffff) == ((val >> 16) & 0xffff) && val != 0 && val != u32::max_value()
     }
 
-    /// Set CPU min, max and apb frequencies for Dynamic Frequency Switching.
-    /// The apb frequency is used when peripherals request a locked apb frequency.
-    /// This does not actually switch the frequency.
+    /// Set CPU default, locked and apb frequencies for Dynamic Frequency Switching.
+    ///
+    /// The default source and frequency are used when no locks are acquired. (Typically
+    /// this would be) the lowest frequency.)
+    ///
+    /// The cpu_locked source & frequency are used when the cpu frequency is locked, unless an
+    /// apb lock is acquired and the apb_locked frequency is higher then the cpu_locked frequency.
+    ///
+    /// The apb_locked source & frequency is used when peripherals request a locked apb frequency.
+    ///
+    /// This function switches to the default source & frequency (locks can not have been
+    /// acquired yet as this can only be done from ClockControlConfig).
     pub fn set_cpu_frequencies<T1, T2, T3>(
         &mut self,
         cpu_source_default: CPUSource,
@@ -777,7 +791,7 @@ impl ClockControl {
             return Err(Error::FrequencyTooHigh);
         }
 
-        self.cpu_source_default = self.cpu_source_default;
+        self.cpu_source_default = cpu_source_default;
         self.cpu_frequency_default =
             self.round_cpu_frequency(cpu_source_default, cpu_frequency_default);
         self.cpu_source_locked = cpu_source_locked;
@@ -792,13 +806,31 @@ impl ClockControl {
             _ => self.cpu_frequency_apb_locked,
         };
 
-        self.apb_frequency_min = core::cmp::min(
-            self.cpu_frequency_default,
-            core::cmp::min(self.cpu_frequency_locked, self.cpu_frequency_apb_locked),
-        );
+        self.ref_clock_stable = self
+            .check_ref_clock_stable(self.cpu_source_default, self.cpu_frequency_default)
+            && self.check_ref_clock_stable(self.cpu_source_locked, self.cpu_frequency_locked)
+            && self
+                .check_ref_clock_stable(self.cpu_source_apb_locked, self.cpu_frequency_apb_locked);
 
-        self.set_cpu_frequency_default()?;
+        self.set_cpu_frequency_default(false)?;
         Ok(self)
+    }
+
+    fn check_ref_clock_stable<T: Into<Hertz>>(&self, source: CPUSource, frequency: T) -> bool {
+        let f_hz = frequency.into();
+        match source {
+            CPUSource::PLL => true,
+            CPUSource::Xtal => f_hz >= MINIMUM_APB_FREQ_FOR_STABLE_REF_CLK,
+            CPUSource::RTC8M => {
+                let round = MINIMUM_APB_FREQ_FOR_STABLE_REF_CLK
+                    / MINIMUM_REF_CLOCK_ACCURACY_FOR_STABLE_REF_CLOCK;
+                let f_rounded = (f_hz + round / 2) / round * round;
+
+                f_rounded >= MINIMUM_APB_FREQ_FOR_STABLE_REF_CLK
+                    && f_rounded == (f_hz + REF_CLK_FREQ_1M / 2) / REF_CLK_FREQ_1M * REF_CLK_FREQ_1M
+            }
+            CPUSource::APLL => unimplemented!(),
+        }
     }
 
     /// Calculate the nearest actually realizable frequency
@@ -835,18 +867,30 @@ impl ClockControl {
     }
 
     /// Set CPU to minimum frequency
-    fn set_cpu_frequency_default(&mut self) -> Result<&mut Self, Error> {
-        self.set_cpu_frequency(self.cpu_source_default, self.cpu_frequency_default)
+    fn set_cpu_frequency_default(&mut self, keep_pll_enabled: bool) -> Result<&mut Self, Error> {
+        self.set_cpu_frequency(
+            self.cpu_source_default,
+            self.cpu_frequency_default,
+            keep_pll_enabled,
+        )
     }
 
     /// Set CPU to maximum frequency
-    fn set_cpu_frequency_locked(&mut self) -> Result<&mut Self, Error> {
-        self.set_cpu_frequency(self.cpu_source_locked, self.cpu_frequency_locked)
+    fn set_cpu_frequency_locked(&mut self, keep_pll_enabled: bool) -> Result<&mut Self, Error> {
+        self.set_cpu_frequency(
+            self.cpu_source_locked,
+            self.cpu_frequency_locked,
+            keep_pll_enabled,
+        )
     }
 
     /// Set CPU to apb frequency
-    fn set_cpu_frequency_apb_locked(&mut self) -> Result<&mut Self, Error> {
-        self.set_cpu_frequency(self.cpu_source_apb_locked, self.cpu_frequency_apb_locked)
+    fn set_cpu_frequency_apb_locked(&mut self, keep_pll_enabled: bool) -> Result<&mut Self, Error> {
+        self.set_cpu_frequency(
+            self.cpu_source_apb_locked,
+            self.cpu_frequency_apb_locked,
+            keep_pll_enabled,
+        )
     }
 
     /// Set CPU source and frequency
@@ -854,13 +898,20 @@ impl ClockControl {
         &mut self,
         source: CPUSource,
         frequency: T,
+        keep_pll_enabled: bool,
     ) -> Result<&mut Self, Error> {
         match source {
-            CPUSource::Xtal => self.set_cpu_frequency_to_xtal(frequency),
-            CPUSource::PLL => self.set_cpu_frequency_to_pll(frequency),
-            CPUSource::RTC8M => self.set_cpu_frequency_to_8m(frequency),
-            CPUSource::APLL => Err(Error::UnsupportedFreqConfig),
+            CPUSource::Xtal => self.set_cpu_frequency_to_xtal(frequency)?,
+            CPUSource::PLL => self.set_cpu_frequency_to_pll(frequency)?,
+            CPUSource::RTC8M => self.set_cpu_frequency_to_8m(frequency)?,
+            CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
+        };
+
+        if source != CPUSource::PLL && !keep_pll_enabled {
+            self.pll_disable();
         }
+
+        Ok(self)
     }
 
     /// Sets the CPU frequency using the 8MHz internal oscillator to closest possible frequency (rounding up).
@@ -870,7 +921,7 @@ impl ClockControl {
     fn set_cpu_frequency_to_8m<T: Into<Hertz> + Copy + PartialOrd>(
         &mut self,
         frequency: T,
-    ) -> Result<&mut Self, Error> {
+    ) -> Result<(), Error> {
         let mut f_hz: Hertz = frequency.into();
 
         if f_hz < 1.kHz().into() {
@@ -944,10 +995,7 @@ impl ClockControl {
 
         self.wait_for_slow_cycle();
 
-        // TODO: keep enabled if PLL_D2 is used in peripherals?
-        self.pll_disable();
-
-        Ok(self)
+        Ok(())
     }
 
     /// Sets the CPU frequency using the Xtal to closest possible frequency (rounding up).
@@ -961,7 +1009,7 @@ impl ClockControl {
     fn set_cpu_frequency_to_xtal<T: Into<Hertz> + Copy + PartialOrd>(
         &mut self,
         frequency: T,
-    ) -> Result<&mut Self, Error> {
+    ) -> Result<(), Error> {
         let mut f_hz: Hertz = frequency.into();
 
         if f_hz < 1.kHz().into() {
@@ -1020,16 +1068,13 @@ impl ClockControl {
 
         self.wait_for_slow_cycle();
 
-        // TODO: keep enabled if PLL_D2 is used in peripherals?
-        self.pll_disable();
-
-        Ok(self)
+        Ok(())
     }
 
     /// Sets the CPU frequency using the PLL to closest possible frequency (rounding up).
     ///
     /// The APB frequency is fixed at 80MHz.
-    fn set_cpu_frequency_to_pll<T>(&mut self, frequency: T) -> Result<&mut Self, Error>
+    fn set_cpu_frequency_to_pll<T>(&mut self, frequency: T) -> Result<(), Error>
     where
         T: Into<Hertz> + Copy + PartialOrd,
     {
@@ -1117,7 +1162,7 @@ impl ClockControl {
 
         self.wait_for_slow_cycle();
 
-        Ok(self)
+        Ok(())
     }
 
     /// wait for slow clock cycle to synchronize
