@@ -6,7 +6,7 @@ use core::panic::PanicInfo;
 
 use esp32_hal::prelude::*;
 
-use esp32_hal::clock_control::{sleep, CPUSource, ClockControl};
+use esp32_hal::clock_control::{sleep, CPUSource, ClockControl, ClockControlConfig};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
@@ -19,39 +19,32 @@ fn main() -> ! {
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
-
     // (https://github.com/espressif/openocd-esp32/blob/97ba3a6bb9eaa898d91df923bbedddfeaaaf28c9/src/target/esp32.c#L431)
     // openocd disables the watchdog timers on halt
     // we will do it manually on startup
-    //    disable_timg_wdts(&mut timg0, &mut timg1);
-
     disable_timg_wdts(&mut timg0, &mut timg1);
+
+    let (mut dport, dport_clock_control) = dp.DPORT.split();
 
     // setup clocks & watchdog
     let mut clock_control =
         ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control).unwrap();
 
-    let a = clock_control.ref_frequency();
-
-    // BUG: why does setting clock to Xtal not work?
+    // set desired clock frequencies
     clock_control
         .set_cpu_frequencies(
-            CPUSource::RTC8M,
+            CPUSource::Xtal,
             10.MHz(),
             CPUSource::Xtal,
-            20.MHz(),
+            240.MHz(),
             CPUSource::PLL,
             80.MHz(),
         )
         .unwrap();
 
-    let b = clock_control.ref_frequency();
     let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
-    let c = clock_control_config.ref_frequency();
-    let d = clock_control_config.apb_frequency_apb_locked();
 
-    watchdog.start(10.s());
+    watchdog.start(3.s());
 
     // setup serial controller
     let mut uart0 = Serial::uart0(
@@ -64,46 +57,50 @@ fn main() -> ! {
     .unwrap();
 
     uart0.change_baudrate(115200).unwrap();
-    let serial_apb = uart0.is_clock_apb();
-    let baudrate = uart0.baudrate();
 
-    let (mut tx, _rx) = uart0.split();
+    uart0.change_baudrate_force_clock(115200, true).unwrap();
 
     // print startup message
-    writeln!(tx, "\n\nReboot!\n").unwrap();
-
-    writeln!(tx, "a {:?} {:?} {:?} {:?}\n", a, b, c, d).unwrap();
-
-    writeln!(tx, "Running on core {:0x}\n", xtensa_lx6_rt::get_core_id()).unwrap();
+    writeln!(uart0, "\n\nReboot!\n",).unwrap();
 
     writeln!(
-        tx,
-        "UART0 baudrate: {}, clock apb: {}\n",
-        baudrate, serial_apb
+        uart0,
+        "Running on core {:0x}\n",
+        xtensa_lx6_rt::get_core_id()
     )
     .unwrap();
 
-    sleep(100.ms());
-    writeln!(tx, "{:?}\n", clock_control_config).unwrap();
+    writeln!(
+        uart0,
+        "UART0 baudrate: {}, using apb clock instead of ref clock: {}\n",
+        uart0.baudrate(),
+        uart0.is_clock_apb()
+    )
+    .unwrap();
 
-    sleep(100.ms());
+    writeln!(uart0, "{:?}\n", clock_control_config).unwrap();
+    writeln!(uart0, "{:?}\n", watchdog.config().unwrap()).unwrap();
 
-    writeln!(tx, "{:?}\n", watchdog.config().unwrap()).unwrap();
-
-    /*  clock_control_config
-        .add_callback(&|| dprintln!("callback"))
+    // register callback which is called when the clock is switched
+    clock_control_config
+        .add_callback(&|| {
+            let clock_control_config = ClockControlConfig {};
+            dprintln!(
+                "  Change Clock: CPU: {}, PLL: {}, APB: {}, REF: {}",
+                clock_control_config.cpu_frequency(),
+                clock_control_config.pll_frequency(),
+                clock_control_config.apb_frequency(),
+                clock_control_config.ref_frequency(),
+            )
+        })
         .unwrap();
-
-    let lock = clock_control_config.lock_cpu_frequency();
-
-    drop(lock);*/
 
     // uncomment next line to test panic exit
     // panic!("panic test");
 
+    // main loop, which in turn lock and unlocks apb and cpu locks
     let mut x: u32 = 0;
     let mut prev_ccount = 0;
-
     loop {
         for j in 0..2 {
             let apb_guard = if j == 1 {
@@ -125,15 +122,9 @@ fn main() -> ! {
                 let ccount_diff = ccount.wrapping_sub(prev_ccount);
 
                 writeln!(
-                    tx,
-                    "Loop: {}, cycles: {}, cycles since previous {}, REF: {}, CPU: {}, PLL: {}, APB: {}",
-                    x,
-                    ccount,
-                    ccount_diff,
-                    clock_control_config.ref_frequency(),
-                    clock_control_config.cpu_frequency(),
-                    clock_control_config.pll_frequency(),
-                    clock_control_config.apb_frequency()
+                    uart0,
+                    "Loop: {}, cycles: {}, cycles since previous {}",
+                    x, ccount, ccount_diff
                 )
                 .unwrap();
 

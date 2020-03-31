@@ -260,6 +260,9 @@ impl<'a> super::ClockControl {
     }
 
     /// Get the current count of the PCU, APB, Awake and PLL/2 locks
+    ///
+    /// Note that this function cannot be used form within a callback
+    /// as it tries to lock the mutex, leading to a dead-lock.
     pub fn get_lock_count(&self) -> Locks {
         let info = DFS_MUTEX.lock();
         *info

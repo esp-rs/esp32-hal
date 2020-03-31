@@ -40,7 +40,7 @@ fn main() -> ! {
     let serial = Serial::uart0(
         dp.UART0,
         (NoTx, NoRx),
-        Config::default(),
+        Config::default(), // default configuration is 19200 baud, 8 data bits, 1 stop bit & no parity (8N1)
         clkcntrl_config,
         &mut dport,
     )
