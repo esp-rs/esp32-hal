@@ -4,12 +4,6 @@ version = "0.1.0"
 authors = ["Scott Mabin <scott@mabez.dev>", "Arjan Mels <arjan@mels.email>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lib]
-test=false
-bench=false
-
 [dependencies]
 xtensa-lx6-rt = { path = "../xtensa-lx6-rt" }
 esp32 = { path = "../esp32"}
@@ -18,10 +12,15 @@ spin = "0.5.2"
 embedded-hal = {version="0.2.3",features = ["unproven"] }
 
 [dev-dependencies]
+panic-halt = "0.2.0"
 spin = "0.5"
+
+[[example]]
+name = "blinky"
 
 [[example]]
 name = "serial"
 
 [[example]]
 name = "rtccntl"
+
