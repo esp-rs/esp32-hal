@@ -93,8 +93,14 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+#display section seizes
+echo
+xtensa-esp32-elf-readelf $BIN_PATH -S|egrep 'BIT|\[Nr\]' |awk 'BEGIN {FS="[ \t\[\]]+"}  {size=sprintf("%7d", "0x" $7)+0; printf("%-3s %-20s %-8s %-8s %-8s %8s %-3s %-3s\n",$2,$3,$4,$5,$7,((size>0)?size:$7),$9,$12); total+=size; } END { printf("\nTotal: %d bytes\n",total)}'
+echo
+
+
 # convert to bin
-rm $BIN_PATH.bin
+rm $BIN_PATH.bin > /dev/null
 esptool --chip esp32 elf2image --flash_mode="dio" --flash_freq "40m" --flash_size "4MB" -o $BIN_PATH.bin $BIN_PATH
 
 # kill terminal programs using the same port
