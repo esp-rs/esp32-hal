@@ -9,12 +9,11 @@
 //! - LED clock selection in ledc peripheral
 //! - 8M and 8MD256 enable/disable
 //! - 150kHz enable/disable
-//! - CPU from 8M
 //! - APLL support
 //! - Implement light sleep
 //! - 32kHz Xtal support
 //! - Allow 8.5MHz clock to be tuned
-//!
+//! - Global RTC clock reading
 
 use crate::prelude::*;
 use core::fmt;
@@ -57,9 +56,10 @@ const PLL_FREQ_320M: Hertz = Hertz(320_000_000);
 const PLL_FREQ_480M: Hertz = Hertz(480_000_000);
 
 // Possible Xtal frequencies
-const XTAL_FREQUENCY_40M: Hertz = Hertz(40_000_000);
-const XTAL_FREQUENCY_26M: Hertz = Hertz(26_000_000);
-const XTAL_FREQUENCY_24M: Hertz = Hertz(24_000_000);
+pub const XTAL_FREQUENCY_40M: Hertz = Hertz(40_000_000);
+pub const XTAL_FREQUENCY_26M: Hertz = Hertz(26_000_000);
+pub const XTAL_FREQUENCY_24M: Hertz = Hertz(24_000_000);
+pub const XTAL_FREQUENCY_AUTO: Hertz = Hertz(0);
 
 // Thresholds for auto frequency detection
 const XTAL_FREQUENCY_THRESHOLD: Hertz = Hertz(50_000_000);
@@ -428,10 +428,11 @@ pub fn sleep<T: Into<NanoSeconds>>(time: T) {
 
 impl ClockControl {
     /// Create new ClockControl structure
-    pub fn new(
+    pub fn new<T: Into<Hertz> + Copy>(
         rtc_control: RTCCNTL,
         apb_control: APB_CTRL,
         dport_control: crate::dport::ClockControl,
+        xtal_frequency: T,
     ) -> Result<Self, Error> {
         let mut cc = ClockControl {
             rtc_control,
@@ -476,7 +477,7 @@ impl ClockControl {
 
             dfs: dfs::DFS::new(),
         };
-        cc.init()?;
+        cc.init(xtal_frequency)?;
         Ok(cc)
     }
 
@@ -636,7 +637,7 @@ impl ClockControl {
     }
 
     /// Measure an estimated Xtal frequency based on the 8MHz oscillator
-    fn determine_xtal_frequency(&mut self) -> Result<(), Error> {
+    fn detect_xtal_frequency(&mut self) -> Result<(), Error> {
         let ticks =
             self.measure_clock_ticks(CalibrateRTCSource::RTC8MD256, CYCLES_XTAL_CALIBRATION)?;
 
@@ -671,11 +672,15 @@ impl ClockControl {
     }
 
     /// Initialize clock configuration
-    fn init(&mut self) -> Result<&mut Self, Error> {
-        self.xtal_frequency = match self.xtal_frequency_from_scratch() {
-            Ok(frequency) => frequency,
-            _ => DEFAULT_XTAL_FREQUENCY,
-        };
+    fn init<T: Into<Hertz> + Copy>(&mut self, xtal_frequency: T) -> Result<&mut Self, Error> {
+        if (xtal_frequency.into() == XTAL_FREQUENCY_AUTO) {
+            self.xtal_frequency = match self.xtal_frequency_from_scratch() {
+                Ok(frequency) => frequency,
+                _ => DEFAULT_XTAL_FREQUENCY,
+            };
+        } else {
+            self.xtal_frequency = xtal_frequency.into();
+        }
 
         // switch from pll to xtal (pll can still be enabled when previously in deep sleep)
         // xtal_frequency might be incorrect here, but by setting teh cpu to current xtal frequency
@@ -701,7 +706,9 @@ impl ClockControl {
         // SET_PERI_REG_BITS(ANA_CONFIG_REG, ANA_CONFIG_M, ANA_CONFIG_M, ANA_CONFIG_S);
         // CLEAR_PERI_REG_MASK(ANA_CONFIG_REG, I2C_APLL_M | I2C_BBPLL_M);
 
-        self.determine_xtal_frequency()?;
+        if xtal_frequency.into() == XTAL_FREQUENCY_AUTO {
+            self.detect_xtal_frequency()?;
+        }
 
         self.rtc8md256_frequency_measured =
             self.measure_slow_frequency(CalibrateRTCSource::RTC8MD256)?;
@@ -932,7 +939,7 @@ impl ClockControl {
             f_hz = self.rtc8m_frequency_measured;
         }
 
-        // calculate divider, only integer fractions of xtal_frequency are possible
+        // calculate divider, only integer fractions of 8MHz are possible
         let div = core::cmp::max(1, self.rtc8m_frequency_measured / f_hz);
 
         if div > u16::max_value() as u32 {
@@ -952,6 +959,7 @@ impl ClockControl {
                 .modify(|_, w| w.dig_dbias_wak().variant(DIG_DBIAS_XTAL))
         };
 
+        // TODO: check if this is all needed
         self.rtc_control.clk_conf.modify(|_, w| {
             w.ck8m_force_pu()
                 .set_bit()

@@ -27,8 +27,13 @@ fn main() -> ! {
     let (mut dport, dport_clock_control) = dp.DPORT.split();
 
     // setup clocks & watchdog
-    let mut clock_control =
-        ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control).unwrap();
+    let mut clock_control = ClockControl::new(
+        dp.RTCCNTL,
+        dp.APB_CTRL,
+        dport_clock_control,
+        esp32_hal::clock_control::XTAL_FREQUENCY_AUTO,
+    )
+    .unwrap();
 
     // set desired clock frequencies
     clock_control

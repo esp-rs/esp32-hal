@@ -27,9 +27,13 @@ fn main() -> ! {
     // we will do it manually on startup
     disable_timg_wdts(&mut timg0, &mut timg1);
 
-    let clkcntrl =
-        esp32_hal::clock_control::ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control)
-            .unwrap();
+    let clkcntrl = esp32_hal::clock_control::ClockControl::new(
+        dp.RTCCNTL,
+        dp.APB_CTRL,
+        dport_clock_control,
+        esp32_hal::clock_control::XTAL_FREQUENCY_AUTO,
+    )
+    .unwrap();
 
     let (clkcntrl_config, mut watchdog) = clkcntrl.freeze().unwrap();
     watchdog.disable();
