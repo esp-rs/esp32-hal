@@ -4,5 +4,6 @@ pub use embedded_hal::digital::v2::StatefulOutputPin as _esp32_hal_digital_State
 pub use embedded_hal::digital::v2::ToggleableOutputPin as _esp32_hal_digital_ToggleableOutputPin;
 pub use embedded_hal::prelude::*;
 
+pub use crate::analog::SensExt as _esp32_hal_analog_SensExt;
 pub use crate::gpio::GpioExt as _esp32_hal_gpio_GpioExt;
 pub use crate::units::*;
