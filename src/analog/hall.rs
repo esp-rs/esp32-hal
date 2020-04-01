@@ -1,11 +1,11 @@
 //! Built-in hall sensor readout.
-//! 
+//!
 //! This module provides a function for reading current value of the built-in
 //! hall sensor.
-//! 
+//!
 
-use esp32::RTCIO;
 use embedded_hal::adc::OneShot;
+use esp32::RTCIO;
 
 use crate::analog::adc::ADC;
 use crate::analog::ADC1;

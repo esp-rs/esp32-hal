@@ -23,9 +23,13 @@ fn main() -> ! {
     // we will do it manually on startup
     disable_timg_wdts(&mut timg0, &mut timg1);
 
-    let clkcntrl =
-        esp32_hal::clock_control::ClockControl::new(dp.RTCCNTL, dp.APB_CTRL, dport_clock_control)
-            .unwrap();
+    let clkcntrl = esp32_hal::clock_control::ClockControl::new(
+        dp.RTCCNTL,
+        dp.APB_CTRL,
+        dport_clock_control,
+        esp32_hal::clock_control::XTAL_FREQUENCY_AUTO,
+    )
+    .unwrap();
 
     let (_clkcntrl_config, mut watchdog) = clkcntrl.freeze().unwrap();
     watchdog.disable();
@@ -71,5 +75,5 @@ fn disable_timg_wdts(timg0: &mut esp32::TIMG0, timg1: &mut esp32::TIMG1) {
 /// Basic panic handler - just loops
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop { }
+    loop {}
 }

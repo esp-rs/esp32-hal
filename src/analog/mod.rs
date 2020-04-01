@@ -1,8 +1,8 @@
 //! Analog peripherals control.
-//! 
+//!
 //! Provides functionality for using analog peripherals, such as ADCs, DACs
 //! and other sesnsors.
-//! 
+//!
 
 pub mod adc;
 pub mod config;

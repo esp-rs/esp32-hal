@@ -4,7 +4,7 @@
 //! analog to digital converters available on the ESP32: `ADC1` and `ADC2`.
 //!
 //! The following pins can be configured for analog readout:
-//! 
+//!
 //! | Channel | ADC1                 | ADC2          |
 //! |---------|----------------------|---------------|
 //! | 0       | GPIO36 (SENSOR_VP)   | GPIO4         |
@@ -26,7 +26,6 @@ use esp32::{RTCIO, SENS};
 use crate::analog::config;
 use crate::analog::{ADC1, ADC2};
 use crate::gpio::*;
-
 
 pub struct ADC<ADC> {
     adc: PhantomData<ADC>,

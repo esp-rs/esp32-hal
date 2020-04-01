@@ -1,10 +1,10 @@
 //! Digital to analog (DAC) conversion.
-//! 
+//!
 //! This module provides functions for controling two digital to
 //! analog converters, available on ESP32: `DAC1` and `DAC2`.
-//! 
+//!
 //! The DAC1 is avilable on the GPIO pin 25, and DAC2 on pin 26.
-//! 
+//!
 
 use core::marker::PhantomData;
 use esp32::{RTCIO, SENS};
