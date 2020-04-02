@@ -6,7 +6,7 @@ use crate::prelude::*;
 use esp32::generic::Variant::Val;
 
 impl super::ClockControl {
-    fn park_core(&mut self, core: u32) -> Result<(), Error> {
+    pub unsafe fn park_core(&mut self, core: u32) -> Result<(), Error> {
         match core {
             //TODO: check if necessary to set to 0 like in cpu_start.c?
             0 => {
@@ -30,7 +30,7 @@ impl super::ClockControl {
         Ok(())
     }
 
-    fn unpark_core(&mut self, core: u32) -> Result<(), Error> {
+    pub fn unpark_core(&mut self, core: u32) -> Result<(), Error> {
         match core {
             //TODO: check if necessary to set to 0 like in cpu_start.c?
             0 => {
