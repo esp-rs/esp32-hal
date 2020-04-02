@@ -24,3 +24,5 @@ name = "serial"
 [[example]]
 name = "rtccntl"
 
+[[example]]
+name = "multicore"

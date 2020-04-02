@@ -14,6 +14,22 @@ impl ClockControl {
         // NOTE(unsafe) this proxy grants exclusive access to this register
         unsafe { &(*DPORT::ptr()).cpu_per_conf }
     }
+    pub(crate) fn appcpu_ctrl_a(&self) -> &dport::APPCPU_CTRL_A {
+        // NOTE(unsafe) this proxy grants exclusive access to this register
+        unsafe { &(*DPORT::ptr()).appcpu_ctrl_a }
+    }
+    pub(crate) fn appcpu_ctrl_b(&self) -> &dport::APPCPU_CTRL_B {
+        // NOTE(unsafe) this proxy grants exclusive access to this register
+        unsafe { &(*DPORT::ptr()).appcpu_ctrl_b }
+    }
+    pub(crate) fn appcpu_ctrl_c(&self) -> &dport::APPCPU_CTRL_C {
+        // NOTE(unsafe) this proxy grants exclusive access to this register
+        unsafe { &(*DPORT::ptr()).appcpu_ctrl_c }
+    }
+    pub(crate) fn appcpu_ctrl_d(&self) -> &dport::APPCPU_CTRL_D {
+        // NOTE(unsafe) this proxy grants exclusive access to this register
+        unsafe { &(*DPORT::ptr()).appcpu_ctrl_d }
+    }
 }
 
 /// Trait to split the DPORT peripheral into subsets
