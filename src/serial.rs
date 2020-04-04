@@ -67,11 +67,11 @@ pub mod config {
 
     #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub enum StopBits {
-        #[doc = "1 stop bit"]
+        /// 1 stop bit
         STOP1,
-        #[doc = "1.5 stop bits"]
+        /// 1.5 stop bits
         STOP1P5,
-        #[doc = "2 stop bits"]
+        /// 2 stop bits
         STOP2,
     }
 

@@ -111,25 +111,23 @@ impl WatchDog {
             _ => return Err(super::Error::UnsupportedWatchdogConfig),
         };
 
-        Ok(
-            WatchdogConfig::<MicroSeconds, MicroSeconds, MicroSeconds, MicroSeconds> {
-                period1: self.calc_period(rtc_control.wdtconfig1.read().bits()),
-                action1: stg0,
-                period2: self.calc_period(rtc_control.wdtconfig2.read().bits()),
-                action2: stg1,
-                period3: self.calc_period(rtc_control.wdtconfig3.read().bits()),
-                action3: stg2,
-                period4: self.calc_period(rtc_control.wdtconfig4.read().bits()),
-                action4: stg3,
-                cpu_reset_duration: wdtconfig0.wdt_cpu_reset_length().variant(),
-                sys_reset_duration: wdtconfig0.wdt_sys_reset_length().variant(),
-                pause_in_sleep: wdtconfig0.wdt_pause_in_slp().bit(),
-                reset_cpu: [
-                    wdtconfig0.wdt_procpu_reset_en().bit(),
-                    wdtconfig0.wdt_appcpu_reset_en().bit(),
-                ],
-            },
-        )
+        Ok(WatchdogConfig {
+            period1: self.calc_period(rtc_control.wdtconfig1.read().bits()),
+            action1: stg0,
+            period2: self.calc_period(rtc_control.wdtconfig2.read().bits()),
+            action2: stg1,
+            period3: self.calc_period(rtc_control.wdtconfig3.read().bits()),
+            action3: stg2,
+            period4: self.calc_period(rtc_control.wdtconfig4.read().bits()),
+            action4: stg3,
+            cpu_reset_duration: wdtconfig0.wdt_cpu_reset_length().variant(),
+            sys_reset_duration: wdtconfig0.wdt_sys_reset_length().variant(),
+            pause_in_sleep: wdtconfig0.wdt_pause_in_slp().bit(),
+            reset_cpu: [
+                wdtconfig0.wdt_procpu_reset_en().bit(),
+                wdtconfig0.wdt_appcpu_reset_en().bit(),
+            ],
+        })
     }
 
     /// Change watchdog timer configuration and start
