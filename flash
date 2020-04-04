@@ -95,7 +95,7 @@ fi
 
 #display section seizes
 echo
-xtensa-esp32-elf-readelf $BIN_PATH -S|egrep 'BIT|\[Nr\]' |awk 'BEGIN {FS="[ \t\[\]]+"}  {size=sprintf("%7d", "0x" $7)+0; printf("%-3s %-20s %-8s %-8s %-8s %8s %-3s %-3s\n",$2,$3,$4,$5,$7,((size>0)?size:$7),$9,$12); total+=size; } END { printf("\nTotal: %d bytes\n",total)}'
+xtensa-esp32-elf-readelf $BIN_PATH -S|egrep 'BIT|\[Nr\]' |awk 'BEGIN {FS="[ \t\[\]]+"}  $9~/A|Flg/ {size=sprintf("%7d", "0x" $7)+0; printf("%-3s %-20s %-8s %-8s %-8s %8s %-3s %-3s\n",$2,$3,$4,$5,$7,((size>0)?size:$7),$9,$12); total+=size; } END { printf("\nTotal: %d bytes\n",total)}'
 echo
 
 
@@ -112,5 +112,7 @@ esptool --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset 
 # start terminal program
 if [[ -v TERMINAL ]]
 then
-    gnome-terminal --geometry 200x15+0+2000 -- picocom -b $TERM_BAUDRATE /dev/ttyUSB0 --imap lfcrlf 2>/dev/null
+    echo
+    echo "Starting terminal"
+    gnome-terminal --geometry 200x15+0+2000 -- picocom -b $TERM_BAUDRATE $PORT --imap lfcrlf 2>/dev/null
 fi

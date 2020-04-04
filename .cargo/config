@@ -5,13 +5,5 @@ runner = "xtensa-esp32-elf-gdb -q -x xtensa.gdb"
 rustflags = [
   "-C", "link-arg=-nostartfiles",
   "-C", "link-arg=-Wl,-Tlink.x",
-
-# needed to avoid CFI errors with soem versions of LLVM
-  "-C", "debuginfo=0"
-  
-# to generate assembly
-# however this interferese with cargo xdoc
-# "--emit", "asm", 
- 
 ]
 target = "xtensa-esp32-none-elf"

@@ -42,7 +42,7 @@
         {
             "label": "flash example",
             "type": "shell",
-            "command": "./flash -t ${input:example}",
+            "command": "./flash -b 912600 -p /dev/ttyUSB1 -t ${input:example}",
             "problemMatcher": {
                 "base": "$rustc",
                 "fileLocation": [
@@ -64,7 +64,7 @@
             "type": "command",
             "command": "shellCommand.execute",
             "args": {
-                "command": "egrep '\\[\\[example\\]\\]|name[ \t]+=' Cargo.toml | egrep '\\[\\[example\\]\\]' -A1 | egrep 'name[ \t]+=' | sed -E 's/name =//; s/\"//g'",
+                "command": "egrep '\\[\\[example\\]\\]|name[ \t]+=' Cargo.toml | egrep '\\[\\[example\\]\\]' -A1 | egrep 'name[ \t]*=' | sed -E 's/name[ \t]*=[ \t]*//; s/\"//g'",
                 "cwd": "${workspaceFolder}/../esp32-hal"
             }
         },
