@@ -7,6 +7,7 @@ pub use esp32;
 
 pub mod clock_control;
 pub mod dport;
+pub mod efuse;
 pub mod gpio;
 pub mod prelude;
 pub mod serial;
