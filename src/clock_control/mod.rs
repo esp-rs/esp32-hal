@@ -337,6 +337,18 @@ impl<'a> ClockControlConfig {
     pub fn get_lock_count(&self) -> dfs::Locks {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().get_lock_count() }
     }
+
+    pub unsafe fn park_core(&mut self, core: u32) -> Result<(), Error> {
+        CLOCK_CONTROL.as_mut().unwrap().park_core(core)
+    }
+
+    pub fn unpark_core(&mut self, core: u32) -> Result<(), Error> {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) }
+    }
+
+    pub fn start_core(&mut self, core: u32, f: fn() -> !) -> Result<(), Error> {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().start_core(core, f) }
+    }
 }
 
 impl fmt::Debug for ClockControlConfig {

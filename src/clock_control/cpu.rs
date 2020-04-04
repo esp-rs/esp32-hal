@@ -2,28 +2,25 @@
 //!
 
 use super::Error;
-use crate::prelude::*;
-use esp32::generic::Variant::Val;
 
 impl super::ClockControl {
     pub unsafe fn park_core(&mut self, core: u32) -> Result<(), Error> {
         match core {
-            //TODO: check if necessary to set to 0 like in cpu_start.c?
             0 => {
                 self.rtc_control
                     .sw_cpu_stall
-                    .modify(|_, w| unsafe { w.sw_stall_procpu_c1().bits(0x21) });
+                    .modify(|_, w| w.sw_stall_procpu_c1().bits(0x21));
                 self.rtc_control
                     .options0
-                    .modify(|_, w| unsafe { w.sw_stall_procpu_c0().bits(0x02) });
+                    .modify(|_, w| w.sw_stall_procpu_c0().bits(0x02));
             }
             1 => {
                 self.rtc_control
                     .sw_cpu_stall
-                    .modify(|_, w| unsafe { w.sw_stall_appcpu_c1().bits(0x21) });
+                    .modify(|_, w| w.sw_stall_appcpu_c1().bits(0x21));
                 self.rtc_control
                     .options0
-                    .modify(|_, w| unsafe { w.sw_stall_appcpu_c0().bits(0x02) });
+                    .modify(|_, w| w.sw_stall_appcpu_c0().bits(0x02));
             }
             _ => return Err(Error::InvalidCore),
         };
@@ -85,7 +82,7 @@ impl super::ClockControl {
                     .appcpu_ctrl_a()
                     .modify(|_, w| w.appcpu_resetting().clear_bit());
 
-                self.unpark_core(core);
+                self.unpark_core(core)?;
             }
             _ => return Err(Error::InvalidCore),
         }
@@ -93,30 +90,3 @@ impl super::ClockControl {
         Ok(())
     }
 }
-
-/*
-APP_CPU is reset when DPORT_APPCPU_RESETTING=1. It is released when
-DPORT_APPCPU_RESETTING=0.
-• When DPORT_APPCPU_CLKGATE_EN=0, the APP_CPU clock can be disabled to reduce power
-consumption.
-• When DPORT_APPCPU_RUNSTALL=1, the APP_CPU can be put into a stalled state.
-• When APP_CPU is booted up with a ROM code, it will jump to the address stored in the
-DPORT_APPCPU_BOOT_ADDR register.
-
-// Enable clock and reset APP CPU. Note that OpenOCD may have already
-    // enabled clock and taken APP CPU out of reset. In this case don't reset
-    // APP CPU again, as that will clear the breakpoints which may have already
-    // been set.
-
-
-   esp_cpu_unstall(1);
-
-        if (!DPORT_GET_PERI_REG_MASK(DPORT_APPCPU_CTRL_B_REG, DPORT_APPCPU_CLKGATE_EN)) {
-        DPORT_SET_PERI_REG_MASK(DPORT_APPCPU_CTRL_B_REG, DPORT_APPCPU_CLKGATE_EN);
-        DPORT_CLEAR_PERI_REG_MASK(DPORT_APPCPU_CTRL_C_REG, DPORT_APPCPU_RUNSTALL);
-        DPORT_SET_PERI_REG_MASK(DPORT_APPCPU_CTRL_A_REG, DPORT_APPCPU_RESETTING);
-        DPORT_CLEAR_PERI_REG_MASK(DPORT_APPCPU_CTRL_A_REG, DPORT_APPCPU_RESETTING);
-    }
-    ets_set_appcpu_boot_addr((uint32_t)call_start_cpu1);
-
-*/
