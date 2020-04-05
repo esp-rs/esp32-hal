@@ -22,25 +22,37 @@ pub struct WatchDog {
 }
 
 /// Watchdog configuration
+///
+/// The watchdog has four stages.
+/// Each of these stages can take a configurable action after expiry of the corresponding period.
+/// When this action is done, it will move to the next stage.
+/// The stage is reset to the first when the watchdog timer is fed.
 #[derive(Debug)]
-pub struct WatchdogConfig<
-    T1: Into<MicroSeconds>,
-    T2: Into<MicroSeconds>,
-    T3: Into<MicroSeconds>,
-    T4: Into<MicroSeconds>,
-> {
-    pub period1: T1,
+pub struct WatchdogConfig {
+    // Delay before the first action to be taken
+    pub period1: MicroSeconds,
+    // First action
     pub action1: WatchdogAction,
-    pub period2: T2,
+    // Delay before the second action to be taken
+    pub period2: MicroSeconds,
+    // Second action
     pub action2: WatchdogAction,
-    pub period3: T3,
+    // Delay before the third action to be taken
+    pub period3: MicroSeconds,
+    // Third action
     pub action3: WatchdogAction,
-    pub period4: T4,
+    // Delay before the fourth action to be taken
+    pub period4: MicroSeconds,
+    // Fourth action
     pub action4: WatchdogAction,
+    /// Duration of the cpu reset signal
     pub cpu_reset_duration: WatchDogResetDuration,
+    /// Duration of the system reset signal
     pub sys_reset_duration: WatchDogResetDuration,
+    /// Pause the watchdog timer when the system is in sleep mode
     pub pause_in_sleep: bool,
-    pub reset_cpu: [bool; 2],
+    /// Indicates which cpu(s) will be reset when action is RESETCPU
+    pub reset_cpu: (bool, bool),
 }
 
 impl WatchDog {
@@ -87,10 +99,7 @@ impl WatchDog {
     }
 
     /// Get watchdog configuration
-    pub fn config(
-        &self,
-    ) -> Result<WatchdogConfig<MicroSeconds, MicroSeconds, MicroSeconds, MicroSeconds>, super::Error>
-    {
+    pub fn config(&self) -> Result<WatchdogConfig, super::Error> {
         let rtc_control = unsafe { &(*RTCCNTL::ptr()) };
         let wdtconfig0 = rtc_control.wdtconfig0.read();
 
@@ -123,21 +132,15 @@ impl WatchDog {
             cpu_reset_duration: wdtconfig0.wdt_cpu_reset_length().variant(),
             sys_reset_duration: wdtconfig0.wdt_sys_reset_length().variant(),
             pause_in_sleep: wdtconfig0.wdt_pause_in_slp().bit(),
-            reset_cpu: [
+            reset_cpu: (
                 wdtconfig0.wdt_procpu_reset_en().bit(),
                 wdtconfig0.wdt_appcpu_reset_en().bit(),
-            ],
+            ),
         })
     }
 
     /// Change watchdog timer configuration and start
-    pub fn set_config<T1, T2, T3, T4>(&mut self, config: &WatchdogConfig<T1, T2, T3, T4>)
-    where
-        T1: Into<MicroSeconds> + Copy,
-        T2: Into<MicroSeconds> + Copy,
-        T3: Into<MicroSeconds> + Copy,
-        T4: Into<MicroSeconds> + Copy,
-    {
+    pub fn set_config(&mut self, config: &WatchdogConfig) {
         let per1 = self.calc_ticks(config.period1.into());
         let per2 = self.calc_ticks(config.period2.into());
         let per3 = self.calc_ticks(config.period3.into());
@@ -165,9 +168,9 @@ impl WatchDog {
                     .wdt_pause_in_slp()
                     .bit(config.pause_in_sleep)
                     .wdt_procpu_reset_en()
-                    .bit(config.reset_cpu[0])
+                    .bit(config.reset_cpu.0)
                     .wdt_appcpu_reset_en()
-                    .bit(config.reset_cpu[1])
+                    .bit(config.reset_cpu.1)
             });
             rtc_control.wdtconfig1.write(|w| unsafe { w.bits(per1) });
             rtc_control.wdtconfig2.write(|w| unsafe { w.bits(per2) });
