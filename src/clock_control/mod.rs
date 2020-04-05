@@ -14,6 +14,7 @@
 //! - 32kHz Xtal support
 //! - Allow 8.5MHz clock to be tuned
 //! - Global RTC clock reading
+//! - Automatic enabling/disabling of 8MHz source (when not in use for rtc_fast_clk or cpu frequency)
 
 use crate::prelude::*;
 use core::fmt;
@@ -491,25 +492,37 @@ impl ClockControl {
         Ok((res, watchdog::WatchDog::new(res)))
     }
 
+    // TODO: check what dig_clk8m and dig_clk8m_256 are used for
+
     /// Check if 8MHz oscillator is enabled
     fn is_rtc8m_enabled(&self) -> bool {
-        self.rtc_control.clk_conf.read().enb_ck8m().bit_is_clear()
+        let value = self.rtc_control.clk_conf.read();
+        value.ck8m_force_pu().bit_is_set()
+            && value.ck8m_force_pd().bit_is_clear()
+            && value.enb_ck8m().bit_is_clear()
+            && value.dig_clk8m_en().bit_is_set()
     }
 
     /// Check if 8MHz oscillator is enabled
     fn is_rtc8md256_enabled(&self) -> bool {
-        self.rtc_control
-            .clk_conf
-            .read()
-            .enb_ck8m_div()
-            .bit_is_clear()
+        let value = self.rtc_control.clk_conf.read();
+        self.is_rtc8m_enabled()
+            && value.enb_ck8m_div().bit_is_clear()
+            && value.dig_clk8m_d256_en().bit_is_set()
     }
 
     /// Enable 8MHz oscillator
     fn rtc8m_enable(&mut self) -> &mut Self {
-        self.rtc_control
-            .clk_conf
-            .modify(|_, w| w.enb_ck8m().clear_bit());
+        self.rtc_control.clk_conf.modify(|_, w| {
+            w.ck8m_force_pu()
+                .set_bit()
+                .ck8m_force_pd()
+                .clear_bit()
+                .enb_ck8m()
+                .clear_bit()
+                .dig_clk8m_en()
+                .set_bit()
+        });
 
         // no need to wait for auto enable if enabled by software
         unsafe { self.rtc_control.timer1.modify(|_, w| w.ck8m_wait().bits(1)) };
@@ -521,16 +534,15 @@ impl ClockControl {
         self
     }
 
-    /// Enable 8MHz oscillator and 8MHz/256
+    /// Enable 8MHz/256 (and therefore also 8MHz)
     fn rtc8md256_enable(&mut self) -> &mut Self {
         if !self.is_rtc8m_enabled() {
             self.rtc8m_enable();
         }
 
-        // TODO: check enb versus dig_enb, etc.
         self.rtc_control
             .clk_conf
-            .modify(|_, w| w.enb_ck8m_div().clear_bit());
+            .modify(|_, w| w.enb_ck8m_div().clear_bit().dig_clk8m_d256_en().set_bit());
 
         self.rtc8md256_frequency = self.rtc8md256_frequency_measured;
 
@@ -541,7 +553,7 @@ impl ClockControl {
     fn rtc8md256_disable(&mut self) -> &mut Self {
         self.rtc_control
             .clk_conf
-            .modify(|_, w| w.enb_ck8m_div().set_bit());
+            .modify(|_, w| w.enb_ck8m_div().set_bit().dig_clk8m_d256_en().clear_bit());
 
         self.rtc8md256_frequency = FREQ_OFF;
 
@@ -550,9 +562,20 @@ impl ClockControl {
 
     /// Disable 8MHz oscillator (and therefore also 8MHz/256)
     fn rtc8m_disable(&mut self) -> &mut Self {
-        self.rtc_control
-            .clk_conf
-            .modify(|_, w| w.enb_ck8m().set_bit());
+        self.rtc_control.clk_conf.modify(|_, w| {
+            w.ck8m_force_pu()
+                .clear_bit()
+                .ck8m_force_pd()
+                .set_bit()
+                .enb_ck8m()
+                .set_bit()
+                .enb_ck8m_div()
+                .set_bit()
+                .dig_clk8m_en()
+                .clear_bit()
+                .dig_clk8m_d256_en()
+                .clear_bit()
+        });
 
         // need to wait for auto enable when disabled
         unsafe {
@@ -706,21 +729,25 @@ impl ClockControl {
         // SET_PERI_REG_BITS(ANA_CONFIG_REG, ANA_CONFIG_M, ANA_CONFIG_M, ANA_CONFIG_S);
         // CLEAR_PERI_REG_MASK(ANA_CONFIG_REG, I2C_APLL_M | I2C_BBPLL_M);
 
+        self.rtc8md256_enable();
+
         if xtal_frequency.into() == XTAL_FREQUENCY_AUTO {
             self.detect_xtal_frequency()?;
         }
 
-        self.rtc8md256_frequency_measured =
-            self.measure_slow_frequency(CalibrateRTCSource::RTC8MD256)?;
+        self.rtc8md256_frequency_measured = self
+            .measure_slow_frequency(CalibrateRTCSource::RTC8MD256)
+            .unwrap();
+        self.rtc8md256_frequency = self.rtc8md256_frequency_measured;
         self.rtc8m_frequency_measured = self.rtc8md256_frequency_measured * 256;
+        self.rtc8m_frequency = self.rtc8m_frequency_measured;
 
         self.set_slow_rtc_source(SlowRTCSource::RTC150k);
-        self.rtc_frequency_measured = self.measure_slow_frequency(CalibrateRTCSource::SlowRTC)?;
-        // TODO: can rtc150k be disabled?
+        self.rtc_frequency_measured = self
+            .measure_slow_frequency(CalibrateRTCSource::SlowRTC)
+            .unwrap();
         self.rtc_frequency = self.rtc_frequency_measured;
 
-        self.rtc8m_enable();
-        self.rtc8md256_enable();
         self.set_slow_rtc_source(SlowRTCSource::RTC8MD256);
         self.set_fast_rtc_source(FastRTCSource::RTC8M);
 
