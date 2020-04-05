@@ -696,7 +696,9 @@ impl ClockControl {
 
     /// Initialize clock configuration
     fn init<T: Into<Hertz> + Copy>(&mut self, xtal_frequency: T) -> Result<&mut Self, Error> {
-        if (xtal_frequency.into() == XTAL_FREQUENCY_AUTO) {
+        // if auto is selected check if the frequency has already been stored during
+        // a previous run in the scratch register
+        if xtal_frequency.into() == XTAL_FREQUENCY_AUTO {
             self.xtal_frequency = match self.xtal_frequency_from_scratch() {
                 Ok(frequency) => frequency,
                 _ => DEFAULT_XTAL_FREQUENCY,
@@ -735,17 +737,14 @@ impl ClockControl {
             self.detect_xtal_frequency()?;
         }
 
-        self.rtc8md256_frequency_measured = self
-            .measure_slow_frequency(CalibrateRTCSource::RTC8MD256)
-            .unwrap();
+        self.rtc8md256_frequency_measured =
+            self.measure_slow_frequency(CalibrateRTCSource::RTC8MD256)?;
         self.rtc8md256_frequency = self.rtc8md256_frequency_measured;
         self.rtc8m_frequency_measured = self.rtc8md256_frequency_measured * 256;
         self.rtc8m_frequency = self.rtc8m_frequency_measured;
 
         self.set_slow_rtc_source(SlowRTCSource::RTC150k);
-        self.rtc_frequency_measured = self
-            .measure_slow_frequency(CalibrateRTCSource::SlowRTC)
-            .unwrap();
+        self.rtc_frequency_measured = self.measure_slow_frequency(CalibrateRTCSource::SlowRTC)?;
         self.rtc_frequency = self.rtc_frequency_measured;
 
         self.set_slow_rtc_source(SlowRTCSource::RTC8MD256);
