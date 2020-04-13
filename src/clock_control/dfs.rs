@@ -191,7 +191,6 @@ impl<'a> super::ClockControl {
         });
 
         // TODO: implement actual locking
-        unimplemented!();
         LockAwake {}
     }
 

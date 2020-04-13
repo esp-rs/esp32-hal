@@ -173,6 +173,7 @@ pub enum FastRTCSource {
 
 /// Slow RTC clock source
 #[derive(Debug, Copy, Clone)]
+#[allow(dead_code)]
 enum CalibrateRTCSource {
     /// Slow RTC Source
     SlowRTC,
@@ -389,6 +390,7 @@ pub struct ClockControl {
     cpu_source_locked: CPUSource,
     cpu_frequency_apb_locked: Hertz,
     cpu_source_apb_locked: CPUSource,
+    #[allow(dead_code)]
     light_sleep_enabled: bool,
 
     apb_frequency_apb_locked: Hertz,
@@ -495,7 +497,7 @@ impl ClockControl {
     // TODO: check what dig_clk8m and dig_clk8m_256 are used for
 
     /// Check if 8MHz oscillator is enabled
-    fn is_rtc8m_enabled(&self) -> bool {
+    pub fn is_rtc8m_enabled(&self) -> bool {
         let value = self.rtc_control.clk_conf.read();
         value.ck8m_force_pu().bit_is_set()
             && value.ck8m_force_pd().bit_is_clear()
@@ -504,7 +506,7 @@ impl ClockControl {
     }
 
     /// Check if 8MHz oscillator is enabled
-    fn is_rtc8md256_enabled(&self) -> bool {
+    pub fn is_rtc8md256_enabled(&self) -> bool {
         let value = self.rtc_control.clk_conf.read();
         self.is_rtc8m_enabled()
             && value.enb_ck8m_div().bit_is_clear()
@@ -550,6 +552,7 @@ impl ClockControl {
     }
 
     /// Disable 8MHz/256
+    #[allow(dead_code)]
     fn rtc8md256_disable(&mut self) -> &mut Self {
         self.rtc_control
             .clk_conf
@@ -561,6 +564,7 @@ impl ClockControl {
     }
 
     /// Disable 8MHz oscillator (and therefore also 8MHz/256)
+    #[allow(dead_code)]
     fn rtc8m_disable(&mut self) -> &mut Self {
         self.rtc_control.clk_conf.modify(|_, w| {
             w.ck8m_force_pu()
