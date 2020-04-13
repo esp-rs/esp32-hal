@@ -1,0 +1,79 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558 
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "cargo xbuild --examples",
+            "type": "shell",
+            "command": "cargo xbuild --examples",
+            "problemMatcher": {
+                "base": "$rustc",
+                "fileLocation": [
+                    "relative"
+                ]
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            "label": "cargo xdoc --open",
+            "type": "shell",
+            "command": "cargo xdoc --open",
+            "problemMatcher": {
+                "base": "$rustc",
+                "fileLocation": [
+                    "relative"
+                ]
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "clear": true
+            }
+        },
+        {
+            "label": "flash example",
+            "type": "shell",
+            "command": "./flash -b 912600 -p /dev/ttyUSB1 -t ${input:example}",
+            "problemMatcher": {
+                "base": "$rustc",
+                "fileLocation": [
+                    "relative"
+                ]
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "clear": true
+            }
+        }
+    ],
+    "inputs": [
+        // requires Tasks Shell Input extension
+        {
+            "id": "example",
+            "type": "command",
+            "command": "shellCommand.execute",
+            "args": {
+                "command": "egrep '\\[\\[example\\]\\]|name[ \t]+=' Cargo.toml | egrep '\\[\\[example\\]\\]' -A1 | egrep 'name[ \t]*=' | sed -E 's/name[ \t]*=[ \t]*//; s/\"//g'",
+                "cwd": "${workspaceFolder}/../esp32-hal"
+            }
+        },
+        // alternatively type in manually
+        {
+            "id": "examplePrompt",
+            "description": "Example:",
+            "default": "serial",
+            "type": "promptString"
+        }
+    ]
+}

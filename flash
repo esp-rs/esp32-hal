@@ -1,0 +1,118 @@
+#!/bin/bash
+
+# port esp32 is connected to
+PORT=/dev/ttyUSB0
+
+# baud rate for programming
+FLASH_BAUDRATE=115200
+
+# baud rate for terminal
+TERM_BAUDRATE=115200
+
+# debug or release build
+TYPE=debug
+
+showhelp() {
+cat << EOF
+Usage: flash -hrtb -p <serial port> <example>
+
+-h, --help                      Display Help
+-r, --release                   Build in release mode
+-p, --port <serial port>        Set serial port (default: $PORT)
+-b, --baudrate <baudrate>       Set baudrate for flasinh (default: $FLASH_BAUDRATE)
+  , --termbaudrate <baudrate>   Set baudrate for flasinh (default: $FLASH_BAUDRATE)
+-t, --terminal                  Open terminal program after flashing
+EOF
+}
+
+# get command line options
+options=$(getopt -l "help,release,port:,terminal,baudrate:,termbaudrate:" -o "hrp:tb:" -a -- "$@")
+
+if [ $? -ne 0 ]; then
+    echo
+    showhelp
+    exit 1
+fi
+
+eval set -- "$options"
+
+
+while true
+do
+    case $1 in
+    -h|--help)
+        showhelp
+        exit 0
+        ;;
+    -r|--release)
+        export TYPE=release
+        ;;
+    -p|--port)
+        shift
+        export PORT=$1
+        ;;
+    -t|--terminal)
+        export TERMINAL=1
+        ;;
+    -b|--baudrate)
+        shift
+        export FLASH_BAUDRATE=$1
+        ;;
+    --termbaudrate)
+        shift
+        export TERM_BAUDRATE=$1
+        ;;
+    --)
+        shift
+        break;;
+    esac
+shift
+done
+
+if [[ $# -ne 1 ]]
+then
+    echo "*** Wrong number of arguments" >&2
+    echo
+    showhelp
+    exit 1
+fi
+
+# change this for release flashes
+BIN_PATH=target/xtensa-esp32-none-elf/$TYPE/examples/$1
+
+# build the specific example
+if [ "$TYPE" = "release" ]
+then 
+    cargo xbuild --example $1 --release
+else
+    cargo xbuild --example $1
+fi
+
+# if cargo returned an error quit the script
+if [ $? -ne 0 ]; then
+    exit 1
+fi
+
+#display section seizes
+echo
+xtensa-esp32-elf-readelf $BIN_PATH -S|egrep 'BIT|\[Nr\]' |awk 'BEGIN {FS="[ \t\[\]]+"}  $9~/A|Flg/ {size=sprintf("%7d", "0x" $7)+0; printf("%-3s %-20s %-8s %-8s %-8s %8s %-3s %-3s\n",$2,$3,$4,$5,$7,((size>0)?size:$7),$9,$12); total+=size; } END { printf("\nTotal: %d bytes\n",total)}'
+echo
+
+
+# convert to bin
+rm $BIN_PATH.bin > /dev/null
+esptool --chip esp32 elf2image --flash_mode="dio" --flash_freq "40m" --flash_size "4MB" -o $BIN_PATH.bin $BIN_PATH
+
+# kill terminal programs using the same port
+ps -ef|grep $PORT|egrep -v "$0|grep" |awk '{print $2}'|xargs -r kill
+
+# flash
+esptool --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 $BIN_PATH.bin
+
+# start terminal program
+if [[ -v TERMINAL ]]
+then
+    echo
+    echo "Starting terminal"
+    gnome-terminal --geometry 200x15+0+2000 -- picocom -b $TERM_BAUDRATE $PORT --imap lfcrlf 2>/dev/null
+fi

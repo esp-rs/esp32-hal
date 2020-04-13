@@ -1,0 +1,45 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "cortex-debug",
+            "cwd": "${workspaceRoot}",
+            "executable": "target/xtensa-esp32-none-elf/debug/examples/${input:example}",
+            "name": "debug-with-svd",
+            "request": "launch",
+            "servertype": "openocd",
+            "interface": "jtag",
+            "svdFile": "../esp32/svd/esp32.svd",
+            // complains about not allowed,
+            // but it does work.. https://github.com/Marus/cortex-debug/issues/111#issuecomment-504778053
+            "serverpath": "${env:HOME}/programs/openocd-esp32/bin/openocd",
+            // for this to work you will have to run `ln -s xtensa-esp32-elf-gdb arm-none-eabi-gdb`
+            "toolchainPath": "${env:HOME}/programs/xtensa-esp32-elf/bin",
+            "configFiles": [
+                "board/esp32-wrover-kit-3.3v.cfg"
+            ],
+        },
+    ],
+    "inputs": [
+        // requires Tasks Shell Input extension
+        {
+            "id": "example",
+            "type": "command",
+            "command": "shellCommand.execute",
+            "args": {
+                "command": "egrep '\\[\\[example\\]\\]|name[ \t]+=' Cargo.toml | egrep '\\[\\[example\\]\\]' -A1 | egrep 'name[ \t]*=' | sed -E 's/name[ \t]*=[ \t]*//; s/\"//g'",
+                "cwd": "${workspaceFolder}/../esp32-hal"
+            }
+        },
+        // alternatively type in manually
+        {
+            "id": "examplePrompt",
+            "description": "Example:",
+            "default": "serial",
+            "type": "promptString"
+        }
+    ]
+}

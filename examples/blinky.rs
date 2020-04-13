@@ -16,7 +16,7 @@ const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
 #[no_mangle]
 fn main() -> ! {
-    let dp = unsafe { hal::pac::Peripherals::steal() };
+    let dp = unsafe { hal::esp32::Peripherals::steal() };
 
     let mut rtccntl = dp.RTCCNTL;
     let mut timg0 = dp.TIMG0;
@@ -39,7 +39,7 @@ fn main() -> ! {
     }
 }
 
-fn disable_rtc_wdt(rtccntl: &mut hal::pac::RTCCNTL) {
+fn disable_rtc_wdt(rtccntl: &mut hal::esp32::RTCCNTL) {
     /* Disables the RTCWDT */
     rtccntl
         .wdtwprotect
@@ -61,7 +61,7 @@ fn disable_rtc_wdt(rtccntl: &mut hal::pac::RTCCNTL) {
     rtccntl.wdtwprotect.write(|w| unsafe { w.bits(0x0) });
 }
 
-fn disable_timg_wdts(timg0: &mut hal::pac::TIMG0, timg1: &mut hal::pac::TIMG1) {
+fn disable_timg_wdts(timg0: &mut hal::esp32::TIMG0, timg1: &mut hal::esp32::TIMG1) {
     timg0
         .wdtwprotect
         .write(|w| unsafe { w.bits(WDT_WKEY_VALUE) });
