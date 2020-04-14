@@ -51,10 +51,79 @@ impl super::ClockControl {
         Ok(())
     }
 
+    fn flush_cache(&mut self, core: u32) -> Result<(), Error> {
+        match core {
+            0 => {
+                self.dport_control
+                    .pro_cache_ctrl()
+                    .modify(|_, w| w.pro_cache_flush_ena().clear_bit());
+                self.dport_control
+                    .pro_cache_ctrl()
+                    .modify(|_, w| w.pro_cache_flush_ena().set_bit());
+                while self
+                    .dport_control
+                    .pro_cache_ctrl()
+                    .read()
+                    .pro_cache_flush_done()
+                    .bit_is_clear()
+                {}
+                self.dport_control
+                    .pro_cache_ctrl()
+                    .modify(|_, w| w.pro_cache_flush_ena().clear_bit());
+            }
+            1 => {
+                self.dport_control
+                    .app_cache_ctrl()
+                    .modify(|_, w| w.app_cache_flush_ena().clear_bit());
+                self.dport_control
+                    .app_cache_ctrl()
+                    .modify(|_, w| w.app_cache_flush_ena().set_bit());
+                while self
+                    .dport_control
+                    .app_cache_ctrl()
+                    .read()
+                    .app_cache_flush_done()
+                    .bit_is_clear()
+                {}
+                self.dport_control
+                    .app_cache_ctrl()
+                    .modify(|_, w| w.app_cache_flush_ena().clear_bit());
+            }
+            _ => return Err(Error::InvalidCore),
+        };
+        Ok(())
+    }
+
+    fn enable_cache(&mut self, core: u32) -> Result<(), Error> {
+        // get timer group 0 registers, do it this way instead of
+        // having to pass in yet another peripheral for this clock control
+        let spi0 = unsafe { &(*esp32::SPI0::ptr()) };
+
+        match core {
+            0 => {
+                spi0.cache_fctrl.modify(|_, w| w.cache_req_en().set_bit());
+                self.dport_control
+                    .pro_cache_ctrl()
+                    .modify(|_, w| w.pro_cache_enable().set_bit());
+            }
+            1 => {
+                spi0.cache_fctrl.modify(|_, w| w.cache_req_en().set_bit());
+                self.dport_control
+                    .app_cache_ctrl()
+                    .modify(|_, w| w.app_cache_enable().set_bit());
+            }
+            _ => return Err(Error::InvalidCore),
+        };
+
+        Ok(())
+    }
+
     pub fn start_core(&mut self, core: u32, f: fn() -> !) -> Result<(), Error> {
         match core {
             0 => return Err(Error::CoreAlreadyRunning),
             1 => {
+                self.flush_cache(core);
+                self.enable_cache(core);
                 if self
                     .dport_control
                     .appcpu_ctrl_b()
