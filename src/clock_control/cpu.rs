@@ -122,8 +122,8 @@ impl super::ClockControl {
         match core {
             0 => return Err(Error::CoreAlreadyRunning),
             1 => {
-                self.flush_cache(core);
-                self.enable_cache(core);
+                self.flush_cache(core)?;
+                self.enable_cache(core)?;
                 if self
                     .dport_control
                     .appcpu_ctrl_b()
