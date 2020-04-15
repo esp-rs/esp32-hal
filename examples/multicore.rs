@@ -6,7 +6,7 @@ use core::panic::PanicInfo;
 
 use esp32_hal::prelude::*;
 
-use esp32_hal::clock_control::{sleep, CPUSource, ClockControl, ClockControlConfig};
+use esp32_hal::clock_control::{CPUSource, ClockControl, ClockControlConfig};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
@@ -14,9 +14,6 @@ const BLINK_HZ: Hertz = Hertz(1);
 
 static GLOBAL_COUNT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 static TX: spin::Mutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> = spin::Mutex::new(None);
-
-static mut ARRAY1: [u8; 256] = [0; 256];
-static mut ARRAY2: [u8; 256] = [0; 256];
 
 #[no_mangle]
 fn main() -> ! {
@@ -100,7 +97,7 @@ fn main() -> ! {
     let (tx, _) = uart0.split();
     *TX.lock() = Some(tx);
 
-    let lock = clock_control_config.lock_cpu_frequency();
+    let _lock = clock_control_config.lock_cpu_frequency();
 
     // start core 1 (APP_CPU)
     clock_control_config.start_core(1, cpu1_start).unwrap();
@@ -127,17 +124,12 @@ fn main() -> ! {
 
                 let cycles = clock_control_config.cpu_frequency() / BLINK_HZ;
                 let start = xtensa_lx6_rt::get_cycle_count();
-                let mut icount: u32 = 0;
+                let mut loop_count: u32 = 0;
                 while xtensa_lx6_rt::get_cycle_count().wrapping_sub(start) < cycles {
-                    icount += 1;
-                    unsafe {
-                        for i in ARRAY1.iter() {
-                            icount += *i as u32;
-                        }
-                    }
+                    loop_count += 1;
                 }
 
-                print_info(x, icount, &mut prev_ccount);
+                print_info(x, loop_count, &mut prev_ccount);
 
                 // comment out next line to check watchdog behavior
                 watchdog.feed();
@@ -160,22 +152,17 @@ fn cpu1_start() -> ! {
     loop {
         let cycles = ClockControlConfig {}.cpu_frequency() / BLINK_HZ;
         let start = xtensa_lx6_rt::get_cycle_count();
-        let mut icount = 0;
+        let mut loop_count = 0;
         while xtensa_lx6_rt::get_cycle_count().wrapping_sub(start) < cycles {
-            icount += 1;
-            unsafe {
-                for i in ARRAY2.iter() {
-                    icount += *i as u32;
-                }
-            }
+            loop_count += 1;
         }
 
-        print_info(x, icount, &mut prev_ccount);
+        print_info(x, loop_count, &mut prev_ccount);
         x = x.wrapping_add(1);
     }
 }
 
-fn print_info(loop_count: u32, icount: u32, prev_ccount: &mut u32) {
+fn print_info(loop_count: u32, spin_loop_count: u32, prev_ccount: &mut u32) {
     let ccount = xtensa_lx6_rt::get_cycle_count();
     let ccount_diff = ccount.wrapping_sub(*prev_ccount);
 
@@ -183,10 +170,10 @@ fn print_info(loop_count: u32, icount: u32, prev_ccount: &mut u32) {
 
     writeln!(
         TX.lock().as_mut().unwrap(),
-        "Core: {}, Loop: {}, Spinloops:{}, cycles: {}, cycles since previous {}, Total cycles: {}",
+        "Core: {}, Loop: {}, Spin loops:{}, cycles: {}, cycles since previous {}, Total cycles: {}",
         xtensa_lx6_rt::get_core_id(),
         loop_count,
-        icount,
+        spin_loop_count,
         ccount,
         ccount_diff,
         total
