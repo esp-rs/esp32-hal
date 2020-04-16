@@ -4,6 +4,15 @@ version = "0.1.0"
 authors = ["Scott Mabin <scott@mabez.dev>", "Arjan Mels <arjan@mels.email>"]
 edition = "2018"
 
+[features]
+default=[]
+
+# feature to place program completely in ram (needed when e.g. using only ROM bootloader)
+all_in_ram=[]
+
+# feature to allow use of external ram. Currently not yet supported: psram needs configuration
+external_ram=["esp32-hal-proc-macros/external_ram"]
+
 [dependencies]
 esp32-hal-proc-macros = { path = "procmacros" }
 xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt.git", rev = "b5ebc04" }
@@ -27,3 +36,7 @@ name = "rtccntl"
 
 [[example]]
 name = "multicore"
+
+[[example]]
+name = "ram"
+
