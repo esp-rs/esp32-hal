@@ -1,11 +1,17 @@
-  /* This memory map assumes the flash cache is on; 
-     the blocks used are excluded from the various memory ranges 
-     
-     see: https://github.com/espressif/esp-idf/blob/master/components/soc/src/esp32/soc_memory_layout.c
-     for details
-     */
+/* This memory map assumes the flash cache is on; 
+   the blocks used are excluded from the various memory ranges 
+   
+   see: https://github.com/espressif/esp-idf/blob/master/components/soc/src/esp32/soc_memory_layout.c
+   for details
+   */
 
+/* override entry point */
+ENTRY(ESP32Reset)
+
+/* reserved at the start of DRAM for e.g. teh BT stack */
 RESERVE_DRAM = 0;
+
+/* reserved at the start of the RTC memories for use by the ULP processor */
 RESERVE_RTC_FAST = 0;
 RESERVE_RTC_SLOW = 0;
 
@@ -47,8 +53,6 @@ MEMORY
 
 /* map generic regions to output sections */
 INCLUDE "alias.x"
-
-PROVIDE(__pre_init = ESP32PreInit); 
 
 /* esp32 specific regions */
 SECTIONS {
