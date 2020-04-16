@@ -9,6 +9,16 @@ FLASH_BAUDRATE=115200
 # baud rate for terminal
 TERM_BAUDRATE=115200
 
+# Flash Mode
+FLASH_MODE="dio"
+
+# Flash Speed
+FLASH_SPEED="40m"
+
+# Use bootloader
+USE_BOOTLOADER=1
+
+
 # debug or release build
 TYPE=debug
 
@@ -19,8 +29,8 @@ Usage: flash -hrtb -p <serial port> <example>
 -h, --help                      Display Help
 -r, --release                   Build in release mode
 -p, --port <serial port>        Set serial port (default: $PORT)
--b, --baudrate <baudrate>       Set baudrate for flasinh (default: $FLASH_BAUDRATE)
-  , --termbaudrate <baudrate>   Set baudrate for flasinh (default: $FLASH_BAUDRATE)
+-b, --baudrate <baudrate>       Set baudrate for flasing (default: $FLASH_BAUDRATE)
+  , --termbaudrate <baudrate>   Set baudrate for monitoring (default: $TERM_BAUDRATE)
 -t, --terminal                  Open terminal program after flashing
 EOF
 }
@@ -93,21 +103,44 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-#display section seizes
+#display section sizes
 echo
 xtensa-esp32-elf-readelf $BIN_PATH -S|egrep 'BIT|\[Nr\]' |awk 'BEGIN {FS="[ \t\[\]]+"}  $9~/A|Flg/ {size=sprintf("%7d", "0x" $7)+0; printf("%-3s %-20s %-8s %-8s %-8s %8s %-3s %-3s\n",$2,$3,$4,$5,$7,((size>0)?size:$7),$9,$12); total+=size; } END { printf("\nTotal: %d bytes\n",total)}'
 echo
 
-
 # convert to bin
-rm $BIN_PATH.bin > /dev/null
-esptool --chip esp32 elf2image --flash_mode="dio" --flash_freq "40m" --flash_size "4MB" -o $BIN_PATH.bin $BIN_PATH
+rm $BIN_PATH.bin 2>/dev/null
+esptool.py --chip esp32 elf2image --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED  -o $BIN_PATH.bin $BIN_PATH
+
+if [ $? -ne 0 ]; then
+    exit 1
+fi
 
 # kill terminal programs using the same port
 ps -ef|grep $PORT|egrep -v "$0|grep" |awk '{print $2}'|xargs -r kill
 
-# flash
-esptool --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 $BIN_PATH.bin
+if [[ -v USE_BOOTLOADER ]]
+then
+    # get gen_esp32part.py and create binary partition table
+    curl -s -S -L -C - https://github.com/espressif/esp-idf/raw/release/v4.1/components/partition_table/gen_esp32part.py?raw=true --output target/gen_esp32part.py
+    python target/gen_esp32part.py partitions.csv target/partitions.bin 
+
+    # get bootloader.bin file (from arduino-esp32 repository)
+    # (different variants exist, but only difference is flash settings which are overriden by esptool)
+    curl -s -S -L -C - https://github.com/espressif/arduino-esp32/blob/idf-release/v4.0/tools/sdk/bin/bootloader_dio_40m.bin?raw=true --output target/bootloader.bin
+
+    # check if bootloader.bin and paritions.bin are already correctly flashed (to prevent unneceesary writes)
+    esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset verify_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 target/bootloader.bin 0x8000 target/partitions.bin
+    if [ $? -ne 0 ]; then
+        # flash bootloader.bin, partitions.bin and application
+        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 target/bootloader.bin 0x8000 target/partitions.bin 0x10000 $BIN_PATH.bin
+    else
+        # flash application only
+        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x10000 $BIN_PATH.bin
+    fi
+else
+        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 $BIN_PATH.bin
+fi
 
 # start terminal program
 if [[ -v TERMINAL ]]
