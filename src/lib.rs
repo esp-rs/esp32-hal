@@ -1,3 +1,11 @@
+//! This ESP32 hal  crate provides support for the ESP32 peripherals
+//!
+//! ## Features
+//! - `external_ram`
+//!     - Optional and experimental
+//!     - Enables support for external ram (psram). However proper initialization
+//!         for psram is not yet included
+
 #![no_std]
 
 pub use embedded_hal as hal;
@@ -18,42 +26,48 @@ pub mod units;
 #[macro_use]
 pub mod dprint;
 
-extern "C" {
+use xtensa_lx6_rt::{init_data, zero_bss};
 
+extern "C" {
     // These symbols come from `memory.x`
     static mut _rtc_fast_bss_start: u32;
     static mut _rtc_fast_bss_end: u32;
 
-    static mut _rtc_fast_data_start: u32;
-    static mut _rtc_fast_data_end: u32;
-    static _rtc_fast_data_start_loadaddr: u32;
-
     static mut _rtc_slow_bss_start: u32;
     static mut _rtc_slow_bss_end: u32;
 
-    static mut _rtc_slow_data_start: u32;
-    static mut _rtc_slow_data_end: u32;
-    static _rtc_slow_data_start_loadaddr: u32;
-
+    static mut _external_bss_start: u32;
+    static mut _external_bss_end: u32;
+    static mut _external_data_start: u32;
+    static mut _external_data_end: u32;
+    static _external_data_load: u32;
 }
 
-//#[xtensa_lx6_rt::pre_init]
+/// Function initializes ESP32 specific memories (RTC slow and fast)
+///
+/// if #\[pre_init\] is used to override the pre-initialization this function must be called manually
 
-#[xtensa_lx6_rt::pre_init]
-unsafe fn pre_init() {
-    loop {}
+// function is used as default for __pre_init in memory.x
+// (Using #[pre_init] from library does not work properly)
+#[doc(hidden)]
+#[no_mangle]
+pub unsafe extern "C" fn ESP32PreInit() {
     // Initialize RTC RAM
-    xtensa_lx6_rt::zero_bss(&mut _rtc_fast_bss_start, &mut _rtc_fast_bss_end);
-    xtensa_lx6_rt::init_data(
-        &mut _rtc_fast_data_start,
-        &mut _rtc_fast_data_end,
-        &_rtc_fast_data_start_loadaddr,
-    );
+    zero_bss(&mut _rtc_fast_bss_start, &mut _rtc_fast_bss_end);
+    zero_bss(&mut _rtc_slow_bss_start, &mut _rtc_slow_bss_end);
 
-    xtensa_lx6_rt::zero_bss(&mut _rtc_slow_bss_start, &mut _rtc_slow_bss_end);
-    xtensa_lx6_rt::init_data(
-        &mut _rtc_slow_data_start,
-        &mut _rtc_slow_data_end,
-        &_rtc_slow_data_start_loadaddr,
-    );
+    if cfg!(feature = "external_ram") {
+        zero_bss(&mut _external_bss_start, &mut _external_bss_end);
+
+        // external SRAM initialization not done by bootloader
+        //
+        // TODO: correct load address or memory map:
+        // _external_data_load points to address when flash address 0 is mapped to 3f400000,
+        // however after bootloader is finished this is no longer true
+        init_data(
+            &mut _external_data_start,
+            &mut _external_data_end,
+            &_external_data_load,
+        );
+    }
 }
