@@ -1,18 +1,18 @@
 #![no_std]
 #![no_main]
+#![feature(stmt_expr_attributes)]
 
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
 use esp32_hal::prelude::*;
 
-use esp32_hal::clock_control::{sleep, CPUSource, ClockControl, ClockControlConfig};
+use esp32_hal::clock_control::ClockControl;
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
-const BLINK_HZ: Hertz = Hertz(1);
 
-#[no_mangle]
+#[entry]
 fn main() -> ! {
     let dp = unsafe { esp32::Peripherals::steal() };
 
@@ -27,15 +27,13 @@ fn main() -> ! {
     let (mut dport, dport_clock_control) = dp.DPORT.split();
 
     // setup clocks & watchdog
-    let mut clock_control = ClockControl::new(
+    let clock_control = ClockControl::new(
         dp.RTCCNTL,
         dp.APB_CTRL,
         dport_clock_control,
         esp32_hal::clock_control::XTAL_FREQUENCY_AUTO,
     )
     .unwrap();
-
-    unsafe { esp32_hal::ESP32PreInit() };
 
     let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
 
@@ -109,6 +107,8 @@ fn attr_ram_fn_rtc_fast(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx
 
 static ATTR_NONE_STATIC: [u8; 16] = *b"ATTR_NONE_STATIC";
 
+static mut ATTR_NONE_STATIC_MUT: [u8; 20] = *b"ATTR_NONE_STATIC_MUT";
+
 #[ram]
 static ATTR_RAM_STATIC: [u8; 15] = *b"ATTR_RAM_STATIC";
 
@@ -126,6 +126,9 @@ static mut ATTR_RAM_STATIC_EXTERNAL: [u8; 24] = *b"ATTR_RAM_STATIC_EXTERNAL";
 #[ram(external, zeroed)]
 static mut ATTR_RAM_STATIC_EXTERNAL_BSS: [u8; 1024] = [0; 1024];
 
+// #[ram] : does not work on constant
+const ATTR_RAM_CONST: [u8; 14] = *b"ATTR_RAM_CONST";
+
 fn ram_tests(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {
     attr_none_fn(uart);
     attr_ram_fn(uart);
@@ -139,10 +142,26 @@ fn ram_tests(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {
     )
     .unwrap();
 
+    unsafe {
+        writeln!(
+            uart,
+            "ATTR_NONE_STATIC_MUT: {:x}: {:02x?}",
+            &ATTR_NONE_STATIC_MUT as *const u8 as usize, ATTR_NONE_STATIC_MUT
+        )
+        .unwrap();
+    }
+
     writeln!(
         uart,
         "ATTR_RAM_STATIC: {:x}: {:02x?}",
         &ATTR_RAM_STATIC as *const u8 as usize, ATTR_RAM_STATIC
+    )
+    .unwrap();
+
+    writeln!(
+        uart,
+        "ATTR_RAM_CONST: {:x}: {:02x?}",
+        &ATTR_RAM_CONST as *const u8 as usize, ATTR_RAM_CONST
     )
     .unwrap();
 
