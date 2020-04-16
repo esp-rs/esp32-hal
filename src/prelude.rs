@@ -7,3 +7,5 @@ pub use embedded_hal::prelude::*;
 pub use crate::analog::SensExt as _esp32_hal_analog_SensExt;
 pub use crate::gpio::GpioExt as _esp32_hal_gpio_GpioExt;
 pub use crate::units::*;
+
+pub use crate::proc_macros::*;
