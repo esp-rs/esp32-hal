@@ -18,9 +18,10 @@ FLASH_SPEED="40m"
 # Use bootloader (needed for using irom, drom and psram)
 USE_BOOTLOADER=1
 
-
 # debug or release build
 TYPE=debug
+
+EXAMPLE=""
 
 showhelp() {
 cat << EOF
@@ -32,11 +33,12 @@ Usage: flash -hrtb -p <serial port> <example>
 -b, --baudrate <baudrate>       Set baudrate for flasing (default: $FLASH_BAUDRATE)
   , --termbaudrate <baudrate>   Set baudrate for monitoring (default: $TERM_BAUDRATE)
 -t, --terminal                  Open terminal program after flashing
+-e, --example <example>         Build the specified example
 EOF
 }
 
 # get command line options
-options=$(getopt -l "help,release,port:,terminal,baudrate:,termbaudrate:" -o "hrp:tb:" -a -- "$@")
+options=$(getopt -l "help,release,port:,terminal,baudrate:,termbaudrate:,example:" -o "hrp:tb:e:" -a -- "$@")
 
 if [ $? -ne 0 ]; then
     echo
@@ -72,6 +74,10 @@ do
         shift
         export TERM_BAUDRATE=$1
         ;;
+    -e|--example)
+        shift
+        export EXAMPLE=$1
+        ;;
     --)
         shift
         break;;
@@ -79,7 +85,7 @@ do
 shift
 done
 
-if [[ $# -ne 1 ]]
+if [[ $# -ne 0 ]] ;
 then
     echo "*** Wrong number of arguments" >&2
     echo
@@ -87,15 +93,27 @@ then
     exit 1
 fi
 
-# change this for release flashes
-BIN_PATH=target/xtensa-esp32-none-elf/$TYPE/examples/$1
+if [[ ! -f Cargo.toml ]] ;
+then
+    echo "*** Must be run in root of project where Cargo.toml file is located" >&2
+    exit 1
+fi
+
+if [ -z "$EXAMPLE" ]; then
+    FILE=$(awk 'BEGIN {FS="[ \t=\"]+";} /^\s*\[/ {section=$1} tolower(section)=="[package]" && tolower($0) ~ /^\s*name/ {print $2}' Cargo.toml)
+    BIN_PATH=target/xtensa-esp32-none-elf/$TYPE/$FILE
+    EXAMPLE_ARG=""
+else 
+    BIN_PATH=target/xtensa-esp32-none-elf/$TYPE/examples/$EXAMPLE
+    EXAMPLE_ARG="--example "$EXAMPLE
+fi
 
 # build the specific example
 if [ "$TYPE" = "release" ]
 then 
-    cargo xbuild --example $1 --release
+    cargo xbuild --release $EXAMPLE_ARG
 else
-    cargo xbuild --example $1
+    cargo xbuild $EXAMPLE_ARG
 fi
 
 # if cargo returned an error quit the script
@@ -126,7 +144,7 @@ then
     # get gen_esp32part.py and create binary partition table
     curl -s -S -L -C - https://github.com/espressif/esp-idf/raw/release/v4.1/components/partition_table/gen_esp32part.py?raw=true --output target/gen_esp32part.py
     
-    rm target/partitions.bin > /dev/null
+    rm target/partitions.bin 2> /dev/null
     python target/gen_esp32part.py partitions.csv target/partitions.bin 
 
     # get bootloader.bin file (from arduino-esp32 repository)

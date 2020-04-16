@@ -42,7 +42,7 @@
         {
             "label": "flash example",
             "type": "shell",
-            "command": "./flash -b 912600 -p /dev/ttyUSB1 -t ${input:example}",
+            "command": "./flash -b 912600 -p /dev/ttyUSB1 -t --example ${input:example}",
             "problemMatcher": {
                 "base": "$rustc",
                 "fileLocation": [
