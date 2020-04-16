@@ -65,7 +65,7 @@ macro_rules! dprintln {
     };
 }
 
-/// Macro for sending a formatted string to UART0 for debugging, with a newline.
+/// Macro for flushing the UART0 TX buffer
 #[macro_export]
 macro_rules! dflush {
     () => {
