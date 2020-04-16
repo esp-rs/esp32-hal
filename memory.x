@@ -12,13 +12,13 @@ RESERVE_RTC_SLOW = 0;
 /* Specify main memory areas */
 MEMORY
 {
-  reserved1_seg ( RWX )  : ORIGIN = 0x40070000, len = 0x10000 /* SRAM0 64kB; reserved for usage as flash cache*/
-  vectors ( RX )         : ORIGIN = 0x40080000, len = 0x400 /* SRAM0 1kB */
-  iram_seg ( RX )        : ORIGIN = 0x40080400, len = 0x20000-0x400 /* SRAM0 127kB */
+  reserved1_seg ( RWX )  : ORIGIN = 0x40070000, len = 64k /* SRAM0; reserved for usage as flash cache*/
+  vectors ( RX )         : ORIGIN = 0x40080000, len =  1k /* SRAM0 */
+  iram_seg ( RX )        : ORIGIN = 0x40080400, len = 128k-0x400 /* SRAM0 */
 
-  reserved2_seg ( RW )   : ORIGIN = 0x3FFAE000, len = 0x2000 /* SRAM2 8kB; reserved for usage by the ROM */
-  dram_seg ( RW )        : ORIGIN = 0x3FFB0000 + RESERVE_DRAM, len = 0x2c200 - RESERVE_DRAM /* SRAM2+1 176.5kB; first 64kB used by BT if enable */
-  reserved3_seg ( RW )   : ORIGIN = 0x3FFDC200, len = 0x23e00 /* SRAM1 143.5kB; reserved for static ROM usage; can be used for heap */
+  reserved2_seg ( RW )   : ORIGIN = 0x3FFAE000, len = 8k /* SRAM2; reserved for usage by the ROM */
+  dram_seg ( RW )        : ORIGIN = 0x3FFB0000 + RESERVE_DRAM, len = 176k - RESERVE_DRAM /* SRAM2+1; first 64kB used by BT if enable */
+  reserved3_seg ( RW )   : ORIGIN = 0x3FFDC200, len = 144k /* SRAM1; reserved for static ROM usage; can be used for heap */
 
   /* external flash 
      The 0x20 offset is a convenience for the app binary image generation.
@@ -27,28 +27,28 @@ MEMORY
      header. Setting this offset makes it simple to meet the flash cache MMU's
      constraint that (paddr % 64KB == vaddr % 64KB).)
   */
-  irom_seg ( RX )        : ORIGIN = 0x400D8020, len = 0x330000-0x20 /* 3MB */
-  drom_seg ( R )         : ORIGIN = 0x3F400020, len = 0x400000-0x20 /* 4MB */
+  irom_seg ( RX )        : ORIGIN = 0x400D0020, len = 3M - 0x20
+  drom_seg ( R )         : ORIGIN = 0x3F400020, len = 4M - 0x20
 
 
   /* RTC fast memory (executable). Persists over deep sleep. Only for core 0 (PRO_CPU) */
-  rtc_fast_iram_seg(RWX) : ORIGIN = 0x400C0000, len = 0x2000 /* 8kB */
+  rtc_fast_iram_seg(RWX) : ORIGIN = 0x400C0000, len = 8k
 
   /* RTC fast memory (same block as above), viewed from data bus. Only for core 0 (PRO_CPU) */
-  rtc_fast_dram_seg(RW)  : ORIGIN = 0x3ff80000 + RESERVE_RTC_FAST, len = 0x2000 - RESERVE_RTC_FAST /* 8kB */
+  rtc_fast_dram_seg(RW)  : ORIGIN = 0x3FF80000 + RESERVE_RTC_FAST, len = 8k - RESERVE_RTC_FAST
 
   /* RTC slow memory (data accessible). Persists over deep sleep. */
-  rtc_slow_seg(RW)       : ORIGIN = 0x50000000 + RESERVE_RTC_SLOW, len = 0x2000 - RESERVE_RTC_SLOW /* 8kB */
+  rtc_slow_seg(RW)       : ORIGIN = 0x50000000 + RESERVE_RTC_SLOW, len = 8k - RESERVE_RTC_SLOW
 
   /* external memory, including data and text, 
      4MB is the maximum, if external psram is bigger, paging is required */
-  psram_seg(RWX)         : ORIGIN = 0x3F800000, len = 0x400000 /* 4MB */
+  psram_seg(RWX)         : ORIGIN = 0x3F800000, len = 4M
 }
 
 /* map generic regions to output sections */
-REGION_ALIAS("ROTEXT", irom_seg);
-REGION_ALIAS("RODATA", drom_seg);
-REGION_ALIAS("RWDATA", dram_seg);
+INCLUDE "alias.x"
+
+PROVIDE(__pre_init = ESP32PreInit); 
 
 /* esp32 specific regions */
 SECTIONS {
@@ -56,12 +56,12 @@ SECTIONS {
   {
    . = ALIGN(4);
     *(.rwtext.literal .rwtext .rwtext.literal.* .rwtext.*)
-  } > iram_seg
+  } > iram_seg AT > RODATA
 
   .rtc_fast.text : {
    . = ALIGN(4);
     *(.rtc_fast.literal .rtc_fast.text .rtc_fast.literal.* .rtc_fast.text.*)
-  } > rtc_fast_iram_seg
+  } > rtc_fast_iram_seg AT > RODATA
 
   /*
     This section is required to skip rtc.text area because rtc_iram_seg and
@@ -69,27 +69,26 @@ SECTIONS {
   */
   .rtc_fast.dummy (NOLOAD) :
   {
-    _rtc_dummy_start = ABSOLUTE(.);
-    _rtc_fast_start = ABSOLUTE(.);
+    _rtc_dummy_start = ABSOLUTE(.); /* needed to make section proper size */
     . = SIZEOF(.rtc_fast.text);
-    _rtc_dummy_end = ABSOLUTE(.);
+    _rtc_dummy_end = ABSOLUTE(.); /* needed to make section proper size */
   } > rtc_fast_dram_seg
   
   
   .rtc_fast.data :
   {
-    . = ALIGN(4);
     _rtc_fast_data_start = ABSOLUTE(.);
+    . = ALIGN(4);
     *(.rtc_fast.data .rtc_fast.data.*)
     _rtc_fast_data_end = ABSOLUTE(.);
-  } > rtc_fast_dram_seg
+  } > rtc_fast_dram_seg AT > RODATA
 
-  _rtc_fast_data_start_loadaddr = LOADADDR(.data);
+  _rtc_fast_data_load = LOADADDR(.rtc_fast.data);
 
  .rtc_fast.bss (NOLOAD) :
   {
-    . = ALIGN(4);
     _rtc_fast_bss_start = ABSOLUTE(.);
+    . = ALIGN(4);
     *(.rtc_fast.bss .rtc_fast.bss.*)
     _rtc_fast_bss_end = ABSOLUTE(.);
   } > rtc_fast_dram_seg
@@ -104,22 +103,22 @@ SECTIONS {
  .rtc_slow.text : {
    . = ALIGN(4);
     *(.rtc_slow.literal .rtc_slow.text .rtc_slow.literal.* .rtc_slow.text.*)
-  } > rtc_slow_seg
+  } > rtc_slow_seg AT > RODATA
 
   .rtc_slow.data :
   {
-    . = ALIGN(4);
     _rtc_slow_data_start = ABSOLUTE(.);
+    . = ALIGN(4);
     *(.rtc_slow.data .rtc_slow.data.*)
     _rtc_slow_data_end = ABSOLUTE(.);
-  } > rtc_slow_seg
+  } > rtc_slow_seg AT > RODATA
 
-  _rtc_slow_data_start_loadaddr = LOADADDR(.data);
+  _rtc_slow_data_load = LOADADDR(.rtc_slow.data);
 
  .rtc_slow.bss (NOLOAD) :
   {
-    . = ALIGN(4);
     _rtc_slow_bss_start = ABSOLUTE(.);
+    . = ALIGN(4);
     *(.rtc_slow.bss .rtc_slow.bss.*)
     _rtc_slow_bss_end = ABSOLUTE(.);
   } > rtc_slow_seg
@@ -130,4 +129,28 @@ SECTIONS {
     *(.rtc_slow.noinit .rtc_slow.noinit.*)
   } > rtc_slow_seg
 
+ .external.data :
+  {
+    _external_data_start = ABSOLUTE(.);
+    . = ALIGN(4);
+    *(.external.data .external.data.*)
+    _external_data_end = ABSOLUTE(.);
+  } > psram_seg AT > RODATA
+
+  _external_data_load = LOADADDR(.external.data);
+
+ .external.bss (NOLOAD) :
+  {
+    _external_bss_start = ABSOLUTE(.);
+    . = ALIGN(4);
+    *(.external.bss .external.bss.*)
+    _external_bss_end = ABSOLUTE(.);
+  } > psram_seg
+
+ .external.noinit (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.external.noinit .external.noinit.*)
+  } > psram_seg
 }
+
