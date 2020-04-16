@@ -63,8 +63,6 @@ fn main() -> ! {
 
     uart0.change_baudrate(115200).unwrap();
 
-    uart0.change_baudrate_force_clock(115200, true).unwrap();
-
     // print startup message
     writeln!(uart0, "\n\nReboot!\n",).unwrap();
 
