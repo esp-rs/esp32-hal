@@ -15,7 +15,7 @@ FLASH_MODE="dio"
 # Flash Speed
 FLASH_SPEED="40m"
 
-# Use bootloader
+# Use bootloader (needed for using irom, drom and psram)
 USE_BOOTLOADER=1
 
 
@@ -111,6 +111,8 @@ echo
 # convert to bin
 rm $BIN_PATH.bin 2>/dev/null
 esptool.py --chip esp32 elf2image --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED  -o $BIN_PATH.bin $BIN_PATH
+esptool.py --chip esp32 image_info $BIN_PATH.bin
+echo
 
 if [ $? -ne 0 ]; then
     exit 1
@@ -119,10 +121,12 @@ fi
 # kill terminal programs using the same port
 ps -ef|grep $PORT|egrep -v "$0|grep" |awk '{print $2}'|xargs -r kill
 
-if [[ -v USE_BOOTLOADER ]]
+if [[ USE_BOOTLOADER -eq 1 ]]
 then
     # get gen_esp32part.py and create binary partition table
     curl -s -S -L -C - https://github.com/espressif/esp-idf/raw/release/v4.1/components/partition_table/gen_esp32part.py?raw=true --output target/gen_esp32part.py
+    
+    rm target/partitions.bin > /dev/null
     python target/gen_esp32part.py partitions.csv target/partitions.bin 
 
     # get bootloader.bin file (from arduino-esp32 repository)
@@ -142,8 +146,10 @@ else
         esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 $BIN_PATH.bin
 fi
 
+
+
 # start terminal program
-if [[ -v TERMINAL ]]
+if [[ TERMINAL -eq 1 ]]
 then
     echo
     echo "Starting terminal"
