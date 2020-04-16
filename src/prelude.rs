@@ -9,3 +9,5 @@ pub use crate::gpio::GpioExt as _esp32_hal_gpio_GpioExt;
 pub use crate::units::*;
 
 pub use crate::proc_macros::*;
+
+pub use xtensa_lx6_rt::entry;
