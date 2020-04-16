@@ -8,30 +8,86 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-//use proc_macro2::Span;
+use proc_macro2::Span;
 use quote::quote;
 //use std::collections::HashSet;
+use darling::FromMeta;
 use syn::spanned::Spanned;
-use syn::Item;
+use syn::{parse, parse_macro_input, AttributeArgs, Item};
 
 // check if all called function are in ram
 // check if all used data i in ram
 // check that no constants are use in teh function (these cannot be forced to ram)
-fn check_ram_function(func: &syn::ItemFn) {
-    eprintln!("{:?}", func);
+fn check_ram_function(_func: &syn::ItemFn) {
+    //    eprintln!("{:?}", func);
 }
 
+#[derive(Debug, Default, FromMeta)]
+#[darling(default)]
+struct RamArgs {
+    rtc_fast: bool,
+    rtc_slow: bool,
+    uninitialized: bool,
+}
+
+/// #[ram] attribute allows placing statics, constants and functions into ram
+///
+
 #[proc_macro_attribute]
-pub fn ram(_args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
+    let attr_args = parse_macro_input!(args as AttributeArgs);
+
+    let RamArgs {
+        rtc_fast,
+        rtc_slow,
+        uninitialized,
+    } = match FromMeta::from_list(&attr_args) {
+        Ok(v) => v,
+        Err(e) => {
+            return e.write_errors().into();
+        }
+    };
+
+    if rtc_slow && rtc_fast {
+        return parse::Error::new(
+            Span::call_site(),
+            "Only one of rtc_slow and rtc_fast is allowed",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let (section_name_data, section_name_text) = if rtc_slow {
+        (
+            if uninitialized {
+                ".rtc_slow.noinit"
+            } else {
+                ".rtc_slow.data"
+            },
+            ".rtc_slow.text",
+        )
+    } else if rtc_fast {
+        (
+            if uninitialized {
+                ".rtc_fast.noinit"
+            } else {
+                ".rtc_fast.data"
+            },
+            ".rtc_fast.text",
+        )
+    } else {
+        (if uninitialized { ".noinit" } else { ".data" }, ".rwtext")
+    };
+
     let item: syn::Item = syn::parse(input).expect("failed to parse input");
 
     let section: proc_macro2::TokenStream;
     match item {
-        Item::Static(ref _struct_item) => section = quote! {#[link_section=".data"]},
-        Item::Const(ref _struct_item) => section = quote! {#[link_section=".data"]},
+        Item::Static(ref _struct_item) => section = quote! {#[link_section=#section_name_data]},
+        Item::Const(ref _struct_item) => section = quote! {#[link_section=#section_name_data]},
         Item::Fn(ref function_item) => {
             check_ram_function(function_item);
-            section = quote! {#[link_section=".rwtext"]};
+            section = quote! {#[link_section=#section_name_text]};
         }
         _ => {
             section = quote! {};
@@ -47,108 +103,4 @@ pub fn ram(_args: TokenStream, input: TokenStream) -> TokenStream {
         #item
     };
     output.into()
-
-    //    let f = parse_macro_input!(input as ItemFn);
-    /*    TokenStream::from(quote!(
-        #[link_section=".rwtext"]
-        #f
-    ))*/
-
-    /*
-        // check the function signature
-        let valid_signature = f.sig.constness.is_none()
-            && f.vis == Visibility::Inherited
-            && f.sig.abi.is_none()
-            && f.sig.inputs.is_empty()
-            && f.sig.generics.params.is_empty()
-            && f.sig.generics.where_clause.is_none()
-            && f.sig.variadic.is_none()
-            && match f.sig.output {
-                ReturnType::Default => false,
-                ReturnType::Type(_, ref ty) => match **ty {
-                    Type::Never(_) => true,
-                    _ => false,
-                },
-            };
-
-        if !valid_signature {
-            return parse::Error::new(
-                f.span(),
-                "`#[entry]` function must have signature `[unsafe] fn() -> !`",
-            )
-            .to_compile_error()
-            .into();
-        }
-
-        if !args.is_empty() {
-            return parse::Error::new(Span::call_site(), "This attribute accepts no arguments")
-                .to_compile_error()
-                .into();
-        }
-
-        // XXX should we blacklist other attributes?
-        let (statics, stmts) = match extract_static_muts(f.block.stmts) {
-            Err(e) => return e.to_compile_error().into(),
-            Ok(x) => x,
-        };
-
-        f.sig.ident = Ident::new(
-            &format!("__xtensa_lx6_rt_{}", f.sig.ident),
-            Span::call_site(),
-        );
-        f.sig.inputs.extend(statics.iter().map(|statik| {
-            let ident = &statik.ident;
-            let ty = &statik.ty;
-            let attrs = &statik.attrs;
-
-            // Note that we use an explicit `'static` lifetime for the entry point arguments. This makes
-            // it more flexible, and is sound here, since the entry will not be called again, ever.
-            syn::parse::<FnArg>(
-                quote!(#[allow(non_snake_case)] #(#attrs)* #ident: &'static mut #ty).into(),
-            )
-            .unwrap()
-        }));
-        f.block.stmts = stmts;
-
-        let tramp_ident = Ident::new(&format!("{}_trampoline", f.sig.ident), Span::call_site());
-        let ident = &f.sig.ident;
-
-        let resource_args = statics
-            .iter()
-            .map(|statik| {
-                let (ref cfgs, ref attrs) = extract_cfgs(statik.attrs.clone());
-                let ident = &statik.ident;
-                let ty = &statik.ty;
-                let expr = &statik.expr;
-                quote! {
-                    #(#cfgs)*
-                    {
-                        #(#attrs)*
-                        static mut #ident: #ty = #expr;
-                        &mut #ident
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
-
-        if let Err(error) = check_attr_whitelist(&f.attrs, WhiteListCaller::Entry) {
-            return error;
-        }
-
-        let (ref cfgs, ref attrs) = extract_cfgs(f.attrs.clone());
-        quote!(
-            #(#cfgs)*
-            #(#attrs)*
-            #[doc(hidden)]
-            #[export_name = "main"]
-            pub unsafe extern "C" fn #tramp_ident() {
-                #ident(
-                    #(#resource_args),*
-                )
-            }
-
-            #f
-        )
-        .into()
-    */
 }

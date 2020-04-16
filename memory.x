@@ -9,17 +9,9 @@ RESERVE_DRAM = 0;
 RESERVE_RTC_FAST = 0;
 RESERVE_RTC_SLOW = 0;
 
-SECTIONS {
-  .rwtext :
-  {
-    *(.rwtext.literal .rwtext .rwtext.literal.* .rwtext.*)
-  } > iram_seg
-}
-
 /* Specify main memory areas */
 MEMORY
 {
-  
   reserved1_seg ( RWX )  : ORIGIN = 0x40070000, len = 0x10000 /* SRAM0 64kB; reserved for usage as flash cache*/
   vectors ( RX )         : ORIGIN = 0x40080000, len = 0x400 /* SRAM0 1kB */
   iram_seg ( RX )        : ORIGIN = 0x40080400, len = 0x20000-0x400 /* SRAM0 127kB */
@@ -53,6 +45,89 @@ MEMORY
   psram_seg(RWX)         : ORIGIN = 0x3F800000, len = 0x400000 /* 4MB */
 }
 
+/* map generic regions to output sections */
 REGION_ALIAS("ROTEXT", irom_seg);
 REGION_ALIAS("RODATA", drom_seg);
 REGION_ALIAS("RWDATA", dram_seg);
+
+/* esp32 specific regions */
+SECTIONS {
+  .rwtext :
+  {
+   . = ALIGN(4);
+    *(.rwtext.literal .rwtext .rwtext.literal.* .rwtext.*)
+  } > iram_seg
+
+  .rtc_fast.text : {
+   . = ALIGN(4);
+    *(.rtc_fast.literal .rtc_fast.text .rtc_fast.literal.* .rtc_fast.text.*)
+  } > rtc_fast_iram_seg
+
+  /*
+    This section is required to skip rtc.text area because rtc_iram_seg and
+    rtc_data_seg are reflect the same address space on different buses.
+  */
+  .rtc_fast.dummy (NOLOAD) :
+  {
+    _rtc_dummy_start = ABSOLUTE(.);
+    _rtc_fast_start = ABSOLUTE(.);
+    . = SIZEOF(.rtc_fast.text);
+    _rtc_dummy_end = ABSOLUTE(.);
+  } > rtc_fast_dram_seg
+  
+  
+  .rtc_fast.data :
+  {
+    . = ALIGN(4);
+    _rtc_fast_data_start = ABSOLUTE(.);
+    *(.rtc_fast.data .rtc_fast.data.*)
+    _rtc_fast_data_end = ABSOLUTE(.);
+  } > rtc_fast_dram_seg
+
+  _rtc_fast_data_start_loadaddr = LOADADDR(.data);
+
+ .rtc_fast.bss (NOLOAD) :
+  {
+    . = ALIGN(4);
+    _rtc_fast_bss_start = ABSOLUTE(.);
+    *(.rtc_fast.bss .rtc_fast.bss.*)
+    _rtc_fast_bss_end = ABSOLUTE(.);
+  } > rtc_fast_dram_seg
+
+ .rtc_fast.noinit (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.rtc_fast.noinit .rtc_fast.noinit.*)
+  } > rtc_fast_dram_seg
+
+
+ .rtc_slow.text : {
+   . = ALIGN(4);
+    *(.rtc_slow.literal .rtc_slow.text .rtc_slow.literal.* .rtc_slow.text.*)
+  } > rtc_slow_seg
+
+  .rtc_slow.data :
+  {
+    . = ALIGN(4);
+    _rtc_slow_data_start = ABSOLUTE(.);
+    *(.rtc_slow.data .rtc_slow.data.*)
+    _rtc_slow_data_end = ABSOLUTE(.);
+  } > rtc_slow_seg
+
+  _rtc_slow_data_start_loadaddr = LOADADDR(.data);
+
+ .rtc_slow.bss (NOLOAD) :
+  {
+    . = ALIGN(4);
+    _rtc_slow_bss_start = ABSOLUTE(.);
+    *(.rtc_slow.bss .rtc_slow.bss.*)
+    _rtc_slow_bss_end = ABSOLUTE(.);
+  } > rtc_slow_seg
+
+ .rtc_slow.noinit (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.rtc_slow.noinit .rtc_slow.noinit.*)
+  } > rtc_slow_seg
+
+}
