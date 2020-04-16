@@ -127,7 +127,6 @@ pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
     let section: proc_macro2::TokenStream;
     match item {
         Item::Static(ref _struct_item) => section = quote! {#[link_section=#section_name_data]},
-        Item::Const(ref _struct_item) => section = quote! {#[link_section=#section_name_data]},
         Item::Fn(ref function_item) => {
             if uninitialized {
                 Span::call_site()
@@ -149,7 +148,7 @@ pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
             section = quote! {};
             item.span()
                 .unstable()
-                .error("#[ram] attribute can only be applied to functions, statics and consts")
+                .error("#[ram] attribute can only be applied to functions and statics")
                 .emit();
         }
     }
