@@ -1,23 +1,28 @@
 //! Internal implementation details of `xtensa-lx6-rt`.
 //!
 //! Do not use this crate directly.
+//!
+//! # TODO:
+//! [ ] Checking of all called functions and data are in ram
+//! [ ] Automatic checking of 0 init and then use .bss segment
 
 #![deny(warnings)]
 #![feature(proc_macro_diagnostic)]
 
 extern crate proc_macro;
 
+use proc_macro::Span;
 use proc_macro::TokenStream;
-use proc_macro2::Span;
 use quote::quote;
 //use std::collections::HashSet;
 use darling::FromMeta;
 use syn::spanned::Spanned;
-use syn::{parse, parse_macro_input, AttributeArgs, Item};
+use syn::{parse_macro_input, AttributeArgs, Item};
 
-// check if all called function are in ram
-// check if all used data i in ram
-// check that no constants are use in teh function (these cannot be forced to ram)
+// TODO:
+// - check if all called function are in ram
+// - check if all used data is in ram
+// - check that no constants are use in the function (these cannot be forced to ram)
 fn check_ram_function(_func: &syn::ItemFn) {
     //    eprintln!("{:?}", func);
 }
@@ -27,11 +32,18 @@ fn check_ram_function(_func: &syn::ItemFn) {
 struct RamArgs {
     rtc_fast: bool,
     rtc_slow: bool,
+    external: bool,
     uninitialized: bool,
+    zeroed: bool,
 }
 
-/// #[ram] attribute allows placing statics, constants and functions into ram
+/// This attribute allows placing statics, constants and functions into ram.
 ///
+/// Options that can be specified are rtc_slow, rtc_fast or external to use the
+/// RTC slow, RTC fast ram or external SPI RAM instead of the normal SRAM.
+///
+/// The uninitialized option will skip initialization of the memory
+/// (e.g. to persist it across resets or deep sleep mode for the RTC RAM)
 
 #[proc_macro_attribute]
 pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -40,7 +52,9 @@ pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
     let RamArgs {
         rtc_fast,
         rtc_slow,
+        external,
         uninitialized,
+        zeroed,
     } = match FromMeta::from_list(&attr_args) {
         Ok(v) => v,
         Err(e) => {
@@ -49,34 +63,63 @@ pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     if rtc_slow && rtc_fast {
-        return parse::Error::new(
-            Span::call_site(),
-            "Only one of rtc_slow and rtc_fast is allowed",
-        )
-        .to_compile_error()
-        .into();
+        Span::call_site()
+            .error("Only one of rtc_slow and rtc_fast is allowed")
+            .emit();
     }
 
-    let (section_name_data, section_name_text) = if rtc_slow {
-        (
-            if uninitialized {
-                ".rtc_slow.noinit"
-            } else {
-                ".rtc_slow.data"
-            },
-            ".rtc_slow.text",
-        )
+    if rtc_slow && rtc_fast {
+        Span::call_site()
+            .error("Only one of uninitialized and zeroed")
+            .emit();
+    }
+
+    if external && cfg!(not(feature = "external_ram")) {
+        Span::call_site()
+            .error("External ram support not enabled")
+            .emit();
+    }
+
+    let section_name_data = if rtc_slow {
+        if uninitialized {
+            ".rtc_slow.noinit"
+        } else if zeroed {
+            ".rtc_slow.bss"
+        } else {
+            ".rtc_slow.data"
+        }
     } else if rtc_fast {
-        (
-            if uninitialized {
-                ".rtc_fast.noinit"
-            } else {
-                ".rtc_fast.data"
-            },
-            ".rtc_fast.text",
-        )
+        if uninitialized {
+            ".rtc_fast.noinit"
+        } else if zeroed {
+            ".rtc_fast.bss"
+        } else {
+            ".rtc_fast.data"
+        }
+    } else if external {
+        if uninitialized {
+            ".external.noinit"
+        } else if zeroed {
+            ".external.bss"
+        } else {
+            ".external.data"
+        }
     } else {
-        (if uninitialized { ".noinit" } else { ".data" }, ".rwtext")
+        if uninitialized {
+            ".noinit"
+        } else {
+            ".data"
+        }
+    };
+
+    let section_name_text = if rtc_slow {
+        ".rtc_slow.text"
+    } else if rtc_fast {
+        ".rtc_fast.text"
+    } else if external {
+        ".invalid"
+    } else {
+        ".rwtext"
     };
 
     let item: syn::Item = syn::parse(input).expect("failed to parse input");
@@ -86,8 +129,21 @@ pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
         Item::Static(ref _struct_item) => section = quote! {#[link_section=#section_name_data]},
         Item::Const(ref _struct_item) => section = quote! {#[link_section=#section_name_data]},
         Item::Fn(ref function_item) => {
+            if uninitialized {
+                Span::call_site()
+                    .error("Uninitialized is not applicable to functions")
+                    .emit();
+            }
+            if external {
+                Span::call_site()
+                    .error("External is not applicable to functions")
+                    .emit();
+            }
             check_ram_function(function_item);
-            section = quote! {#[link_section=#section_name_text]};
+            section = quote! {
+                #[link_section=#section_name_text]
+                #[inline(never)] // make certain function is not inlined
+            };
         }
         _ => {
             section = quote! {};
