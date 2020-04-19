@@ -174,14 +174,14 @@ macro_rules! print_info {
 }
 
 fn ram_tests(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {
-    writeln!(uart);
+    writeln!(uart).unwrap();
 
     attr_none_fn(uart);
     attr_ram_fn(uart);
     attr_ram_fn_rtc_slow(uart);
     attr_ram_fn_rtc_fast(uart);
 
-    writeln!(uart);
+    writeln!(uart).unwrap();
 
     unsafe {
         print_info!(uart, ATTR_NONE_STATIC);
@@ -206,7 +206,7 @@ fn ram_tests(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {
         external_ram(uart);
     }
 
-    writeln!(uart);
+    writeln!(uart).unwrap();
 }
 
 #[cfg(not(feature = "external_ram"))]
