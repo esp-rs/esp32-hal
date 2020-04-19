@@ -128,6 +128,11 @@ pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
     match item {
         Item::Static(ref _struct_item) => section = quote! {#[link_section=#section_name_data]},
         Item::Fn(ref function_item) => {
+            if zeroed {
+                Span::call_site()
+                    .error("Zeroed is not applicable to functions")
+                    .emit();
+            }
             if uninitialized {
                 Span::call_site()
                     .error("Uninitialized is not applicable to functions")
