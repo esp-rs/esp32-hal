@@ -5,7 +5,7 @@ authors = ["Scott Mabin <scott@mabez.dev>", "Arjan Mels <arjan@mels.email>"]
 edition = "2018"
 
 [features]
-default=[]
+default=["external_ram"]
 
 # feature to place program completely in ram (needed when e.g. using only ROM bootloader)
 all_in_ram=[]
@@ -15,8 +15,8 @@ external_ram=["esp32-hal-proc-macros/external_ram"]
 
 [dependencies]
 esp32-hal-proc-macros = { path = "procmacros" }
-xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt.git", rev = "b5ebc04" }
 esp32 = { version = "0.3.0" }
+xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt.git", rev = "c7ae5da" }
 nb = "0.1.2"
 spin = "0.5.2"
 embedded-hal = { version = "0.2.3", features = ["unproven"] }

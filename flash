@@ -21,7 +21,25 @@ USE_BOOTLOADER=1
 # debug or release build
 TYPE=debug
 
+# address of partition table
+PARTION_ADDR=0x8000
+
+# address of application
+APP_ADDR=0x10000
+
+#source of the utility to generate the binary partition table
+GENPART_SOURCE=https://github.com/espressif/esp-idf/blob/v4.0/components/partition_table/gen_esp32part.py?raw=true
+
+# source of the bootloader
+# customized bootloader which initializes the external psram
+BOOTLOADER_SOURCE=https://github.com/arjanmels/esp32_bootloader_init_extram/blob/v1.0/build/bootloader/bootloader.bin?raw=true
+# default bootloader from the espressif arduino github
+#BOOTLOADER_SOURCE=https://github.com/espressif/arduino-esp32/blob/idf-release/v4.0/tools/sdk/bin/bootloader_dio_40m.bin?raw=true
+
+
+# set to build example
 EXAMPLE=""
+
 
 showhelp() {
 cat << EOF
@@ -139,29 +157,28 @@ fi
 # kill terminal programs using the same port
 ps -ef|grep $PORT|egrep -v "$0|grep" |awk '{print $2}'|xargs -r kill
 
-if [[ USE_BOOTLOADER -eq 1 ]]
+if [[ !USE_BOOTLOADER -eq 1 ]]
+    esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 $BIN_PATH.bin
 then
     # get gen_esp32part.py and create binary partition table
-    curl -s -S -L -C - https://github.com/espressif/esp-idf/raw/release/v4.1/components/partition_table/gen_esp32part.py?raw=true --output target/gen_esp32part.py
+    curl -s -S -L $GENPART_SOURCE --output target/gen_esp32part.py
     
     rm target/partitions.bin 2> /dev/null
     python target/gen_esp32part.py partitions.csv target/partitions.bin 
 
     # get bootloader.bin file (from arduino-esp32 repository)
     # (different variants exist, but only difference is flash settings which are overriden by esptool)
-    curl -s -S -L -C - https://github.com/espressif/arduino-esp32/blob/idf-release/v4.0/tools/sdk/bin/bootloader_dio_40m.bin?raw=true --output target/bootloader.bin
+    curl -s -S -L $BOOTLOADER_SOURCE --output target/bootloader.bin
 
     # check if bootloader.bin and paritions.bin are already correctly flashed (to prevent unneceesary writes)
-    esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset verify_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 target/bootloader.bin 0x8000 target/partitions.bin
+    esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset verify_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 target/bootloader.bin $PARTION_ADDR target/partitions.bin
     if [ $? -ne 0 ]; then
         # flash bootloader.bin, partitions.bin and application
-        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 target/bootloader.bin 0x8000 target/partitions.bin 0x10000 $BIN_PATH.bin
+        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 target/bootloader.bin $PARTION_ADDR target/partitions.bin $APP_ADDR $BIN_PATH.bin
     else
         # flash application only
-        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x10000 $BIN_PATH.bin
+        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect $APP_ADDR $BIN_PATH.bin
     fi
-else
-        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 $BIN_PATH.bin
 fi
 
 

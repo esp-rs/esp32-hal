@@ -50,23 +50,15 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
         static _external_data_load: u32;
     }
 
+    // copying data from flash to various data segments is done by the bootloader
+    // initialization to zero needs to be done by the application
+
     // Initialize RTC RAM
     xtensa_lx6_rt::zero_bss(&mut _rtc_fast_bss_start, &mut _rtc_fast_bss_end);
     xtensa_lx6_rt::zero_bss(&mut _rtc_slow_bss_start, &mut _rtc_slow_bss_end);
 
     if cfg!(feature = "external_ram") {
         xtensa_lx6_rt::zero_bss(&mut _external_bss_start, &mut _external_bss_end);
-
-        // external SRAM initialization not done by bootloader
-        //
-        // TODO: correct load address or memory map:
-        // _external_data_load points to address when flash address 0 is mapped to 3f400000,
-        // however after bootloader is finished this is no longer true
-        xtensa_lx6_rt::init_data(
-            &mut _external_data_start,
-            &mut _external_data_end,
-            &_external_data_load,
-        );
     }
 
     // continue with default reset handler
