@@ -157,9 +157,9 @@ fi
 # kill terminal programs using the same port
 ps -ef|grep $PORT|egrep -v "$0|grep" |awk '{print $2}'|xargs -r kill
 
-if [[ !USE_BOOTLOADER -eq 1 ]]
+if [[ !USE_BOOTLOADER -eq 1 ]] ; then
     esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 $BIN_PATH.bin
-then
+else
     # get gen_esp32part.py and create binary partition table
     curl -s -S -L $GENPART_SOURCE --output target/gen_esp32part.py
     
@@ -180,7 +180,6 @@ then
         esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect $APP_ADDR $BIN_PATH.bin
     fi
 fi
-
 
 
 # start terminal program
