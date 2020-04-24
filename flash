@@ -170,7 +170,7 @@ else
     # (different variants exist, but only difference is flash settings which are overriden by esptool)
     curl -s -S -L $BOOTLOADER_SOURCE --output target/bootloader.bin
 
-    # check if bootloader.bin and paritions.bin are already correctly flashed (to prevent unneceesary writes)
+    # check if bootloader.bin and paritions.bin are already correctly flashed (to prevent unnecessary writes)
     esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset verify_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 target/bootloader.bin $PARTION_ADDR target/partitions.bin
     if [ $? -ne 0 ]; then
         # flash bootloader.bin, partitions.bin and application
