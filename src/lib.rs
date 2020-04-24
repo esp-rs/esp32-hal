@@ -1,12 +1,15 @@
-//! This ESP32 hal  crate provides support for the ESP32 peripherals
+//! This ESP32 hal crate provides support for the ESP32 peripherals
 //!
 //! ## Features
 //! - `external_ram`
-//!     - Optional and experimental
 //!     - Enables support for external ram (psram). However proper initialization
-//!         for psram is not yet included
+//!         of external ram relies on a customized bootloader
+//! - `all_in_ram`
+//!     - Forces all code and data in RAM instead of flash. This allows usage with
+//!         the ROM bootloader and eases debugging
 
 #![no_std]
+#![feature(const_fn)]
 
 pub use embedded_hal as hal;
 pub use esp32;
