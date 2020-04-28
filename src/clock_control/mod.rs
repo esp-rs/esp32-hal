@@ -37,8 +37,8 @@ pub mod watchdog;
 const DEFAULT_XTAL_FREQUENCY: Hertz = Hertz(40_000_000);
 
 // default frequencies for Dynamic Frequency Switching
-const CPU_SOURCE_DEFAULT_DEFAULT: CPUSource = CPUSource::Xtal;
-const CPU_FREQ_MIN_DEFAULT: Hertz = Hertz(10_000_000);
+const CPU_SOURCE_DEFAULT_DEFAULT: CPUSource = CPUSource::PLL;
+const CPU_FREQ_MIN_DEFAULT: Hertz = Hertz(80_000_000);
 const CPU_SOURCE_LOCKED_DEFAULT: CPUSource = CPUSource::PLL;
 const CPU_FREQ_MAX_DEFAULT: Hertz = Hertz(240_000_000);
 const CPU_SOURCE_APB_LOCKED_DEFAULT: CPUSource = CPUSource::PLL;
