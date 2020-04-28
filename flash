@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# port esp32 is connected to
-PORT=/dev/ttyUSB0
+# port esp32 is connected to (leave empty to autodetect)
+PORT=
+#PORT=/dev/ttyUSB1
 
 # baud rate for programming
-FLASH_BAUDRATE=115200
+FLASH_BAUDRATE=921600
 
 # baud rate for terminal
 TERM_BAUDRATE=115200
@@ -36,29 +37,34 @@ BOOTLOADER_SOURCE=https://github.com/arjanmels/esp32_bootloader_init_extram/blob
 # default bootloader from the espressif arduino github
 #BOOTLOADER_SOURCE=https://github.com/espressif/arduino-esp32/blob/idf-release/v4.0/tools/sdk/bin/bootloader_dio_40m.bin?raw=true
 
+# color codes
+STAGE="\033[1;36m"
+SUCCESS="\033[1;32m"
+ERROR="\033[1;31m"
+RESET="\033[0m"
 
-# set to build example
-EXAMPLE=""
 
 
 showhelp() {
 cat << EOF
-Usage: flash -hrtb -p <serial port> <example>
+Usage: flash -hrtbs [-p <serial port>] [-e <example>]
 
 -h, --help                      Display Help
 -r, --release                   Build in release mode
--p, --port <serial port>        Set serial port (default: $PORT)
+-p, --port <serial port>        Set serial port (default: autodetect)
 -b, --baudrate <baudrate>       Set baudrate for flasing (default: $FLASH_BAUDRATE)
   , --termbaudrate <baudrate>   Set baudrate for monitoring (default: $TERM_BAUDRATE)
 -t, --terminal                  Open terminal program after flashing
 -e, --example <example>         Build the specified example
+-s, --skip                      Skip actual flashing
 EOF
 }
 
 # get command line options
-options=$(getopt -l "help,release,port:,terminal,baudrate:,termbaudrate:,example:" -o "hrp:tb:e:" -a -- "$@")
+options=$(getopt -l "help,release,port:,terminal,baudrate:,termbaudrate:,example:,skip" -o "hrp:tb:e:s" -a -- "$@")
 
-if [ $? -ne 0 ]; then
+if [[ $? -ne 0 ]]
+then
     echo
     showhelp
     exit 1
@@ -80,6 +86,9 @@ do
     -p|--port)
         shift
         export PORT=$1
+        ;;
+    -s|--skip)
+        export SKIPFLASH=1
         ;;
     -t|--terminal)
         export TERMINAL=1
@@ -103,21 +112,21 @@ do
 shift
 done
 
-if [[ $# -ne 0 ]] ;
+if [[ $# -ne 0 ]]
 then
-    echo "*** Wrong number of arguments" >&2
-    echo
+    printf "${ERROR}*** Wrong number of arguments${RESET}\n\n" >&2
     showhelp
     exit 1
 fi
 
-if [[ ! -f Cargo.toml ]] ;
+if [[ ! -f Cargo.toml ]]
 then
-    echo "*** Must be run in root of project where Cargo.toml file is located" >&2
+    printf "${ERROR}*** Must be run in root of project where Cargo.toml file is located${RESET}\n" >&2
     exit 1
 fi
 
-if [ -z "$EXAMPLE" ]; then
+if [[ -z "$EXAMPLE" ]]
+then
     FILE=$(awk 'BEGIN {FS="[ \t=\"]+";} /^\s*\[/ {section=$1} tolower(section)=="[package]" && tolower($0) ~ /^\s*name/ {print $2}' Cargo.toml)
     BIN_PATH=target/xtensa-esp32-none-elf/$TYPE/$FILE
     EXAMPLE_ARG=""
@@ -126,16 +135,41 @@ else
     EXAMPLE_ARG="--example "$EXAMPLE
 fi
 
-# build the specific example
+# create links to output binaries for linking with debugger
+ln -sf $(pwd)/$BIN_PATH target/current.elf; 
+ln -sf $(pwd)/$BIN_PATH.bin target/current.bin
+
+# set the release flag
 if [ "$TYPE" = "release" ]
 then 
-    cargo xbuild --release $EXAMPLE_ARG
+    RELEASE="--release"
 else
-    cargo xbuild $EXAMPLE_ARG
+    RELEASE=""
 fi
 
-# if cargo returned an error quit the script
-if [ $? -ne 0 ]; then
+CMD="cargo xbuild $RELEASE $EXAMPLE_ARG"
+
+printf "${STAGE}Building application with $CMD...${RESET}\n\n"
+
+# get error code of any step of the pipe
+set -o pipefail
+
+# run cargo & get missing features
+{ FEATURES=$(eval $CMD --color always 3>&2 2>&1 | tee /dev/stderr | egrep  -o '\-\-features=".*"'; exit ${PIPESTATUS[0]}); } 3>&1
+RES=$?
+
+# if cargo returned an error because features are missing to rerun
+if [[ $RES -ne 0 && -n $FEATURES ]]
+then
+    CMD="cargo xbuild $RELEASE $EXAMPLE_ARG $FEATURES"
+    printf "\n\n${STAGE}Building application with $CMD...${RESET}\n\n"
+    eval $CMD
+    RES=$?
+fi
+
+# if cargo returned an error exit
+if [[ $RES -ne 0 ]]
+then
     exit 1
 fi
 
@@ -146,46 +180,92 @@ echo
 
 # convert to bin
 rm $BIN_PATH.bin 2>/dev/null
-esptool.py --chip esp32 elf2image --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED  -o $BIN_PATH.bin $BIN_PATH
-esptool.py --chip esp32 image_info $BIN_PATH.bin
+esptool.py --chip esp32 elf2image --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED  -o $BIN_PATH.bin $BIN_PATH > /dev/null
+esptool.py --chip esp32 image_info $BIN_PATH.bin |egrep -v -i "esptool.py|Image version|Checksum|Validation Hash|Segments"
 echo
 
-if [ $? -ne 0 ]; then
+if [ $? -ne 0 ]
+then
     exit 1
 fi
 
-# kill terminal programs using the same port
-ps -ef|grep $PORT|egrep -v "$0|grep" |awk '{print $2}'|xargs -r kill
-
-if [[ !USE_BOOTLOADER -eq 1 ]] ; then
-    esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 $BIN_PATH.bin
-else
-    # get gen_esp32part.py and create binary partition table
-    curl -s -S -L $GENPART_SOURCE --output target/gen_esp32part.py
-    
-    rm target/partitions.bin 2> /dev/null
-    python target/gen_esp32part.py partitions.csv target/partitions.bin 
-
-    # get bootloader.bin file (from arduino-esp32 repository)
-    # (different variants exist, but only difference is flash settings which are overriden by esptool)
-    curl -s -S -L $BOOTLOADER_SOURCE --output target/bootloader.bin
-
-    # check if bootloader.bin and paritions.bin are already correctly flashed (to prevent unnecessary writes)
-    esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset verify_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 target/bootloader.bin $PARTION_ADDR target/partitions.bin
-    if [ $? -ne 0 ]; then
-        # flash bootloader.bin, partitions.bin and application
-        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect 0x1000 target/bootloader.bin $PARTION_ADDR target/partitions.bin $APP_ADDR $BIN_PATH.bin
+if [[ $SKIPFLASH -ne 1 || $TERMINAL -eq 1 ]]
+then
+    if [[ -z "$PORT" ]]
+    then
+        # kill terminal programs using any port
+        ps -ef|grep "/dev/ttyUSB" |egrep -v "$0|grep" |awk '{print $2}'|xargs -r kill
+        printf "${STAGE}Detecting port...${RESET} "
+        PORT=$(esptool.py --no-stub read_mac 2> /dev/null | awk '/^Serial port / {port=$3} END {print port}')
+        if [[ -z $PORT ]]
+        then
+            printf "${ERROR}Error: cannot detect port!${RESET}\n\n"
+            exit 1
+        fi
+        printf "$PORT\n\n"
     else
-        # flash application only
-        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --before default_reset --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect $APP_ADDR $BIN_PATH.bin
+        # kill terminal programs using the same port
+        ps -ef|grep $PORT|egrep -v "$0|grep" |awk '{print $2}'|xargs -r kill
     fi
 fi
 
+if [[ $SKIPFLASH -ne 1 ]]
+then
+    flash() {
+        echo -e "${STAGE}Flashing...${RESET} $@\n"
+        esptool.py --chip esp32 --port $PORT --baud $FLASH_BAUDRATE --after hard_reset write_flash --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED --flash_size detect ${@} |egrep -v -i "stub|baud rate|Changed.|Configuring flash size|Serial port|esptool.py|Leaving"
+    }
+
+    if [[ !USE_BOOTLOADER -eq 1 ]]
+    then
+        flash 0x1000 $BIN_PATH.bin 
+    else
+        printf "${STAGE}Creating partition table...${RESET}\n\n"
+
+        # get gen_esp32part.py and create binary partition table
+        curl -s -S -L $GENPART_SOURCE --output target/gen_esp32part.py
+        
+        rm target/partitions.bin 2> /dev/null
+        python target/gen_esp32part.py partitions.csv target/partitions.bin
+
+        echo
+
+        # get bootloader.bin file 
+        # (different variants exist, but only difference is flash settings which are overriden by esptool)
+        curl -s -S -L $BOOTLOADER_SOURCE --output target/bootloader.bin
+        
+        # check if bootloader.bin and paritions.bin are already correctly flashed (to prevent unnecessary writes)
+        printf "${STAGE}Verify bootloader and partition table...${RESET} "
+        esptool.py --no-stub --chip esp32 --port $PORT --baud $FLASH_BAUDRATE verify_flash 0x1000 target/bootloader.bin $PARTION_ADDR target/partitions.bin > /dev/null
+        if [ $? -ne 0 ]; then
+            printf "modified.\n\n"
+            # flash bootloader.bin, partitions.bin and application
+            flash 0x1000 target/bootloader.bin $PARTION_ADDR target/partitions.bin $APP_ADDR $BIN_PATH.bin
+        else
+            printf "unchanged.\n\n"
+            # flash application only
+            flash $APP_ADDR $BIN_PATH.bin  
+        fi
+    fi
+
+    if [[ $? -ne 0 ]]
+    then
+        printf "\n${ERROR}Error flashing application${RESET}\n\n"
+        exit 1
+    fi
+fi
 
 # start terminal program
 if [[ TERMINAL -eq 1 ]]
 then
-    echo
-    echo "Starting terminal"
+    printf "\n${STAGE}Starting terminal.${RESET}\n"
     gnome-terminal --geometry 200x15+0+2000 -- picocom -b $TERM_BAUDRATE $PORT --imap lfcrlf 2>/dev/null
+fi
+
+
+if [[ $SKIPFLASH -ne 1 ]]
+then
+    printf "\n${SUCCESS}Succesfully build and flashed application${RESET}\n\n"
+else
+    printf "\n${SUCCESS}Succesfully build application${RESET}\n\n"
 fi
