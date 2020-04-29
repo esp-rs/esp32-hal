@@ -2,7 +2,6 @@
     // See https://go.microsoft.com/fwlink/?LinkId=733558 
     // for the documentation about the tasks.json format
     "version": "2.0.0",
-
     "tasks": [
         {
             "label": "Build and Flash Example",
@@ -19,9 +18,8 @@
                 "reveal": "silent",
                 "panel": "shared",
                 "clear": true
-            }
+            },
         },
-
         {
             "label": "Build Example",
             "type": "shell",
@@ -42,7 +40,6 @@
                 "clear": true
             }
         },
-        
         {
             "label": "Compile All Examples",
             "type": "shell",
@@ -53,7 +50,7 @@
                     "relative"
                 ]
             },
-            "group":  "build",
+            "group": "build",
             "presentation": {
                 "reveal": "always",
                 "panel": "shared",
@@ -70,7 +67,7 @@
                     "relative"
                 ]
             },
-            "group":  "build",
+            "group": "build",
             "presentation": {
                 "reveal": "silent",
                 "panel": "shared",

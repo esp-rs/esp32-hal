@@ -220,29 +220,36 @@ then
     then
         flash 0x1000 $BIN_PATH.bin 
     else
-        printf "${STAGE}Creating partition table...${RESET}\n\n"
 
-        # get gen_esp32part.py and create binary partition table
-        curl -s -S -L $GENPART_SOURCE --output target/gen_esp32part.py
-        
-        rm target/partitions.bin 2> /dev/null
-        python target/gen_esp32part.py partitions.csv target/partitions.bin
+        printf "${STAGE}Creating partition table... ${RESET}"
+        if [[ target/partitions.bin -ot partitions.csv ]]
+        then
+            printf "\n\n"
+            # get gen_esp32part.py and create binary partition table
+            curl -s -S -L $GENPART_SOURCE --output target/gen_esp32part.py
+            
+            rm target/partitions.bin 2> /dev/null
+            python target/gen_esp32part.py partitions.csv target/partitions.bin
+    
+            echo
+        else
+            printf "skipping as it is up to date\n\n"
+        fi
 
-        echo
 
         # get bootloader.bin file 
         # (different variants exist, but only difference is flash settings which are overriden by esptool)
         curl -s -S -L $BOOTLOADER_SOURCE --output target/bootloader.bin
-        
+
         # check if bootloader.bin and paritions.bin are already correctly flashed (to prevent unnecessary writes)
         printf "${STAGE}Verify bootloader and partition table...${RESET} "
         esptool.py --no-stub --chip esp32 --port $PORT --baud $FLASH_BAUDRATE verify_flash 0x1000 target/bootloader.bin $PARTION_ADDR target/partitions.bin > /dev/null
         if [ $? -ne 0 ]; then
-            printf "modified.\n\n"
+            printf "modified\n\n"
             # flash bootloader.bin, partitions.bin and application
             flash 0x1000 target/bootloader.bin $PARTION_ADDR target/partitions.bin $APP_ADDR $BIN_PATH.bin
         else
-            printf "unchanged.\n\n"
+            printf "unchanged\n\n"
             # flash application only
             flash $APP_ADDR $BIN_PATH.bin  
         fi

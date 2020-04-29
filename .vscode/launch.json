@@ -44,12 +44,6 @@
             "interface": "jtag",
             "svdFile": "../esp32/svd/esp32.svd",
             "toolchainPrefix": "xtensa-esp32-elf",
-            "debuggerArgs": [
-                "-iex",
-                "set verbose on",
-                "-iex",
-                "set trace-commands on",
-            ],
             "openOCDPreConfigLaunchCommands": [
                 "set ESP_RTOS none"
             ],
@@ -60,7 +54,7 @@
                 "mon program_esp32 target/current.bin 0x10000 verify reset hex",
                 "flushregs",
             ],
-            "postStartSessionCommands":[
+            "postStartSessionCommands": [
                 "thb main",
                 "continue"
             ],
