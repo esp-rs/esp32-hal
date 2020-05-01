@@ -1,5 +1,6 @@
 #![allow(non_camel_case_types)]
 
+use crate::prelude::*;
 use esp32::EFUSE;
 
 pub struct Efuse;
@@ -49,7 +50,7 @@ impl Efuse {
     /// While ESP32 chips usually come with two mostly equivalent CPUs (protocol CPU and
     /// application CPU), the application CPU is unavailable on some.
     ///
-    pub fn get_core_count() -> u8 {
+    pub fn get_core_count() -> u32 {
         let efuse = unsafe { &*EFUSE::ptr() };
 
         let cpu_disabled = efuse.blk0_rdata3.read().rd_chip_ver_dis_app_cpu().bit();
@@ -65,16 +66,16 @@ impl Efuse {
     /// Note that the actual clock may be lower, depending on the current power
     /// configuration of the chip, clock source, and other settings.
     ///
-    pub fn get_max_cpu_fequency() -> u8 {
+    pub fn get_max_cpu_fequency() -> Hertz {
         let efuse = unsafe { &*EFUSE::ptr() };
 
         let has_rating = efuse.blk0_rdata3.read().rd_chip_cpu_freq_rated().bit();
         let has_low_rating = efuse.blk0_rdata3.read().rd_chip_cpu_freq_low().bit();
 
         if has_rating && has_low_rating {
-            160
+            Hertz(160_000_000)
         } else {
-            240
+            Hertz(240_000_000)
         }
     }
 

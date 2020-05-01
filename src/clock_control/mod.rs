@@ -24,6 +24,7 @@ use esp32::rtccntl::clk_conf::*;
 use esp32::rtccntl::cntl::*;
 use esp32::{APB_CTRL, RTCCNTL, TIMG0};
 
+pub mod cpu;
 pub mod dfs;
 mod pll;
 pub mod watchdog;
@@ -136,6 +137,8 @@ pub enum Error {
     CalibrationTimeOut,
     CalibrationSetupError,
     InvalidRegisterValue,
+    InvalidCore,
+    CoreAlreadyRunning,
 }
 
 /// CPU/APB/REF clock source
@@ -333,6 +336,18 @@ impl<'a> ClockControlConfig {
     /// Get the current count of the PCU, APB, Awake and PLL/2 locks
     pub fn get_lock_count(&self) -> dfs::Locks {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().get_lock_count() }
+    }
+
+    pub unsafe fn park_core(&mut self, core: u32) -> Result<(), Error> {
+        CLOCK_CONTROL.as_mut().unwrap().park_core(core)
+    }
+
+    pub fn unpark_core(&mut self, core: u32) -> Result<(), Error> {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) }
+    }
+
+    pub fn start_core(&mut self, core: u32, f: fn() -> !) -> Result<(), Error> {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().start_core(core, f) }
     }
 }
 
