@@ -76,7 +76,7 @@ static EXTERNAL_HEAP: LockedHeap = unsafe {
     LockedHeap::new(&|| &_external_heap_start, &|| {
         core::cmp::min(
             &_external_heap_end,
-            (&_external_heap_start as *const u8).add(crate::memory::get_external_ram_size()),
+            (&_external_heap_start as *const u8).add(crate::external_ram::get_size()),
         )
     })
 };

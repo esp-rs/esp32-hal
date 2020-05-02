@@ -23,8 +23,9 @@ pub mod analog;
 pub mod clock_control;
 pub mod dport;
 pub mod efuse;
+#[cfg(feature = "external_ram")]
+pub mod external_ram;
 pub mod gpio;
-pub mod memory;
 pub mod prelude;
 pub mod serial;
 pub mod units;
@@ -52,11 +53,6 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
         static mut _rtc_slow_bss_start: u32;
         static mut _rtc_slow_bss_end: u32;
 
-        static mut _external_bss_start: u32;
-        static mut _external_bss_end: u32;
-        static mut _external_data_start: u32;
-        static mut _external_data_end: u32;
-        static _external_data_load: u32;
     }
 
     // copying data from flash to various data segments is done by the bootloader
@@ -66,9 +62,8 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
     xtensa_lx6_rt::zero_bss(&mut _rtc_fast_bss_start, &mut _rtc_fast_bss_end);
     xtensa_lx6_rt::zero_bss(&mut _rtc_slow_bss_start, &mut _rtc_slow_bss_end);
 
-    if cfg!(feature = "external_ram") {
-        xtensa_lx6_rt::zero_bss(&mut _external_bss_start, &mut _external_bss_end);
-    }
+    #[cfg(feature = "external_ram")]
+    external_ram::init();
 
     // continue with default reset handler
     xtensa_lx6_rt::Reset();

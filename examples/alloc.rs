@@ -62,7 +62,7 @@ fn main() -> ! {
     writeln!(uart0, "\n\nReboot!\n",).unwrap();
 
     crate::dprintln!("External RAM size: {}", unsafe {
-        esp32_hal::memory::get_external_ram_size()
+        esp32_hal::external_ram::get_size()
     });
 
     let mut vec = vec![1, 2, 3];
