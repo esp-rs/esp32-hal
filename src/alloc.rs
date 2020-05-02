@@ -9,7 +9,6 @@
 //! - Automatically detect psram size
 //!
 use core::alloc::{GlobalAlloc, Layout};
-use core::cell::RefCell;
 use core::ptr::NonNull;
 
 use linked_list_allocator::Heap;
@@ -65,15 +64,22 @@ static DEFAULT_HEAP: GeneralAllocator =
     GeneralAllocator::new(DEFAULT_EXTERNAL_THRESHOLD, DEFAULT_USE_IRAM);
 
 #[allow(dead_code)]
-static DRAM_HEAP: LockedHeap = unsafe { LockedHeap::new(&_heap_start, &_heap_end) };
+static DRAM_HEAP: LockedHeap = unsafe { LockedHeap::new(&|| &_heap_start, &|| &_heap_end) };
 
 #[allow(dead_code)]
-static IRAM_HEAP: LockedHeap = unsafe { LockedHeap::new(&_text_heap_start, &_text_heap_end) };
+static IRAM_HEAP: LockedHeap =
+    unsafe { LockedHeap::new(&|| &_text_heap_start, &|| &_text_heap_end) };
 
 #[allow(dead_code)]
 #[cfg(feature = "external_ram")]
-static EXTERNAL_HEAP: LockedHeap =
-    unsafe { LockedHeap::new(&_external_heap_start, &_external_heap_end) };
+static EXTERNAL_HEAP: LockedHeap = unsafe {
+    LockedHeap::new(&|| &_external_heap_start, &|| {
+        core::cmp::min(
+            &_external_heap_end,
+            (&_external_heap_start as *const u8).add(crate::memory::get_external_ram_size()),
+        )
+    })
+};
 
 #[derive(Copy, Clone)]
 #[doc(hidden)]
@@ -200,70 +206,52 @@ unsafe impl GlobalAlloc for GeneralAllocator {
     }
 }
 
-struct DynamicSizedLockedHeap<'a> {
-    heap: RefCell<Option<LockedHeap>>,
+struct LockedHeap<'a> {
+    heap: Mutex<Option<Heap>>,
     start_addr: &'a dyn Fn() -> *const u8,
     end_addr: &'a dyn Fn() -> *const u8,
 }
 
-unsafe impl Sync for DynamicSizedLockedHeap<'_> {}
-unsafe impl GlobalAlloc for DynamicSizedLockedHeap<'_> {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if self.heap.borrow().as_ref().is_none() {
-            self.heap.replace(Some(LockedHeap::new(
-                (self.start_addr)(),
-                (self.end_addr)(),
-            )));
-        }
-        self.heap.borrow().as_ref().unwrap().alloc(layout)
-    }
+unsafe impl Sync for LockedHeap<'_> {}
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.heap.borrow().as_ref().unwrap().dealloc(ptr, layout)
-    }
-}
-
-struct LockedHeap {
-    heap: RefCell<Option<Mutex<Heap>>>,
-    start_addr: *const u8,
-    end_addr: *const u8,
-}
-
-unsafe impl Sync for LockedHeap {}
-
-impl LockedHeap {
+/// Multi-core and interrupt safe heap allocator with constant constructor
+///
+impl<'a> LockedHeap<'a> {
     /// Create a new heap allocator
     ///
     /// `start_addr` is the address where the heap will be located.
     /// `end_addr` is the address after the heap
     /// The heap uses the memory range [start_addr, end_addr)
-    const fn new(start_addr: *const u8, end_addr: *const u8) -> Self {
+    const fn new(
+        start_addr: &'a dyn Fn() -> *const u8,
+        end_addr: &'a dyn Fn() -> *const u8,
+    ) -> Self {
         Self {
-            heap: RefCell::new(None),
+            heap: Mutex::new(None),
             start_addr,
             end_addr,
         }
     }
 
     fn is_in_range(&self, ptr: *const u8) -> bool {
-        ptr >= self.start_addr && ptr < self.end_addr
+        let lock = self.heap.lock();
+        let heap = lock.as_ref().unwrap();
+        (ptr as usize) >= heap.bottom() && (ptr as usize) < heap.top()
     }
 }
 
-unsafe impl GlobalAlloc for LockedHeap {
+unsafe impl GlobalAlloc for LockedHeap<'_> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         interrupt::free(|_| {
-            if self.heap.borrow().as_ref().is_none() {
-                self.heap.replace(Some(Mutex::new(Heap::new(
-                    self.start_addr as usize,
-                    self.end_addr as usize - self.start_addr as usize,
-                ))));
+            let mut heap = self.heap.lock();
+            if heap.is_none() {
+                let start = (self.start_addr)() as usize;
+                let size = (self.end_addr)() as usize - (self.start_addr)() as usize;
+                *heap = Some(Heap::new(start, size));
             }
-            self.heap
-                .borrow()
-                .as_ref()
+
+            heap.as_mut()
                 .unwrap()
-                .lock()
                 .allocate_first_fit(layout)
                 .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
         })
@@ -272,10 +260,9 @@ unsafe impl GlobalAlloc for LockedHeap {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         interrupt::free(|_| {
             self.heap
-                .borrow()
-                .as_ref()
-                .unwrap()
                 .lock()
+                .as_mut()
+                .unwrap()
                 .deallocate(NonNull::new_unchecked(ptr), layout)
         });
     }
