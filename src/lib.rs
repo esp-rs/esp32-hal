@@ -7,6 +7,8 @@
 //! - `all_in_ram`
 //!     - Forces all code and data in RAM instead of flash. This allows usage with
 //!         the ROM bootloader and eases debugging
+//! - `alloc`
+//!     - Enables support for heap allocations via a GlobalAllocator
 
 #![no_std]
 #![feature(const_fn)]

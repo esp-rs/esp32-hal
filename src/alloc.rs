@@ -129,8 +129,6 @@ impl GeneralAllocator {
 
 unsafe impl GlobalAlloc for GeneralAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        dprintln!("alloc: {:?}", layout);
-
         // if bigger then threshold use external ram
         if layout.size() > self.external_threshold {
             let res = EXTERNAL_HEAP.alloc(layout);
