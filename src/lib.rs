@@ -1,17 +1,20 @@
 //! This ESP32 hal crate provides support for the ESP32 peripherals
 //!
 //! ## Features
-//! - `external_ram`
+//! - `external_ram` (enabled by default)
 //!     - Enables support for external ram (psram). However proper initialization
 //!         of external ram relies on a customized bootloader
 //! - `all_in_ram`
 //!     - Forces all code and data in RAM instead of flash. This allows usage with
 //!         the ROM bootloader and eases debugging
 //! - `alloc`
-//!     - Enables support for heap allocations via a GlobalAllocator
+//!     - Enables support for dynamic memory allocations via a GlobalAllocator
+//!         and/or AllocRef
 
 #![no_std]
 #![feature(const_fn)]
+#![feature(allocator_api)]
+#![feature(alloc_layout_extra)]
 
 pub use embedded_hal as hal;
 pub use esp32;

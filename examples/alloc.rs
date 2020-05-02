@@ -1,13 +1,18 @@
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
+#![feature(raw_vec_internals)]
 
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
 use esp32_hal::prelude::*;
 
-use esp32_hal::alloc::{Allocator, DEFAULT_ALLOCATOR};
+use alloc::raw_vec::RawVec;
+#[cfg(feature = "external_ram")]
+use esp32_hal::alloc::EXTERNAL_ALLOCATOR;
+use esp32_hal::alloc::{Allocator, DEFAULT_ALLOCATOR, DRAM_ALLOCATOR, IRAM_ALLOCATOR};
+
 use esp32_hal::clock_control::{sleep, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
@@ -18,6 +23,26 @@ extern crate alloc;
 
 #[global_allocator]
 pub static GLOBAL_ALLOCATOR: Allocator = DEFAULT_ALLOCATOR;
+
+// Macro to simplify printing of the various different memory allocations
+macro_rules! print_info {
+    ( $uart:expr, $x:expr ) => {
+        let mem_type = match &$x as *const _ as usize {
+            0x3f80_0000..=0x3fbf_ffff => "External",
+            0x3ff8_0000..=0x3fff_ffff => "DRAM",
+            0x4007_0000..=0x4009_ffff => "IRAM",
+            _ => "?",
+        };
+        writeln!(
+            $uart,
+            "{:<40}: {:#08x?}   {}",
+            stringify!($x),
+            &$x as *const _,
+            mem_type
+        )
+        .unwrap();
+    };
+}
 
 #[entry]
 fn main() -> ! {
@@ -61,40 +86,33 @@ fn main() -> ! {
     // print startup message
     writeln!(uart0, "\n\nReboot!\n",).unwrap();
 
-    crate::dprintln!("External RAM size: {}", unsafe {
-        esp32_hal::external_ram::get_size()
-    });
+    let global_initialized_vec_unique = vec![1, 2, 3];
+    print_info!(uart0, global_initialized_vec_unique[0]);
 
-    let mut vec = vec![1, 2, 3];
+    let global_initialized_vec_same = vec![0xabu8; 12];
+    print_info!(uart0, global_initialized_vec_same[0]);
 
-    for x in 0..vec.len() {
-        writeln!(
-            uart0,
-            "vec: address: {:08x?} {}",
-            &vec[x] as *const _ as usize, vec[x]
-        )
-        .unwrap();
+    unsafe {
+        let dram_rawvec: RawVec<u8, _> = RawVec::with_capacity_in(50, DRAM_ALLOCATOR);
+        print_info!(uart0, *dram_rawvec.ptr());
+
+        let iram_rawvec: RawVec<u8, _> = RawVec::with_capacity_in(50, IRAM_ALLOCATOR);
+        print_info!(uart0, *iram_rawvec.ptr());
+
+        #[cfg(feature = "external_ram")]
+        {
+            crate::dprintln!("External RAM size: {}", unsafe {
+                esp32_hal::external_ram::get_size()
+            });
+
+            let global_initialized_vec_large = vec![0u8; 1024 * 1024];
+            print_info!(uart0, global_initialized_vec_large[0]);
+
+            let external_ram_rawvec: RawVec<u8, _> =
+                RawVec::with_capacity_in(50, EXTERNAL_ALLOCATOR);
+            print_info!(uart0, *external_ram_rawvec.ptr());
+        }
     }
-
-    vec = vec![0xabu8; 12];
-
-    for x in 0..vec.len() {
-        writeln!(
-            uart0,
-            "vec: address: {:08x?} {}",
-            &vec[x] as *const _ as usize, vec[x]
-        )
-        .unwrap();
-    }
-
-    let too_large_for_dram = vec![0u8; 1024 * 1024];
-
-    writeln!(
-        uart0,
-        "vec: address: {:08x?} ",
-        &too_large_for_dram[0] as *const _ as usize
-    )
-    .unwrap();
 
     loop {
         sleep(1.s());

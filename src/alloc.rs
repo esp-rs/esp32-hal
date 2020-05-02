@@ -6,7 +6,7 @@
 //! with different thresholds)
 //!
 //! # TODO:
-//! - Automatically detect psram size
+//! - Improve underlying heap allocator: support for realloc, speed etc.
 //!
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::NonNull;
@@ -101,6 +101,36 @@ unsafe impl GlobalAlloc for Allocator {
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.allocator.dealloc(ptr, layout)
+    }
+}
+
+extern crate alloc;
+use alloc::alloc::{AllocErr, AllocInit, AllocRef, MemoryBlock};
+
+unsafe impl AllocRef for Allocator {
+    fn alloc(&mut self, layout: Layout, init: AllocInit) -> Result<MemoryBlock, AllocErr> {
+        if layout.size() == 0 {
+            return Ok(MemoryBlock {
+                ptr: layout.dangling(),
+                size: 0,
+            });
+        }
+        let ptr = unsafe { GlobalAlloc::alloc(self, layout) };
+        if ptr != 0 as *mut u8 {
+            let block = MemoryBlock {
+                ptr: NonNull::new(ptr).ok_or(AllocErr)?,
+                size: layout.size(),
+            };
+            unsafe { init.init(block) };
+            Ok(block)
+        } else {
+            Err(AllocErr)
+        }
+    }
+    unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
+        if layout.size() != 0 {
+            GlobalAlloc::dealloc(self, ptr.as_ptr(), layout);
+        }
     }
 }
 
