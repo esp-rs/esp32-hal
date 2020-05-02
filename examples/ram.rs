@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(stmt_expr_attributes)]
 
 use core::fmt::Write;
 use core::panic::PanicInfo;
