@@ -3,6 +3,8 @@
 
 use super::Error;
 
+static mut START_CORE1_FUNCTION: Option<fn() -> !> = None;
+
 impl super::ClockControl {
     pub unsafe fn park_core(&mut self, core: u32) -> Result<(), Error> {
         match core {
@@ -118,6 +120,17 @@ impl super::ClockControl {
         Ok(())
     }
 
+    unsafe fn start_core1_init() -> ! {
+        extern "C" {
+            static mut _stack_end_cpu1: u32;
+        }
+
+        // set stack pointer to end of memory: no need to retain stack up to this point
+        xtensa_lx6_rt::set_stack_pointer(&mut _stack_end_cpu1);
+
+        START_CORE1_FUNCTION.unwrap()();
+    }
+
     pub fn start_core(&mut self, core: u32, f: fn() -> !) -> Result<(), Error> {
         match core {
             0 => return Err(Error::CoreAlreadyRunning),
@@ -135,9 +148,14 @@ impl super::ClockControl {
                 self.flush_cache(core)?;
                 self.enable_cache(core)?;
 
-                self.dport_control
-                    .appcpu_ctrl_d()
-                    .write(|w| unsafe { w.appcpu_boot_addr().bits(f as u32) });
+                unsafe {
+                    START_CORE1_FUNCTION = Some(f);
+                }
+
+                self.dport_control.appcpu_ctrl_d().write(|w| unsafe {
+                    w.appcpu_boot_addr()
+                        .bits(Self::start_core1_init as *const u32 as u32)
+                });
 
                 self.dport_control
                     .appcpu_ctrl_b()

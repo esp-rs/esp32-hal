@@ -68,12 +68,18 @@ fn main() -> ! {
 
     // print startup message
     writeln!(uart0, "\n\nReboot!\n",).unwrap();
-
     writeln!(
         uart0,
         "UART0 baudrate: {}, using apb clock instead of ref clock: {}\n",
         uart0.baudrate(),
         uart0.is_clock_apb()
+    )
+    .unwrap();
+
+    writeln!(
+        uart0,
+        "Stack Pointer Core 0: {:08x?}",
+        xtensa_lx6_rt::get_stack_pointer()
     )
     .unwrap();
 
@@ -148,6 +154,13 @@ fn main() -> ! {
 fn cpu1_start() -> ! {
     let mut x: u32 = 0;
     let mut prev_ccount = 0;
+
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "Stack Pointer Core 1: {:08x?}",
+        xtensa_lx6_rt::get_stack_pointer()
+    )
+    .unwrap();
 
     loop {
         let cycles = ClockControlConfig {}.cpu_frequency() / BLINK_HZ;

@@ -51,9 +51,8 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
 
         static mut _external_bss_start: u32;
         static mut _external_bss_end: u32;
-        static mut _external_data_start: u32;
-        static mut _external_data_end: u32;
-        static _external_data_load: u32;
+
+        static mut _stack_end_cpu0: u32;
     }
 
     // copying data from flash to various data segments is done by the bootloader
@@ -66,6 +65,9 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
     if cfg!(feature = "external_ram") {
         xtensa_lx6_rt::zero_bss(&mut _external_bss_start, &mut _external_bss_end);
     }
+
+    // set stack pointer to end of memory: no need to retain stack up to this point
+    xtensa_lx6_rt::set_stack_pointer(&mut _stack_end_cpu0);
 
     // continue with default reset handler
     xtensa_lx6_rt::Reset();

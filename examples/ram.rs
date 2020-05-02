@@ -54,12 +54,7 @@ fn main() -> ! {
     // print startup message
     writeln!(uart0, "\n\nReboot!\n",).unwrap();
 
-    writeln!(
-        uart0,
-        "Running on core {:0x}\n",
-        xtensa_lx6_rt::get_core_id()
-    )
-    .unwrap();
+    writeln!(uart0, "Running on core {}\n", xtensa_lx6_rt::get_core_id()).unwrap();
 
     ram_tests(&mut uart0);
 
@@ -72,7 +67,7 @@ fn main() -> ! {
 fn attr_none_fn(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {
     writeln!(
         uart,
-        "{:<40}: {:0x?}",
+        "{:<40}: {:08x?}",
         "attr_none_fn",
         xtensa_lx6_rt::get_program_counter()
     )
@@ -83,7 +78,7 @@ fn attr_none_fn(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>
 fn attr_ram_fn(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {
     writeln!(
         uart,
-        "{:<40}: {:0x?}",
+        "{:<40}: {:08x?}",
         "attr_ram_fn",
         xtensa_lx6_rt::get_program_counter()
     )
@@ -94,7 +89,7 @@ fn attr_ram_fn(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>)
 fn attr_ram_fn_rtc_slow(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {
     writeln!(
         uart,
-        "{:<40}: {:0x?}",
+        "{:<40}: {:08x?}",
         "attr_ram_fn_rtc_slow",
         xtensa_lx6_rt::get_program_counter()
     )
@@ -105,7 +100,7 @@ fn attr_ram_fn_rtc_slow(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx
 fn attr_ram_fn_rtc_fast(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {
     writeln!(
         uart,
-        "{:<40}: {:0x?}",
+        "{:<40}: {:08x?}",
         "attr_ram_fn_rtc_fast",
         xtensa_lx6_rt::get_program_counter()
     )
@@ -164,7 +159,7 @@ macro_rules! print_info {
     ( $uart:expr, $x:expr ) => {
         writeln!(
             $uart,
-            "{:<40}: {:08x}: {:02x?}",
+            "{:<40}: {:#08x?}: {:02x?}",
             stringify!($x),
             &$x as *const u8 as usize,
             $x

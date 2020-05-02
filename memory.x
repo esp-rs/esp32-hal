@@ -15,16 +15,19 @@ RESERVE_DRAM = 0;
 RESERVE_RTC_FAST = 0;
 RESERVE_RTC_SLOW = 0;
 
+/* define stack size for both cores */
+STACK_SIZE = 8k;
+
 /* Specify main memory areas */
 MEMORY
 {
-  reserved1_seg ( RWX )  : ORIGIN = 0x40070000, len = 64k /* SRAM0; reserved for usage as flash cache*/
-  vectors ( RX )         : ORIGIN = 0x40080000, len =  1k /* SRAM0 */
+  reserved_cache_seg     : ORIGIN = 0x40070000, len = 64k /* SRAM0; reserved for usage as flash cache*/
+  vectors_seg ( RX )     : ORIGIN = 0x40080000, len =  1k /* SRAM0 */
   iram_seg ( RX )        : ORIGIN = 0x40080400, len = 128k-0x400 /* SRAM0 */
 
-  reserved2_seg ( RW )   : ORIGIN = 0x3FFAE000, len = 8k /* SRAM2; reserved for usage by the ROM */
+  reserved_for_rom_seg   : ORIGIN = 0x3FFAE000, len = 8k /* SRAM2; reserved for usage by the ROM */
   dram_seg ( RW )        : ORIGIN = 0x3FFB0000 + RESERVE_DRAM, len = 176k - RESERVE_DRAM /* SRAM2+1; first 64kB used by BT if enable */
-  reserved3_seg ( RW )   : ORIGIN = 0x3FFDC200, len = 144k /* SRAM1; reserved for static ROM usage; can be used for heap */
+  reserved_for_boot_seg  : ORIGIN = 0x3FFDC200, len = 144k /* SRAM1; reserved for static ROM usage; can be used for heap */
 
   /* external flash 
      The 0x20 offset is a convenience for the app binary image generation.
@@ -62,6 +65,14 @@ SECTIONS {
     *(.rwtext.literal .rwtext .rwtext.literal.* .rwtext.*)
   } > iram_seg AT > RODATA
 
+  /* must be last segment using iram_seg */
+  .iram_heap_start (NOLOAD) :
+  {
+    . = ALIGN (4);
+    _iram_heap_start = ABSOLUTE(.);
+  } > iram_seg
+
+
   .rtc_fast.text : {
    . = ALIGN(4);
     *(.rtc_fast.literal .rtc_fast.text .rtc_fast.literal.* .rtc_fast.text.*)
@@ -86,8 +97,6 @@ SECTIONS {
     *(.rtc_fast.data .rtc_fast.data.*)
     _rtc_fast_data_end = ABSOLUTE(.);
   } > rtc_fast_dram_seg AT > RODATA
-
-  _rtc_fast_data_load = LOADADDR(.rtc_fast.data);
 
  .rtc_fast.bss (NOLOAD) :
   {
@@ -117,8 +126,6 @@ SECTIONS {
     _rtc_slow_data_end = ABSOLUTE(.);
   } > rtc_slow_seg AT > RODATA
 
-  _rtc_slow_data_load = LOADADDR(.rtc_slow.data);
-
  .rtc_slow.bss (NOLOAD) :
   {
     _rtc_slow_bss_start = ABSOLUTE(.);
@@ -141,8 +148,6 @@ SECTIONS {
     _external_data_end = ABSOLUTE(.);
   } > psram_seg AT > RODATA
 
-  _external_data_load = LOADADDR(.external.data);
-
  .external.bss (NOLOAD) :
   {
     _external_bss_start = ABSOLUTE(.);
@@ -156,5 +161,21 @@ SECTIONS {
     . = ALIGN(4);
     *(.external.noinit .external.noinit.*)
   } > psram_seg
+
+  /* must be last segment using psram_seg */
+  .external_heap_start (NOLOAD) :
+  {
+    . = ALIGN (4);
+    _external_heap_start = ABSOLUTE(.);
+  } > psram_seg
+
 }
 
+_heap_end = ORIGIN(dram_seg)+LENGTH(dram_seg)+LENGTH(reserved_for_boot_seg) - 2*STACK_SIZE;
+_iram_heap_end = ABSOLUTE(ORIGIN(iram_seg)+LENGTH(iram_seg));
+_external_heap_end = ABSOLUTE(ORIGIN(psram_seg)+LENGTH(psram_seg));
+
+_stack_start_cpu1 = _heap_end;
+_stack_end_cpu1 = _stack_start_cpu1 + STACK_SIZE;
+_stack_start_cpu0 = _stack_end_cpu1;
+_stack_end_cpu0 = _stack_start_cpu0 + STACK_SIZE;
