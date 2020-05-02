@@ -48,6 +48,7 @@ pub static IRAM_ALLOCATOR: Allocator = Allocator::new(&IRAM_HEAP);
 /// Heap allocator using the external RAM
 ///
 /// External RAM can be used non-aligned and byte accesses, but DMA and atomic access are not supported
+#[cfg(feature = "external_ram")]
 pub static EXTERNAL_ALLOCATOR: Allocator = Allocator::new(&EXTERNAL_HEAP);
 
 // These symbols come from `memory.x`
@@ -70,6 +71,7 @@ static DRAM_HEAP: LockedHeap = unsafe { LockedHeap::new(&_heap_start, &_heap_end
 static IRAM_HEAP: LockedHeap = unsafe { LockedHeap::new(&_text_heap_start, &_text_heap_end) };
 
 #[allow(dead_code)]
+#[cfg(feature = "external_ram")]
 static EXTERNAL_HEAP: LockedHeap =
     unsafe { LockedHeap::new(&_external_heap_start, &_external_heap_end) };
 
@@ -111,6 +113,7 @@ unsafe impl GlobalAlloc for Allocator {
 /// (e.g. by using uninitialized memory) or they need to be replaced.*
 
 pub struct GeneralAllocator {
+    #[cfg(feature = "external_ram")]
     external_threshold: usize,
     use_iram: bool,
 }
@@ -119,14 +122,16 @@ unsafe impl Sync for GeneralAllocator {}
 
 impl GeneralAllocator {
     /// Create a new general allocation with a specified threshold for external memory allocations.
-    pub const fn new(external_threshold: usize, use_iram: bool) -> Self {
+    pub const fn new(_external_threshold: usize, use_iram: bool) -> Self {
         Self {
-            external_threshold,
+            #[cfg(feature = "external_ram")]
+            external_threshold: _external_threshold,
             use_iram,
         }
     }
 }
 
+#[cfg(feature = "external_ram")]
 unsafe impl GlobalAlloc for GeneralAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // if bigger then threshold use external ram
@@ -163,6 +168,33 @@ unsafe impl GlobalAlloc for GeneralAllocator {
             x if DRAM_HEAP.is_in_range(x) => DRAM_HEAP.dealloc(ptr, layout),
             x if IRAM_HEAP.is_in_range(x) => IRAM_HEAP.dealloc(ptr, layout),
             x if EXTERNAL_HEAP.is_in_range(x) => EXTERNAL_HEAP.dealloc(ptr, layout),
+            _ => (),
+        }
+    }
+}
+
+#[cfg(not(feature = "external_ram"))]
+unsafe impl GlobalAlloc for GeneralAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        // if IRAM usage allowed, aligned and sized correctly use IRAM
+        if self.use_iram
+            && layout.size() >= core::mem::size_of::<u32>()
+            && layout.align() >= core::mem::size_of::<u32>()
+        {
+            let res = IRAM_ALLOCATOR.alloc(layout);
+            if res != 0 as *mut u8 {
+                return res;
+            }
+        }
+
+        // if not external or IRAM then place in DRAM
+        return DRAM_ALLOCATOR.alloc(layout);
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        match ptr as *const _ {
+            x if DRAM_HEAP.is_in_range(x) => DRAM_HEAP.dealloc(ptr, layout),
+            x if IRAM_HEAP.is_in_range(x) => IRAM_HEAP.dealloc(ptr, layout),
             _ => (),
         }
     }
