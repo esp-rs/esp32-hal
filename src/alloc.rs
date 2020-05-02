@@ -200,6 +200,29 @@ unsafe impl GlobalAlloc for GeneralAllocator {
     }
 }
 
+struct DynamicSizedLockedHeap<'a> {
+    heap: RefCell<Option<LockedHeap>>,
+    start_addr: &'a dyn Fn() -> *const u8,
+    end_addr: &'a dyn Fn() -> *const u8,
+}
+
+unsafe impl Sync for DynamicSizedLockedHeap<'_> {}
+unsafe impl GlobalAlloc for DynamicSizedLockedHeap<'_> {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if self.heap.borrow().as_ref().is_none() {
+            self.heap.replace(Some(LockedHeap::new(
+                (self.start_addr)(),
+                (self.end_addr)(),
+            )));
+        }
+        self.heap.borrow().as_ref().unwrap().alloc(layout)
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        self.heap.borrow().as_ref().unwrap().dealloc(ptr, layout)
+    }
+}
+
 struct LockedHeap {
     heap: RefCell<Option<Mutex<Heap>>>,
     start_addr: *const u8,
