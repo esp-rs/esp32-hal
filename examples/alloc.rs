@@ -7,6 +7,7 @@ use core::panic::PanicInfo;
 
 use esp32_hal::prelude::*;
 
+use esp32_hal::alloc::{Allocator, DEFAULT_ALLOCATOR};
 use esp32_hal::clock_control::{sleep, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
@@ -14,6 +15,9 @@ use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 
 #[macro_use]
 extern crate alloc;
+
+#[global_allocator]
+pub static GLOBAL_ALLOCATOR: Allocator = DEFAULT_ALLOCATOR;
 
 #[entry]
 fn main() -> ! {
@@ -68,34 +72,25 @@ fn main() -> ! {
         .unwrap();
     }
 
-    for x in &vec {
+    vec = vec![0xabu8; 12];
+
+    for x in 0..vec.len() {
         writeln!(
             uart0,
             "vec: address: {:08x?} {}",
-            &x as *const _ as usize, x
+            &vec[x] as *const _ as usize, vec[x]
         )
         .unwrap();
     }
 
-    while let Some(top) = vec.pop() {
-        writeln!(
-            uart0,
-            "pop: address: {:08x?} {}",
-            &top as *const _ as usize, top
-        )
-        .unwrap();
-    }
+    let too_large_for_dram = vec![0u8; 1024 * 1024];
 
-    let too_large = vec![0; 1024 * 1024 * 10];
-
-    for x in &too_large {
-        writeln!(
-            uart0,
-            "vec: address: {:08x?} {}",
-            &x as *const _ as usize, x
-        )
-        .unwrap();
-    }
+    writeln!(
+        uart0,
+        "vec: address: {:08x?} ",
+        &too_large_for_dram[0] as *const _ as usize
+    )
+    .unwrap();
 
     loop {
         sleep(1.s());
