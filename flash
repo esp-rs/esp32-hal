@@ -155,7 +155,7 @@ printf "${STAGE}Building application with $CMD...${RESET}\n\n"
 set -o pipefail
 
 # run cargo & get missing features
-{ FEATURES=$(eval $CMD --color always 3>&2 2>&1 | tee /dev/stderr | egrep  -o '\-\-features=".*"'; exit ${PIPESTATUS[0]}); } 3>&1
+{ FEATURES=$(script -efqc "$CMD 2>&1" /dev/null | tee /dev/stderr | egrep  -o '\-\-features=".*"'; exit ${PIPESTATUS[0]}); }
 RES=$?
 
 # if cargo returned an error because features are missing to rerun
@@ -170,6 +170,12 @@ fi
 # if cargo returned an error exit
 if [[ $RES -ne 0 ]]
 then
+    exit 1
+fi
+
+if [[ ! -f $BIN_PATH ]]
+then
+    printf "${ERROR}Error: Output file ($BIN_PATH) not generated!${RESET}\n\n"
     exit 1
 fi
 
