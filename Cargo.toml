@@ -15,6 +15,10 @@ external_ram=["esp32-hal-proc-macros/external_ram"]
 
 [dependencies]
 esp32-hal-proc-macros = { path = "procmacros" }
+<<<<<<< HEAD
+=======
+xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt.git", rev = "b5ebc04" }
+>>>>>>> e09c690... Added procedural macro #[ram]
 esp32 = { version = "0.3.0" }
 xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt.git" }
 nb = "0.1.2"

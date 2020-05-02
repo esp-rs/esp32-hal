@@ -17,7 +17,10 @@ pub use esp32;
 extern crate esp32_hal_proc_macros as proc_macros;
 pub use proc_macros::ram;
 
+<<<<<<< HEAD
 pub mod analog;
+=======
+>>>>>>> e09c690... Added procedural macro #[ram]
 pub mod clock_control;
 pub mod dport;
 pub mod efuse;

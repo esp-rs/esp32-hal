@@ -11,11 +11,10 @@
 
 extern crate proc_macro;
 
+use darling::FromMeta;
 use proc_macro::Span;
 use proc_macro::TokenStream;
 use quote::quote;
-//use std::collections::HashSet;
-use darling::FromMeta;
 use syn::spanned::Spanned;
 use syn::{parse_macro_input, AttributeArgs, Item};
 

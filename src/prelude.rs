@@ -9,5 +9,8 @@ pub use crate::gpio::GpioExt as _esp32_hal_gpio_GpioExt;
 pub use crate::units::*;
 
 pub use crate::proc_macros::*;
+<<<<<<< HEAD
 
 pub use xtensa_lx6_rt::entry;
+=======
+>>>>>>> e09c690... Added procedural macro #[ram]
