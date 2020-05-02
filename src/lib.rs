@@ -10,11 +10,16 @@
 //! - `alloc`
 //!     - Enables support for dynamic memory allocations via a GlobalAllocator
 //!         and/or AllocRef
+//! - `mem`
+//!     - Include customized memcpy, memset, etc. which use word (4-byte) sized and aligned
+//!         instructions to support IRAM usage and as optimization
 
 #![no_std]
 #![feature(const_fn)]
-#![feature(allocator_api)]
-#![feature(alloc_layout_extra)]
+#![cfg_attr(feature = "alloc", feature(allocator_api))]
+#![cfg_attr(feature = "alloc", feature(alloc_layout_extra))]
+#![cfg_attr(feature = "mem", no_builtins)]
+#![cfg_attr(feature = "mem", feature(core_intrinsics))]
 
 pub use embedded_hal as hal;
 pub use esp32;
@@ -38,6 +43,9 @@ pub mod alloc;
 
 #[macro_use]
 pub mod dprint;
+
+#[cfg(feature = "mem")]
+pub mod mem;
 
 /// Function initializes ESP32 specific memories (RTC slow and fast) and
 /// then calls original Reset function

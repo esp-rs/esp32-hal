@@ -4,8 +4,14 @@ version = "0.1.0"
 authors = ["Scott Mabin <scott@mabez.dev>", "Arjan Mels <arjan@mels.email>"]
 edition = "2018"
 
+
+# Allow overriding of memcpy, memset, etc.
+[package.metadata.cargo-xbuild]
+memcpy = false
+
+
 [features]
-default=["external_ram"]
+default=["external_ram", "mem"]
 
 # Place program completely in ram (needed when e.g. using only ROM bootloader, or for debugging)
 all_in_ram=[]
@@ -15,6 +21,10 @@ external_ram=["esp32-hal-proc-macros/external_ram"]
 
 # Add support for Global Allocator
 alloc=["linked_list_allocator"]
+
+# Define memcpy, memset etc. as replacement of standard functions
+mem=[]
+
 
 [dependencies]
 esp32-hal-proc-macros = { path = "procmacros" }

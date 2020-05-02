@@ -17,7 +17,7 @@ use spin::Mutex;
 use xtensa_lx6_rt::interrupt;
 
 const DEFAULT_EXTERNAL_THRESHOLD: usize = 32 * 1024;
-const DEFAULT_USE_IRAM: bool = false;
+const DEFAULT_USE_IRAM: bool = true;
 
 /// Default allocator using a mix of memories.
 ///
