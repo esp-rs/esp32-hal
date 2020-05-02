@@ -65,14 +65,6 @@ SECTIONS {
     *(.rwtext.literal .rwtext .rwtext.literal.* .rwtext.*)
   } > iram_seg AT > RODATA
 
-  /* must be last segment using iram_seg */
-  .iram_heap_start (NOLOAD) :
-  {
-    . = ALIGN (4);
-    _iram_heap_start = ABSOLUTE(.);
-  } > iram_seg
-
-
   .rtc_fast.text : {
    . = ALIGN(4);
     *(.rtc_fast.literal .rtc_fast.text .rtc_fast.literal.* .rtc_fast.text.*)
@@ -172,7 +164,7 @@ SECTIONS {
 }
 
 _heap_end = ORIGIN(dram_seg)+LENGTH(dram_seg)+LENGTH(reserved_for_boot_seg) - 2*STACK_SIZE;
-_iram_heap_end = ABSOLUTE(ORIGIN(iram_seg)+LENGTH(iram_seg));
+_text_heap_end = ABSOLUTE(ORIGIN(iram_seg)+LENGTH(iram_seg));
 _external_heap_end = ABSOLUTE(ORIGIN(psram_seg)+LENGTH(psram_seg));
 
 _stack_start_cpu1 = _heap_end;
