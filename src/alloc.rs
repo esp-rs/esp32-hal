@@ -167,10 +167,10 @@ impl GeneralAllocator {
     }
 }
 
-#[cfg(feature = "external_ram")]
 unsafe impl GlobalAlloc for GeneralAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // if bigger then threshold use external ram
+        #[cfg(feature = "external_ram")]
         if layout.size() > self.external_threshold {
             let res = EXTERNAL_HEAP.alloc(layout);
             if res != 0 as *mut u8 {
@@ -180,8 +180,8 @@ unsafe impl GlobalAlloc for GeneralAllocator {
 
         // if IRAM usage allowed, aligned and sized correctly use IRAM
         if self.use_iram
-            && layout.size() >= core::mem::size_of::<u32>()
-            && layout.align() >= core::mem::size_of::<u32>()
+            && layout.size() >= core::mem::size_of::<usize>()
+            && layout.align() >= core::mem::size_of::<usize>()
         {
             let res = IRAM_ALLOCATOR.alloc(layout);
             if res != 0 as *mut u8 {
@@ -195,42 +195,20 @@ unsafe impl GlobalAlloc for GeneralAllocator {
             return res;
         }
 
+        
         // use external ram as fallback
+        #[cfg(feature = "external_ram")]
         return EXTERNAL_HEAP.alloc(layout);
+        #[cfg(not(feature = "external_ram"))]
+        return res;
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         match ptr as *const _ {
             x if DRAM_HEAP.is_in_range(x) => DRAM_HEAP.dealloc(ptr, layout),
             x if IRAM_HEAP.is_in_range(x) => IRAM_HEAP.dealloc(ptr, layout),
+            #[cfg(feature = "external_ram")]
             x if EXTERNAL_HEAP.is_in_range(x) => EXTERNAL_HEAP.dealloc(ptr, layout),
-            _ => (),
-        }
-    }
-}
-
-#[cfg(not(feature = "external_ram"))]
-unsafe impl GlobalAlloc for GeneralAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // if IRAM usage allowed, aligned and sized correctly use IRAM
-        if self.use_iram
-            && layout.size() >= core::mem::size_of::<u32>()
-            && layout.align() >= core::mem::size_of::<u32>()
-        {
-            let res = IRAM_ALLOCATOR.alloc(layout);
-            if res != 0 as *mut u8 {
-                return res;
-            }
-        }
-
-        // if not external or IRAM then place in DRAM
-        return DRAM_ALLOCATOR.alloc(layout);
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        match ptr as *const _ {
-            x if DRAM_HEAP.is_in_range(x) => DRAM_HEAP.dealloc(ptr, layout),
-            x if IRAM_HEAP.is_in_range(x) => IRAM_HEAP.dealloc(ptr, layout),
             _ => (),
         }
     }
