@@ -7,15 +7,14 @@ edition = "2018"
 [features]
 default=["external_ram"]
 
-# feature to place program completely in ram (needed when e.g. using only ROM bootloader)
+# Place program completely in ram (needed when e.g. using only ROM bootloader, or for debugging)
 all_in_ram=[]
 
-# feature to allow use of external ram. Currently not yet supported: psram needs configuration
+# Allow use of external ram. Needs customized bootloader.
 external_ram=["esp32-hal-proc-macros/external_ram"]
 
-# feature to allow use of external ram. Currently not yet supported: psram needs configuration
+# Add support for Global Allocator
 alloc=["linked_list_allocator"]
-
 
 [dependencies]
 esp32-hal-proc-macros = { path = "procmacros" }
@@ -26,7 +25,7 @@ esp32 = { version = "0.3.0" }
 nb = "0.1.2"
 spin = "0.5.2"
 embedded-hal = { version = "0.2.3", features = ["unproven"] }
-linked_list_allocator = { version = "0.8.2", optional = true, default-features = false, features = ["alloc_ref"] }
+linked_list_allocator = { version = "0.8.3", optional = true, default-features = false, features = ["alloc_ref"] }
 
 [dev-dependencies]
 panic-halt = "0.2.0"
