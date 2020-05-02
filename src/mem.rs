@@ -2,9 +2,6 @@
 //! However these routines do not use word sized aligned instructions, which leads to
 //! problems with using teh IRAM (and is inefficient)
 //!
-//! #TODO:
-//! - Optimize for non-aligned data: memcpy, memmove, memcmp (memset already done)
-//!
 #[allow(warnings)]
 #[cfg(target_pointer_width = "16")]
 type c_int = i16;
@@ -19,40 +16,35 @@ use core::mem::size_of;
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     let mut i = 0;
-    if n % PTR_SIZE == 0 {
-        // copy per c_int if n is multiple of c_int size
-        // (not considering alignment, but if src and dst are aligned the accesses are as well)
-        while i * PTR_SIZE < n {
-            *(dest as *mut c_int).offset(i as isize) = *(src as *mut c_int).offset(i as isize);
-            i += 1;
-        }
-    } else {
-        // copy per byte
-        while i < n {
-            *dest.offset(i as isize) = *src.offset(i as isize);
-            i += 1;
-        }
+
+    // copy per word (not necessarily aligned: does not matter for performance on esp32)
+    while i + PTR_SIZE <= n {
+        *(dest.offset(i as isize) as *mut c_int) = *(src.offset(i as isize) as *mut c_int);
+        i += PTR_SIZE;
+    }
+
+    // copy remaining bytes
+    while i < n {
+        *dest.offset(i as isize) = *src.offset(i as isize);
+        i += 1;
     }
     dest
 }
 
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn memcpy_reverse(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
-    if n % PTR_SIZE == 0 {
-        // copy per c_int if n is multiple of c_int size
-        // (not considering alignment, but if src and dst are aligned the accesses are as well)
-        let mut i = n / PTR_SIZE;
-        while i != 0 {
-            i -= 1;
-            *(dest as *mut c_int).offset(i as isize) = *(src as *mut c_int).offset(i as isize);
-        }
-    } else {
-        // copy per byte
-        let mut i = n;
-        while i != 0 {
-            i -= 1;
-            *dest.offset(i as isize) = *src.offset(i as isize);
-        }
+    let mut i = n;
+
+    // copy per word (not necessarily aligned: does not matter for performance on esp32)
+    while i >= PTR_SIZE {
+        i -= PTR_SIZE;
+        *(dest.offset(i as isize) as *mut c_int) = *(src.offset(i as isize) as *mut c_int);
+    }
+
+    // copy per byte
+    while i != 0 {
+        i -= 1;
+        *dest.offset(i as isize) = *src.offset(i as isize);
     }
     dest
 }
@@ -97,29 +89,27 @@ pub unsafe extern "C" fn memset(s: *mut u8, c: c_int, n: usize) -> *mut u8 {
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
     let mut i = 0;
-    if n % PTR_SIZE == 0 {
-        // compare per c_int if n is multiple of c_int size
-        // (not considering alignment, but if src and dst are aligned the accesses are as well)
-        while i * PTR_SIZE < n {
-            let a = *(s1 as *const [u8; PTR_SIZE]).offset(i as isize);
-            let b = *(s2 as *const [u8; PTR_SIZE]).offset(i as isize);
-            for i in 0..=3 {
-                if a[i] != b[i] {
-                    return a[i] as i32 - b[i] as i32;
-                }
+
+    // copy per word (not necessarily aligned: does not matter for performance on esp32)
+    while i + PTR_SIZE <= n {
+        let a = *(s1.offset(i as isize) as *const [u8; PTR_SIZE]);
+        let b = *(s2.offset(i as isize) as *const [u8; PTR_SIZE]);
+        for i in 0..=3 {
+            if a[i] != b[i] {
+                return a[i] as i32 - b[i] as i32;
             }
-            i += 1;
         }
-    } else {
-        // compare per byte
-        while i < n {
-            let a = *s1.offset(i as isize);
-            let b = *s2.offset(i as isize);
-            if a != b {
-                return a as i32 - b as i32;
-            }
-            i += 1;
+        i += PTR_SIZE;
+    }
+
+    // compare per byte
+    while i < n {
+        let a = *s1.offset(i as isize);
+        let b = *s2.offset(i as isize);
+        if a != b {
+            return a as i32 - b as i32;
         }
+        i += 1;
     }
     0
 }
