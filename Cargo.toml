@@ -5,7 +5,7 @@ authors = ["Scott Mabin <scott@mabez.dev>", "Arjan Mels <arjan@mels.email>"]
 edition = "2018"
 
 [features]
-default=["external_ram","alloc"]
+default=["external_ram"]
 
 # feature to place program completely in ram (needed when e.g. using only ROM bootloader)
 all_in_ram=[]

@@ -13,7 +13,6 @@ edition = "2018"
 [lib]
 proc-macro = true
 
-<<<<<<< HEAD
 [features]
 external_ram=[]
 
@@ -23,12 +22,3 @@ proc-macro2 = "1.0"
 darling = "0.10"
 syn = {version = "1.0", features = ["extra-traits", "full"]}
 
-=======
-[dependencies]
-quote = "1.0"
-proc-macro2 = "1.0"
-
-[dependencies.syn]
-features = ["extra-traits", "full"]
-version = "1.0"
->>>>>>> e09c690... Added procedural macro #[ram]
