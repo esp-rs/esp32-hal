@@ -24,6 +24,7 @@ pub mod clock_control;
 pub mod dport;
 pub mod efuse;
 pub mod gpio;
+pub mod memory;
 pub mod prelude;
 pub mod serial;
 pub mod units;

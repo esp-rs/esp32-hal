@@ -61,6 +61,10 @@ fn main() -> ! {
     // print startup message
     writeln!(uart0, "\n\nReboot!\n",).unwrap();
 
+    crate::dprintln!("External RAM size: {}", unsafe {
+        esp32_hal::memory::get_external_ram_size()
+    });
+
     let mut vec = vec![1, 2, 3];
 
     for x in 0..vec.len() {
