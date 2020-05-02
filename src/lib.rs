@@ -32,6 +32,9 @@ pub mod units;
 #[macro_use]
 pub mod dprint;
 
+#[cfg(feature = "alloc")]
+pub mod alloc;
+
 /// Function initializes ESP32 specific memories (RTC slow and fast) and
 /// then calls original Reset function
 ///
