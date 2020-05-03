@@ -43,3 +43,7 @@ panic-halt = "0.2.0"
 [[example]]
 name = "alloc"
 required-features = ["alloc"]
+
+[[example]]
+name = "mem"
+required-features = ["alloc"]
