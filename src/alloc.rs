@@ -13,7 +13,7 @@ use core::ptr::NonNull;
 
 use linked_list_allocator::Heap;
 
-use spin::Mutex;
+use spin::{Mutex, MutexGuard};
 use xtensa_lx6_rt::interrupt;
 
 const DEFAULT_EXTERNAL_THRESHOLD: usize = 32 * 1024;
@@ -23,11 +23,14 @@ const DEFAULT_USE_IRAM: bool = true;
 ///
 /// It will use external RAM for all blocks larger then 32kBytes.
 ///
-/// Use of IRAM is by default disabled as currently some built-in functions in rust use byte type access.
+/// It will use IRAM for 4-byte aligned requests.
 ///
 /// It will use DRAM for the remaining requests.
 ///
 /// If the default memory type is not available it will fall back to DRAM followed by external RAM.
+///
+/// *NOTE: the default implementations of memcpy, memset etc. which are used behind the scenes use
+/// unaligned accesses. The replacements in the mem module do handle alignment properly.*
 pub static DEFAULT_ALLOCATOR: Allocator = Allocator::new(&DEFAULT_HEAP);
 
 /// Heap allocator using the DRAM.
@@ -40,8 +43,7 @@ pub static DRAM_ALLOCATOR: Allocator = Allocator::new(&DRAM_HEAP);
 /// IRAM only supports aligned 4-byte data, it also allows atomic access, but no DMA
 ///
 /// *NOTE: the default implementations of memcpy, memset etc. which are used behind the scenes use
-/// unaligned accesses. Either care must be taken that such function are avoided
-/// (e.g. by using uninitialized memory) or they need to be replaced.*
+/// unaligned accesses. The replacements in the mem module do handle alignment properly.*
 pub static IRAM_ALLOCATOR: Allocator = Allocator::new(&IRAM_HEAP);
 
 /// Heap allocator using the external RAM
@@ -81,17 +83,45 @@ static EXTERNAL_HEAP: LockedHeap = unsafe {
     })
 };
 
+/// Get heap sizes
+pub trait AllocatorSize {
+    /// Get total heap size
+    fn size(&self) -> usize;
+    /// Get used heap size
+    fn used(&self) -> usize;
+    /// Get free heap size
+    fn free(&self) -> usize;
+}
+
+unsafe trait GlobalAllocSize: GlobalAlloc + AllocatorSize {}
+
 #[derive(Copy, Clone)]
 #[doc(hidden)]
 pub struct Allocator {
-    allocator: &'static (dyn GlobalAlloc + 'static),
+    allocator: &'static (dyn GlobalAllocSize + 'static),
 }
 
 unsafe impl Sync for Allocator {}
 
 impl Allocator {
-    const fn new(allocator: &'static dyn GlobalAlloc) -> Self {
+    const fn new(allocator: &'static dyn GlobalAllocSize) -> Self {
         Self { allocator }
+    }
+}
+
+unsafe impl GlobalAllocSize for Allocator {}
+
+impl AllocatorSize for Allocator {
+    fn size(&self) -> usize {
+        self.allocator.size()
+    }
+
+    fn used(&self) -> usize {
+        self.allocator.used()
+    }
+
+    fn free(&self) -> usize {
+        self.allocator.free()
     }
 }
 
@@ -167,6 +197,40 @@ impl GeneralAllocator {
     }
 }
 
+unsafe impl GlobalAllocSize for GeneralAllocator {}
+
+impl AllocatorSize for GeneralAllocator {
+    fn size(&self) -> usize {
+        #[cfg(not(feature = "external_ram"))]
+        let res = DRAM_ALLOCATOR.size() + IRAM_ALLOCATOR.size();
+
+        #[cfg(feature = "external_ram")]
+        let res = DRAM_ALLOCATOR.size() + IRAM_ALLOCATOR.size() + EXTERNAL_ALLOCATOR.size();
+
+        res
+    }
+
+    fn used(&self) -> usize {
+        #[cfg(not(feature = "external_ram"))]
+        let res = DRAM_ALLOCATOR.used() + IRAM_ALLOCATOR.used();
+
+        #[cfg(feature = "external_ram")]
+        let res = DRAM_ALLOCATOR.used() + IRAM_ALLOCATOR.used() + EXTERNAL_ALLOCATOR.used();
+
+        res
+    }
+
+    fn free(&self) -> usize {
+        #[cfg(not(feature = "external_ram"))]
+        let res = DRAM_ALLOCATOR.free() + IRAM_ALLOCATOR.free();
+
+        #[cfg(feature = "external_ram")]
+        let res = DRAM_ALLOCATOR.free() + IRAM_ALLOCATOR.free() + EXTERNAL_ALLOCATOR.free();
+
+        res
+    }
+}
+
 unsafe impl GlobalAlloc for GeneralAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // if bigger then threshold use external ram
@@ -195,7 +259,6 @@ unsafe impl GlobalAlloc for GeneralAllocator {
             return res;
         }
 
-        
         // use external ram as fallback
         #[cfg(feature = "external_ram")]
         return EXTERNAL_HEAP.alloc(layout);
@@ -222,6 +285,8 @@ struct LockedHeap<'a> {
 
 unsafe impl Sync for LockedHeap<'_> {}
 
+unsafe impl GlobalAllocSize for LockedHeap<'_> {}
+
 /// Multi-core and interrupt safe heap allocator with constant constructor
 ///
 impl<'a> LockedHeap<'a> {
@@ -246,29 +311,48 @@ impl<'a> LockedHeap<'a> {
         let heap = lock.as_ref().unwrap();
         (ptr as usize) >= heap.bottom() && (ptr as usize) < heap.top()
     }
+
+    fn get_locked_heap(&self) -> MutexGuard<Option<Heap>> {
+        let mut heap = self.heap.lock();
+        if heap.is_none() {
+            let start = (self.start_addr)() as usize;
+            let size = (self.end_addr)() as usize - (self.start_addr)() as usize;
+            *heap = Some(unsafe { Heap::new(start, size) });
+        }
+
+        heap
+    }
+}
+
+impl AllocatorSize for LockedHeap<'_> {
+    fn size(&self) -> usize {
+        self.get_locked_heap().as_ref().map_or(0, |v| v.size())
+    }
+
+    fn used(&self) -> usize {
+        self.get_locked_heap().as_ref().map_or(0, |v| v.used())
+    }
+
+    fn free(&self) -> usize {
+        self.get_locked_heap().as_ref().map_or(0, |v| v.free())
+    }
 }
 
 unsafe impl GlobalAlloc for LockedHeap<'_> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         interrupt::free(|_| {
-            let mut heap = self.heap.lock();
-            if heap.is_none() {
-                let start = (self.start_addr)() as usize;
-                let size = (self.end_addr)() as usize - (self.start_addr)() as usize;
-                *heap = Some(Heap::new(start, size));
-            }
-
-            heap.as_mut()
-                .unwrap()
-                .allocate_first_fit(layout)
-                .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
+            self.get_locked_heap()
+                .as_mut()
+                .map_or(0 as *mut u8, |heap| {
+                    heap.allocate_first_fit(layout)
+                        .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
+                })
         })
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         interrupt::free(|_| {
-            self.heap
-                .lock()
+            self.get_locked_heap()
                 .as_mut()
                 .unwrap()
                 .deallocate(NonNull::new_unchecked(ptr), layout)
