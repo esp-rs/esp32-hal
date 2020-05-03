@@ -1,6 +1,8 @@
-//! Routines used by LLVM, these are normally part of the compiler-builtins crate.
-//! However these routines do not use word sized aligned instructions, which leads to
-//! problems with using teh IRAM (and is inefficient)
+//! Custom versions of routines used by LLVM (like memcpy, memset, etc.)
+//!
+//! These are normally part of the compiler-builtins crate. However the default routines
+//! do not use word sized aligned instructions, which is slow and moreover leads to crashes
+//! when using IRAM (which only allows aligned accesses).
 //!
 #[allow(warnings)]
 #[cfg(target_pointer_width = "16")]
