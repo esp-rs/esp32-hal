@@ -6,6 +6,7 @@
         {
             "label": "Build and Flash Example",
             "type": "shell",
+            "runOptions": {"reevaluateOnRerun": false},
             "command": "./flash -t --example ${input:example}",
             "problemMatcher": {
                 "base": "$rustc",
@@ -23,6 +24,7 @@
         {
             "label": "Build Example",
             "type": "shell",
+            "runOptions": {"reevaluateOnRerun": false},
             "command": "./flash -s --example ${input:example}",
             "problemMatcher": {
                 "base": "$rustc",
