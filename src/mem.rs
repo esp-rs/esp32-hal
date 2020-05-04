@@ -16,52 +16,74 @@ const PTR_SIZE: usize = size_of::<c_int>();
 use core::mem::size_of;
 
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+pub unsafe extern "C" fn memcpy(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     let mut i = 0;
 
-    // copy per word (not necessarily aligned: does not matter for performance on esp32)
-    while i + PTR_SIZE <= n {
-        *(dest.offset(i as isize) as *mut c_int) = *(src.offset(i as isize) as *mut c_int);
-        i += PTR_SIZE;
+    if n > PTR_SIZE {
+        let start_bytes_dst = (dst as usize).wrapping_neg() % PTR_SIZE;
+        let start_bytes_src = (src as usize).wrapping_neg() % PTR_SIZE;
+
+        // copy initial bytes to make either src or dst aligned
+        while i < n && i < start_bytes_dst && i < start_bytes_src {
+            *dst.offset(i as isize) = *src.offset(i as isize);
+            i += 1;
+        }
+
+        // copy per word
+        while i <= n - PTR_SIZE {
+            *(dst.offset(i as isize) as *mut c_int) = *(src.offset(i as isize) as *mut c_int);
+            i += PTR_SIZE;
+        }
     }
 
     // copy remaining bytes
     while i < n {
-        *dest.offset(i as isize) = *src.offset(i as isize);
+        *dst.offset(i as isize) = *src.offset(i as isize);
         i += 1;
     }
-    dest
+    dst
 }
 
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memcpy_reverse(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+pub unsafe extern "C" fn memcpy_reverse(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     let mut i = n;
 
-    // copy per word (not necessarily aligned: does not matter for performance on esp32)
-    while i >= PTR_SIZE {
-        i -= PTR_SIZE;
-        *(dest.offset(i as isize) as *mut c_int) = *(src.offset(i as isize) as *mut c_int);
+    if n > PTR_SIZE {
+        let end_byte_dst = n - ((dst as usize) + n) % PTR_SIZE;
+        let end_byte_src = n - ((src as usize) + n) % PTR_SIZE;
+
+        // copy initial bytes to make either src or dst aligned
+        while i != 0 && i > end_byte_dst && i > end_byte_src {
+            i -= 1;
+            *dst.offset(i as isize) = *src.offset(i as isize);
+        }
+
+        // copy per word
+        while i >= PTR_SIZE {
+            i -= PTR_SIZE;
+            *(dst.offset(i as isize) as *mut c_int) = *(src.offset(i as isize) as *mut c_int);
+        }
     }
 
     // copy per byte
     while i != 0 {
         i -= 1;
-        *dest.offset(i as isize) = *src.offset(i as isize);
+        *dst.offset(i as isize) = *src.offset(i as isize);
     }
-    dest
+    dst
 }
 
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memmove(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
-    if src < dest as *const u8 {
-        memcpy_reverse(dest, src, n)
+pub unsafe extern "C" fn memmove(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    if src < dst as *const u8 {
+        memcpy_reverse(dst, src, n)
     } else {
-        memcpy(dest, src, n)
+        memcpy(dst, src, n)
     }
 }
 
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memset(s: *mut u8, c: c_int, n: usize) -> *mut u8 {
+pub unsafe extern "C" fn memset2(s: *mut u8, c: c_int, n: usize) -> *mut u8 {
     let start_bytes = (s as usize).wrapping_neg() % PTR_SIZE;
     let mut i = 0;
 
@@ -83,6 +105,62 @@ pub unsafe extern "C" fn memset(s: *mut u8, c: c_int, n: usize) -> *mut u8 {
             *s.offset(i as isize) = c as u8;
             i += 1;
         }
+    }
+
+    s
+}
+
+#[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
+pub unsafe extern "C" fn memset3(mut s: *mut u8, c: c_int, n: usize) -> *mut u8 {
+    let end = s.add(n);
+
+    const LOOPS: usize = 64;
+    const LOOP_SIZE: usize = LOOPS * PTR_SIZE;
+
+    // fill initial non-aligned bytes
+    while s < end && (s as usize) % (LOOP_SIZE) != 0 {
+        *s = c as u8;
+        s = s.offset(1);
+    }
+
+    if s < end {
+        while s <= end.sub(LOOP_SIZE) {
+            for _ in 0..LOOPS {
+                *(s as *mut c_int) = c_int::from_ne_bytes([c as u8; PTR_SIZE]);
+                s = s.add(PTR_SIZE);
+            }
+        }
+
+        // fill remaining non-aligned bytes
+        while s < end {
+            *s = c as u8;
+            s = s.offset(1);
+        }
+    }
+
+    s
+}
+
+#[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
+pub unsafe extern "C" fn memset(s: *mut u8, c: c_int, n: usize) -> *mut u8 {
+    let (prefix, mut core, postfix) = core::slice::from_raw_parts_mut(s, n).align_to_mut::<c_int>();
+
+    for x in prefix {
+        *x = c as u8;
+    }
+
+    for chunk_size in &[64, 32, 16, 8, 4, 2, 1] {
+        let mut chunks = core.chunks_exact_mut(*chunk_size);
+        for chunk in chunks.by_ref() {
+            for i in 0..*chunk_size {
+                chunk[i] = c_int::from_ne_bytes([c as u8; PTR_SIZE]);
+            }
+        }
+        core = chunks.into_remainder();
+    }
+
+    for x in postfix {
+        *x = c as u8;
     }
 
     s

@@ -1,7 +1,3 @@
-//! Example to test memcpy function
-//! To properly benchmark run in release mode
-//!
-
 #![no_std]
 #![no_main]
 #![feature(alloc_error_handler)]
@@ -14,9 +10,10 @@ use esp32_hal::prelude::*;
 
 use esp32_hal::alloc::{Allocator, DRAM_ALLOCATOR};
 
-use esp32_hal::clock_control::{sleep, ClockControl, ClockControlConfig};
+use esp32_hal::clock_control::{sleep, CPUSource::PLL, ClockControl, ClockControlConfig};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
+use esp32_hal::mem::{memcmp, memcpy, memcpy_reverse, memset};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 
 #[macro_use]
@@ -25,24 +22,100 @@ extern crate alloc;
 #[global_allocator]
 pub static GLOBAL_ALLOCATOR: Allocator = DRAM_ALLOCATOR;
 
-// Macro to simplify printing of the various different memory allocations
-macro_rules! print_info {
-    ( $uart:expr, $x:expr ) => {
-        let mem_type = match &$x as *const _ as usize {
-            0x3f80_0000..=0x3fbf_ffff => "External",
-            0x3ff8_0000..=0x3fff_ffff => "DRAM",
-            0x4007_0000..=0x4009_ffff => "IRAM",
-            _ => "?",
-        };
-        writeln!(
-            $uart,
-            "{:<40}: {:#08x?}   {}",
-            stringify!($x),
-            &$x as *const _,
-            mem_type
-        )
+#[entry]
+fn main2() -> ! {
+    main();
+}
+
+fn main() -> ! {
+    let dp = unsafe { esp32::Peripherals::steal() };
+
+    let mut timg0 = dp.TIMG0;
+    let mut timg1 = dp.TIMG1;
+
+    // (https://github.com/espressif/openocd-esp32/blob/97ba3a6bb9eaa898d91df923bbedddfeaaaf28c9/src/target/esp32.c#L431)
+    // openocd disables the watchdog timers on halt
+    // we will do it manually on startup
+    disable_timg_wdts(&mut timg0, &mut timg1);
+
+    let (mut dport, dport_clock_control) = dp.DPORT.split();
+
+    // setup clocks & watchdog
+    let mut clock_control = ClockControl::new(
+        dp.RTCCNTL,
+        dp.APB_CTRL,
+        dport_clock_control,
+        esp32_hal::clock_control::XTAL_FREQUENCY_AUTO,
+    )
+    .unwrap();
+
+    // set desired clock frequencies
+    clock_control
+        .set_cpu_frequencies(PLL, 240.MHz(), PLL, 240.MHz(), PLL, 240.MHz())
         .unwrap();
-    };
+
+    let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
+
+    watchdog.start(30.s());
+
+    // setup serial controller
+    let mut uart0 = Serial::uart0(
+        dp.UART0,
+        (NoTx, NoRx),
+        Config::default(),
+        clock_control_config,
+        &mut dport,
+    )
+    .unwrap();
+
+    uart0.change_baudrate(115200).unwrap();
+
+    // print startup message
+    writeln!(uart0, "\n\nReboot!\n",).unwrap();
+
+    const BUF_LEN: usize = 1024 * 128;
+
+    writeln!(uart0, "dst").unwrap();
+    let mut dst = vec![0u8; BUF_LEN];
+    writeln!(uart0, "src").unwrap();
+    let mut src = vec![0u8; BUF_LEN];
+
+    for i in 0..src.len() {
+        src[i] = i as u8;
+    }
+
+    time(
+        &mut uart0,
+        "memset aligned, sized 4 bytes",
+        BUF_LEN,
+        &|| unsafe {
+            memset(&(dst[0]) as *const _ as *mut _, 0, BUF_LEN);
+        },
+    );
+
+    time(&mut uart0, "memset aligned", BUF_LEN, &|| unsafe {
+        memset(&(dst[0]) as *const _ as *mut _, 0, BUF_LEN - 1);
+    });
+
+    time(&mut uart0, "memset", BUF_LEN, &|| unsafe {
+        memset(&(dst[1]) as *const _ as *mut _, 0, BUF_LEN - 1);
+    });
+
+    let tx = &mut uart0;
+    unsafe {
+        for f in &[memcpy, memcpy_reverse] {
+            time_memcpy(tx, &mut (dst[0]), &mut (src[0]), BUF_LEN, *f);
+            time_memcpy(tx, &mut (dst[0]), &mut (src[0]), BUF_LEN - 1, *f);
+            time_memcpy(tx, &mut (dst[1]), &mut (src[1]), BUF_LEN - 1, *f);
+            time_memcpy(tx, &mut (dst[1]), &mut (src[0]), BUF_LEN - 1, *f);
+            time_memcpy(tx, &mut (dst[0]), &mut (src[1]), BUF_LEN - 1, *f);
+        }
+    }
+
+    loop {
+        sleep(1.s());
+        writeln!(uart0, "Alive and waiting for watchdog reset").unwrap();
+    }
 }
 
 fn time(output: &mut dyn core::fmt::Write, text: &str, bytes: usize, f: &dyn Fn() -> ()) {
@@ -64,180 +137,40 @@ fn time(output: &mut dyn core::fmt::Write, text: &str, bytes: usize, f: &dyn Fn(
     .unwrap();
 }
 
-#[entry]
-fn main() -> ! {
-    let dp = unsafe { esp32::Peripherals::steal() };
+unsafe fn time_memcpy(
+    output: &mut dyn core::fmt::Write,
+    dst: &mut u8,
+    src: &mut u8,
+    len: usize,
+    f: unsafe extern "C" fn(dst: *mut u8, src: *const u8, n: usize) -> *mut u8,
+) {
+    const REPEAT: usize = 100;
+    let start = xtensa_lx6_rt::get_cycle_count();
+    for _ in 0..REPEAT {
+        f(dst as *const _ as *mut _, src as *const _ as *mut _, len);
+    }
+    let end = xtensa_lx6_rt::get_cycle_count();
 
-    let mut timg0 = dp.TIMG0;
-    let mut timg1 = dp.TIMG1;
+    let time = (end - start) as f32 / ClockControlConfig {}.cpu_frequency().0 as f32;
 
-    // (https://github.com/espressif/openocd-esp32/blob/97ba3a6bb9eaa898d91df923bbedddfeaaaf28c9/src/target/esp32.c#L431)
-    // openocd disables the watchdog timers on halt
-    // we will do it manually on startup
-    disable_timg_wdts(&mut timg0, &mut timg1);
+    let cmp_res = memcmp(dst as *const _ as *mut _, src as *const _ as *mut _, len);
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
-
-    // setup clocks & watchdog
-    let clock_control = ClockControl::new(
-        dp.RTCCNTL,
-        dp.APB_CTRL,
-        dport_clock_control,
-        esp32_hal::clock_control::XTAL_FREQUENCY_AUTO,
+    writeln!(
+        output,
+        "{:>40}: {:.3}s, {:.3}KB/s, Result: {}",
+        format!(
+            "memcmp: {} {} {}",
+            (dst as *const _ as usize) % core::mem::size_of::<usize>(),
+            (src as *const _ as usize) % core::mem::size_of::<usize>(),
+            len
+        ),
+        time,
+        (len * REPEAT) as f32 / time / 1024.0,
+        cmp_res
     )
     .unwrap();
 
-    let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
-
-    watchdog.start(30.s());
-
-    // setup serial controller
-    let mut uart0 = Serial::uart0(
-        dp.UART0,
-        (NoTx, NoRx),
-        Config::default(),
-        clock_control_config,
-        &mut dport,
-    )
-    .unwrap();
-
-    uart0.change_baudrate(115200).unwrap();
-
-    // print startup message
-    writeln!(uart0, "\n\nReboot!\n",).unwrap();
-
-    const BUF_LEN: usize = 1024 * 64;
-
-    let dst = vec![0u8; BUF_LEN];
-    let mut src = vec![0u8; BUF_LEN];
-
-    print_info!(uart0, dst[0]);
-
-    for i in 0..BUF_LEN {
-        src[i] = i as u8;
-    }
-
-    time(
-        &mut uart0,
-        "memset aligned, sized 4 bytes",
-        BUF_LEN,
-        &|| unsafe {
-            esp32_hal::mem::memset(&(dst[0]) as *const _ as *mut _, 0, BUF_LEN);
-        },
-    );
-
-    time(&mut uart0, "memset aligned", BUF_LEN, &|| unsafe {
-        esp32_hal::mem::memset(&(dst[0]) as *const _ as *mut _, 0, BUF_LEN - 1);
-    });
-
-    time(&mut uart0, "memset", BUF_LEN, &|| unsafe {
-        esp32_hal::mem::memset(&(dst[1]) as *const _ as *mut _, 0, BUF_LEN - 1);
-    });
-
-    time(
-        &mut uart0,
-        "memcpy aligned, sized 4 bytes",
-        BUF_LEN,
-        &|| unsafe {
-            esp32_hal::mem::memcpy(
-                &(dst[0]) as *const _ as *mut _,
-                &(src[0]) as *const _ as *mut _,
-                BUF_LEN,
-            );
-        },
-    );
-
-    writeln!(uart0, "Result: {:?}", unsafe {
-        esp32_hal::mem::memcmp(
-            &(dst[0]) as *const _ as *mut _,
-            &(src[0]) as *const _ as *mut _,
-            BUF_LEN,
-        )
-    })
-    .unwrap();
-    unsafe {
-        esp32_hal::mem::memset(&(dst[0]) as *const _ as *mut _, 0, BUF_LEN);
-    }
-
-    time(
-        &mut uart0,
-        "memcpy aligned 4 bytes",
-        BUF_LEN - 1,
-        &|| unsafe {
-            esp32_hal::mem::memcpy(
-                &(dst[0]) as *const _ as *mut _,
-                &(src[0]) as *const _ as *mut _,
-                BUF_LEN - 1,
-            );
-        },
-    );
-
-    writeln!(uart0, "Result: {:?}", unsafe {
-        esp32_hal::mem::memcmp(
-            &(dst[0]) as *const _ as *mut _,
-            &(src[0]) as *const _ as *mut _,
-            BUF_LEN - 1,
-        )
-    })
-    .unwrap();
-    unsafe {
-        esp32_hal::mem::memset(&(dst[0]) as *const _ as *mut _, 0, BUF_LEN);
-    }
-
-    time(
-        &mut uart0,
-        "memcpy aligned src 4 bytes",
-        BUF_LEN,
-        &|| unsafe {
-            esp32_hal::mem::memcpy(
-                &(dst[1]) as *const _ as *mut _,
-                &(src[0]) as *const _ as *mut _,
-                BUF_LEN - 1,
-            );
-        },
-    );
-
-    writeln!(uart0, "Result: {:?}", unsafe {
-        esp32_hal::mem::memcmp(
-            &(dst[1]) as *const _ as *mut _,
-            &(src[0]) as *const _ as *mut _,
-            BUF_LEN - 1,
-        )
-    })
-    .unwrap();
-    unsafe {
-        esp32_hal::mem::memset(&(dst[0]) as *const _ as *mut _, 0, BUF_LEN);
-    }
-
-    time(
-        &mut uart0,
-        "memcpy aligned dst 4 bytes",
-        BUF_LEN,
-        &|| unsafe {
-            esp32_hal::mem::memcpy(
-                &(dst[0]) as *const _ as *mut _,
-                &(src[1]) as *const _ as *mut _,
-                BUF_LEN - 1,
-            );
-        },
-    );
-
-    writeln!(uart0, "Result: {:?}", unsafe {
-        esp32_hal::mem::memcmp(
-            &(dst[0]) as *const _ as *mut _,
-            &(src[1]) as *const _ as *mut _,
-            BUF_LEN - 1,
-        )
-    })
-    .unwrap();
-    unsafe {
-        esp32_hal::mem::memset(&(dst[0]) as *const _ as *mut _, 0, BUF_LEN);
-    }
-
-    loop {
-        sleep(1.s());
-        writeln!(uart0, "Alive and waiting for watchdog reset").unwrap();
-    }
+    memset(dst as *const _ as *mut _, 0, len);
 }
 
 const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
