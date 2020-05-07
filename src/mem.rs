@@ -4,6 +4,17 @@
 //! do not use word sized aligned instructions, which is slow and moreover leads to crashes
 //! when using IRAM (which only allows aligned accesses).
 //!
+//! Implementation is optimized for large blocks of data. Assumption is that for small data,
+//! they are inlined by the compiler.
+//!
+//! Implementation is optimized when dst/s1 and src/s2 have the same alignment.
+//! If alignment of s1 and s2 is unequal, then either s1 or s2 accesses are not aligned
+//! resulting in slower performance. (If s1 or s2 is aligned, then those accesses are aligned.)
+//!
+//! Further optimization is possible by having dedicated code path for unaligned accesses,
+//! which uses 2*PTR_SIZE to PTR_SIZE shift operation (i.e. llvm.fshr);
+//! but implementation of this intrinsic is not well optimized on all platforms.
+//!
 #[allow(warnings)]
 #[cfg(target_pointer_width = "64")]
 type c_int = u64;
@@ -14,84 +25,20 @@ type c_int = u16;
 #[cfg(not(any(target_pointer_width = "16", target_pointer_width = "64")))]
 type c_int = u32;
 
+use core::mem::size_of;
+
 const PTR_SIZE: usize = size_of::<c_int>();
 
-use core::mem::size_of;
-use core::slice::{from_raw_parts, from_raw_parts_mut};
+// below CHUNK sizes
+const CHUNK_SIZES_MEMCPY: [usize; 3] = [32, 4, 1]; // bigger chunks will not be unrolled
+const CHUNK_SIZES_MEMSET: [usize; 3] = [64, 8, 1]; // bigger chunks will not be unrolled
+const CHUNK_SIZES_MEMCMP: [usize; 2] = [8, 1]; // bigger chunks require long jumps
 
+/// Copies n-bytes of data from src to dst
+///
+/// If data overlaps and src < dst, the data will be corrupted.
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memcpy(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
-    let mut i = 0;
-
-    if n > PTR_SIZE {
-        let start_bytes_dst = (dst as usize).wrapping_neg() % PTR_SIZE;
-        let start_bytes_src = (src as usize).wrapping_neg() % PTR_SIZE;
-
-        // copy initial bytes to make either src or dst aligned
-        while i < n && i < start_bytes_dst && i < start_bytes_src {
-            *dst.offset(i as isize) = *src.offset(i as isize);
-            i += 1;
-        }
-
-        // copy per word
-        while i <= n - PTR_SIZE {
-            *(dst.offset(i as isize) as *mut c_int) = *(src.offset(i as isize) as *mut c_int);
-            i += PTR_SIZE;
-        }
-    }
-
-    // copy remaining bytes
-    while i < n {
-        *dst.offset(i as isize) = *src.offset(i as isize);
-        i += 1;
-    }
-    dst
-}
-
-extern "C" {
-    #[link_name = "llvm.fshr.u32"]
-    fn fshr_u32_backup2(a: u32, b: u32, n: u32) -> u32;
-}
-
-fn fshr_u32_backup(a: u32, b: u32, n: u32) -> u32 {
-    let z;
-    unsafe {
-        asm!("
-            ssr $3
-            src $0,$1,$2
-        "
-            : "=r" (z)
-            : "r" (a), "r" (b), "r" (n)
-        );
-    };
-    z
-}
-
-fn fshr_u32(a: u32, b: u32, n: u32) -> u32 {
-    (a << (32 - n)) | (b >> n)
-}
-
-#[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memcpy_fast_chunk(mut dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
-    // fast paths for small n
-    if core::intrinsics::likely(n == PTR_SIZE) {
-        *(dst as *mut c_int) = *(src as *mut c_int);
-        return dst;
-    } else if PTR_SIZE > 4 && n == 4 {
-        *(dst as *mut u32) = *(src as *mut u32);
-        return dst;
-    } else if PTR_SIZE > 2 && n == 2 {
-        *(dst as *mut u16) = *(src as *mut u16);
-        return dst;
-    } else if PTR_SIZE > 1 && n == 1 {
-        *(dst as *mut u8) = *(src as *mut u8);
-        return dst;
-    } else if PTR_SIZE > 3 && n == 3 {
-        *(dst as *mut u16) = *(src as *mut u16);
-        *dst.wrapping_add(2) = *src.wrapping_add(2);
-        return dst;
-    }
-
+pub unsafe extern "C" fn memcpy(mut dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     let src_off = (src as usize).wrapping_sub(dst as usize);
 
     // select minimum of src or dst alignment
@@ -100,115 +47,102 @@ pub unsafe extern "C" fn memcpy_fast_chunk(mut dst: *mut u8, src: *const u8, n: 
 
     let end = dst.wrapping_add(n);
 
-    if dst_align == src_align {
-        // handle copy with same alignment offset
+    let min_align = core::cmp::min(dst_align, src_align);
+    let core = dst.wrapping_add(min_align);
 
-        let min_align = core::cmp::min(dst_align, src_align);
-        let core = dst.wrapping_add(min_align);
-
-        // fill initial non-aligned bytes
-        while dst < core {
-            *dst = *dst.wrapping_add(src_off);
-            dst = dst.wrapping_add(1);
-            if dst >= end {
-                return dst;
-            }
+    // copy initial non-aligned bytes
+    while dst < core {
+        *dst = *dst.wrapping_add(src_off);
+        dst = dst.wrapping_add(1);
+        if dst >= end {
+            return dst;
         }
-
-        // copy the core bytes in fixed size chunks: this allows loop unrolling
-        // don't use too many different chunk sizes: need to fall through them before reaching
-        // single c_int
-        const CHUNK_SIZES: [usize; 3] = [32, 4, 1];
-        for chunk_size in &CHUNK_SIZES {
-            while dst <= end.wrapping_sub(*chunk_size * PTR_SIZE) {
-                // keep loop as tight as possible for maximum speed
-                for i in 0..*chunk_size {
-                    *(dst as *mut c_int).wrapping_add(i) =
-                        *(dst.wrapping_add(src_off) as *mut c_int).wrapping_add(i);
-                }
-                dst = dst.wrapping_add(*chunk_size * PTR_SIZE);
-            }
-        }
-
-        // fill final non-aligned bytes
-        while dst < end {
-            *dst = *dst.wrapping_add(src_off);
-            dst = dst.wrapping_add(1);
-        }
-
-        return dst;
-    } else {
-        // handle copy with different alignment offset
-
-        let core = dst.wrapping_add(dst_align);
-
-        // fill initial non-aligned bytes
-        while dst < core {
-            *dst = *dst.wrapping_add(src_off);
-            dst = dst.wrapping_add(1);
-            if dst >= end {
-                return dst;
-            }
-        }
-
-        //     src.wrapping_add(dst_align).align_offset(PTR_SIZE);
-
-        let mut prev_source = *(dst.wrapping_add(src_off) as *mut c_int);
-
-        let off = (src_align - dst_align) * 8;
-
-        // copy the core bytes in fixed size chunks: this allows loop unrolling
-        // don't use too many different chunk sizes: need to fall through them before reaching
-        // single c_int
-        const CHUNK_SIZES: [usize; 3] = [32, 4, 1];
-        for chunk_size in &CHUNK_SIZES {
-            while dst <= end.wrapping_sub(*chunk_size * PTR_SIZE) {
-                // keep loop as tight as possible for maximum speed
-                for i in 0..*chunk_size {
-                    let source = *(dst.wrapping_add(src_off) as *mut c_int).wrapping_add(i);
-                    *(dst as *mut c_int).wrapping_add(i) =
-                        fshr_u32(prev_source, source, off as u32);
-                    //                    *(dst as *mut c_int).wrapping_add(i) =
-                    //                        (((prev_source as u32) << (32 - off)) | ((source as u32) >> off)) as i32;
-                    prev_source = source;
-                }
-                dst = dst.wrapping_add(*chunk_size * PTR_SIZE);
-            }
-        }
-
-        return dst;
     }
+
+    // copy the core bytes in fixed size chunks: this allows loop unrolling
+    // don't use too many different chunk sizes: need to fall through them before reaching
+    // single c_int
+    for chunk_size in &CHUNK_SIZES_MEMCPY {
+        while dst <= end.wrapping_sub(*chunk_size * PTR_SIZE) {
+            // keep loop as tight as possible for maximum speed
+            // while instead of for in range, as for in range calls memcpy in debug mode,
+            // so we get infinite recursion
+            let mut i = 0;
+            while i < *chunk_size {
+                *(dst as *mut c_int).wrapping_add(i) =
+                    *(dst.wrapping_add(src_off) as *mut c_int).wrapping_add(i);
+                i = i + 1;
+            }
+            dst = dst.wrapping_add(*chunk_size * PTR_SIZE);
+        }
+    }
+
+    // copy final non-aligned bytes
+    while dst < end {
+        *dst = *dst.wrapping_add(src_off);
+        dst = dst.wrapping_add(1);
+    }
+
+    return dst;
 }
 
+/// Copies n-bytes of data from src to dst
+///
+/// If data overlaps and src > dst, the data will be corrupted.
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn memcpy_reverse(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
-    let mut i = n;
+    let src_off = (src as usize).wrapping_sub(dst as usize);
 
-    if n > PTR_SIZE {
-        let end_byte_dst = n - ((dst as usize) + n) % PTR_SIZE;
-        let end_byte_src = n - ((src as usize) + n) % PTR_SIZE;
+    // select minimum of src or dst alignment
+    let dst_end_align = (dst.wrapping_add(n) as usize) % PTR_SIZE;
+    let src_end_align = (src.wrapping_add(n) as usize) % PTR_SIZE;
 
-        // copy initial bytes to make either src or dst aligned
-        while i != 0 && i > end_byte_dst && i > end_byte_src {
-            i -= 1;
-            *dst.offset(i as isize) = *src.offset(i as isize);
-        }
+    let min_align = core::cmp::min(dst_end_align, src_end_align);
+    let core = dst.wrapping_add(n).wrapping_sub(min_align);
 
-        // copy per word
-        while i >= PTR_SIZE {
-            i -= PTR_SIZE;
-            *(dst.offset(i as isize) as *mut c_int) = *(src.offset(i as isize) as *mut c_int);
+    let mut cur = dst.wrapping_add(n);
+
+    // copy initial non-aligned bytes
+    while cur > core {
+        cur = cur.wrapping_sub(1);
+        *cur = *cur.wrapping_add(src_off);
+        if cur == dst {
+            return dst;
         }
     }
 
-    // copy per byte
-    while i != 0 {
-        i -= 1;
-        *dst.offset(i as isize) = *src.offset(i as isize);
+    // copy the core bytes in fixed size chunks: this allows loop unrolling
+    // don't use too many different chunk sizes: need to fall through them before reaching
+    // single c_int
+    for chunk_size in &CHUNK_SIZES_MEMCPY {
+        while cur >= dst.wrapping_add(*chunk_size * PTR_SIZE) {
+            cur = cur.wrapping_sub(*chunk_size * PTR_SIZE);
+
+            // keep loop as tight as possible for maximum speed
+            // while instead of for in range, as for in range calls memcpy in debug mode,
+            // so we get infinite recursion
+            //
+            // current llvm optimization is not perfect: uses add with negative offset + store,
+            // instead of store with positive offset; so 3 instructions per loop instead of 2
+            let mut i = *chunk_size;
+            while i > 0 {
+                i = i - 1;
+                *(cur as *mut c_int).wrapping_add(i) =
+                    *(cur.wrapping_add(src_off) as *mut c_int).wrapping_add(i);
+            }
+        }
     }
-    dst
+
+    // copy final non-aligned bytes
+    while cur > dst {
+        cur = cur.wrapping_sub(1);
+        *cur = *cur.wrapping_add(src_off);
+    }
+
+    return dst;
 }
 
+/// Copies n-bytes of data from src to dst and properly handles overlapping data
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn memmove(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
     if src < dst as *const u8 {
@@ -218,67 +152,7 @@ pub unsafe extern "C" fn memmove(dst: *mut u8, src: *const u8, n: usize) -> *mut
     }
 }
 
-#[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memset_old(s: *mut u8, c: c_int, n: usize) -> *mut u8 {
-    let start_bytes = (s as usize).wrapping_neg() % PTR_SIZE;
-    let mut i = 0;
-
-    // fill initial non-aligned bytes
-    while i < start_bytes && i < n {
-        *s.offset(i as isize) = c as u8;
-        i += 1;
-    }
-
-    if i < n {
-        let end_c_int = n - ((s as usize + n) % PTR_SIZE);
-
-        // fill aligned in c_int sized steps
-        while i < end_c_int {
-            *(s.offset(i as isize) as *mut c_int) = c_int::from_ne_bytes([c as u8; PTR_SIZE]);
-            i += PTR_SIZE;
-        }
-        // fill remaining non-aligned bytes
-        while i < n {
-            *s.offset(i as isize) = c as u8;
-            i += 1;
-        }
-    }
-
-    s
-}
-
-#[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memset_old2(s: *mut u8, c: c_int, n: usize) -> *mut u8 {
-    // get unaligned pre- and postfix, set these as bytes, core as c_int
-    let (prefix, mut core, postfix) = core::slice::from_raw_parts_mut(s, n).align_to_mut::<c_int>();
-
-    for x in prefix {
-        *x = c as u8;
-    }
-
-    const CHUNK_SIZES: [usize; 3] = [64, 8, 1];
-
-    // Handle the core in chunk sizes: this allows loop unrolling, which greatly improves speed.
-    // On xtensa-lx6 a loop needs at minimum 2 instructions (add and conditional jump) + 2 cycles
-    // branch overhead. So when copying per single word only 20% is actual write instructions,
-    // with 64 words per loop this is ~ 90% (extra instruction needed for long jump)
-    for chunk_size in &CHUNK_SIZES {
-        let mut chunks = core.chunks_exact_mut(*chunk_size);
-        for chunk in chunks.by_ref() {
-            for i in 0..*chunk_size {
-                chunk[i] = c_int::from_ne_bytes([c as u8; PTR_SIZE]);
-            }
-        }
-        core = chunks.into_remainder();
-    }
-
-    for x in postfix {
-        *x = c as u8;
-    }
-
-    s
-}
-
+/// Fills n-bytes with byte sized value
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn memset(mut s: *mut u8, c: c_int, n: usize) -> *mut u8 {
     let end = s.wrapping_add(n);
@@ -293,14 +167,17 @@ pub unsafe extern "C" fn memset(mut s: *mut u8, c: c_int, n: usize) -> *mut u8 {
         }
     }
 
-    // copy the core bytes in fixed size chunks: this allows loop unrolling
+    // set the core bytes in fixed size chunks: this allows loop unrolling
     // don't use too many different chunk sizes: need to fall through them before reaching
     // single c_int
-    const CHUNK_SIZES: [usize; 3] = [64, 8, 1];
-    for chunk_size in &CHUNK_SIZES {
+    for chunk_size in &CHUNK_SIZES_MEMSET {
         while s <= end.wrapping_sub(*chunk_size * PTR_SIZE) {
-            for i in 0..*chunk_size {
+            // while instead of for in range, as for in range calls memcpy in debug mode,
+            // so we get infinite recursion
+            let mut i = 0;
+            while i < *chunk_size {
                 *(s as *mut c_int).wrapping_add(i) = c_int::from_ne_bytes([c as u8; PTR_SIZE]);
+                i = i + 1;
             }
             s = s.wrapping_add(*chunk_size * PTR_SIZE);
         }
@@ -315,67 +192,128 @@ pub unsafe extern "C" fn memset(mut s: *mut u8, c: c_int, n: usize) -> *mut u8 {
     s
 }
 
+/// Compare n-bytes of data from s1 and s2 and returns <0 for s1<s2, 0 for s1=s2 and >0 for s1>s2
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memcpy_chunk(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
-    let src_off = (src as usize).wrapping_sub(dst as usize);
-    let dst = from_raw_parts_mut(dst, n);
+pub unsafe extern "C" fn memcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i32 {
+    let s2_off = (s2 as usize).wrapping_sub(s1 as usize);
 
-    // get unaligned pre- and postfix, set these as bytes, core as c_int
-    let (dst_prefix, mut dst_core, dst_postfix) = dst.align_to_mut::<c_int>();
+    // select minimum of s2 or s1 alignment
+    let s1_align = s1.align_offset(PTR_SIZE);
+    let s2_align = s2.align_offset(PTR_SIZE);
 
-    for d in dst_prefix {
-        *d = *(d as *const u8).wrapping_add(src_off);
-    }
+    let end = s1.wrapping_add(n);
 
-    const CHUNK_SIZES: [usize; 6] = [32, 16, 8, 4, 2, 1];
+    let min_align = core::cmp::min(s1_align, s2_align);
+    let core = s1.wrapping_add(min_align);
 
-    for chunk_size in &CHUNK_SIZES {
-        let mut chunks = dst_core.chunks_exact_mut(*chunk_size);
-        for chunk in chunks.by_ref() {
-            let source =
-                ((&chunk[0] as *const u32 as *const u8).wrapping_add(src_off)) as *const c_int;
-            for i in 0..*chunk_size {
-                chunk[i] = *source.add(i);
-            }
+    // compare initial non-aligned bytes
+    while s1 < core {
+        let res = *s1 - *s1.wrapping_add(s2_off);
+        if res != 0 {
+            return res as i8 as i32;
         }
-        dst_core = chunks.into_remainder();
-    }
-    for d in dst_postfix {
-        *d = *(d as *const u8).wrapping_add(src_off);
+        s1 = s1.wrapping_add(1);
+        if s1 >= end {
+            return 0;
+        }
     }
 
-    dst.as_mut_ptr()
+    // compare the core bytes in fixed size chunks: this allows loop unrolling
+    // don't use too many different chunk sizes: need to fall through them before reaching
+    // single c_int
+    for chunk_size in &CHUNK_SIZES_MEMCMP {
+        while s1 <= end.wrapping_sub(*chunk_size * PTR_SIZE) {
+            // keep loop as tight as possible for maximum speed
+            // while instead of for in range, as for in range calls memcpy in debug mode,
+            // so we get infinite recursion
+            let mut i = 0;
+            while i < *chunk_size {
+                let res = *(s1 as *mut c_int).wrapping_add(i)
+                    - *(s1.wrapping_add(s2_off) as *mut c_int).wrapping_add(i);
+                if res != 0 {
+                    let mut j = 0;
+                    while j < 4 {
+                        let res = *((s1 as *mut c_int).wrapping_add(i) as *mut u8).wrapping_add(j)
+                            - *((s1.wrapping_add(s2_off) as *mut c_int).wrapping_add(i) as *mut u8)
+                                .wrapping_add(j);
+                        if res != 0 {
+                            return res as i8 as i32;
+                        }
+                        j = j + 1;
+                    }
+                    unreachable!();
+                }
+                i = i + 1;
+            }
+            s1 = s1.wrapping_add(*chunk_size * PTR_SIZE);
+        }
+    }
+
+    // compare final non-aligned bytes
+    while s1 < end {
+        let res = *s1 - *s1.wrapping_add(s2_off);
+        if res != 0 {
+            return res as i8 as i32;
+        }
+        s1 = s1.wrapping_add(1);
+    }
+
+    return 0;
 }
 
+/// Compare n-bytes of data from s1 and s2 and returns 0 for s1==s2 and !=0 otherwise
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
-    let mut i = 0;
+pub unsafe extern "C" fn bcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i32 {
+    let s2_off = (s2 as usize).wrapping_sub(s1 as usize);
 
-    // copy per word (not necessarily aligned: does not matter for performance on esp32)
-    while i + PTR_SIZE <= n {
-        let a = *(s1.offset(i as isize) as *const [u8; PTR_SIZE]);
-        let b = *(s2.offset(i as isize) as *const [u8; PTR_SIZE]);
-        for i in 0..=3 {
-            if a[i] != b[i] {
-                return a[i] as i32 - b[i] as i32;
+    // select minimum of s2 or s1 alignment
+    let s1_align = s1.align_offset(PTR_SIZE);
+    let s2_align = s2.align_offset(PTR_SIZE);
+
+    let end = s1.wrapping_add(n);
+
+    let min_align = core::cmp::min(s1_align, s2_align);
+    let core = s1.wrapping_add(min_align);
+
+    // compare initial non-aligned bytes
+    while s1 < core {
+        if *s1 != *s1.wrapping_add(s2_off) {
+            return 1;
+        }
+        s1 = s1.wrapping_add(1);
+        if s1 >= end {
+            return 0;
+        }
+    }
+
+    // compare the core bytes in fixed size chunks: this allows loop unrolling
+    // don't use too many different chunk sizes: need to fall through them before reaching
+    // single c_int
+    for chunk_size in &CHUNK_SIZES_MEMCMP {
+        while s1 <= end.wrapping_sub(*chunk_size * PTR_SIZE) {
+            // keep loop as tight as possible for maximum speed
+            // while instead of for in range, as for in range calls memcpy in debug mode,
+            // so we get infinite recursion
+            let mut i = 0;
+            while i < *chunk_size {
+                if *(s1 as *mut c_int).wrapping_add(i)
+                    != *(s1.wrapping_add(s2_off) as *mut c_int).wrapping_add(i)
+                {
+                    return 1;
+                }
+                i = i + 1;
             }
+            s1 = s1.wrapping_add(*chunk_size * PTR_SIZE);
         }
-        i += PTR_SIZE;
     }
 
-    // compare per byte
-    while i < n {
-        let a = *s1.offset(i as isize);
-        let b = *s2.offset(i as isize);
-        if a != b {
-            return a as i32 - b as i32;
+    // compare final non-aligned bytes
+    while s1 < end {
+        if *s1 != *s1.wrapping_add(s2_off) {
+            return 1;
         }
-        i += 1;
+        s1 = s1.wrapping_add(1);
     }
-    0
-}
 
-#[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
-pub unsafe extern "C" fn bcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
-    memcmp(s1, s2, n)
+    return 0;
 }

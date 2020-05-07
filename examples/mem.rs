@@ -13,7 +13,7 @@ use esp32_hal::alloc::{Allocator, DRAM_ALLOCATOR};
 use esp32_hal::clock_control::{sleep, CPUSource::PLL, ClockControl, ClockControlConfig};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
-use esp32_hal::mem::{memcmp, memcpy, memcpy_reverse, memset};
+use esp32_hal::mem::{bcmp, memcmp, memcpy, memcpy_reverse, memmove, memset};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 
 #[macro_use]
@@ -56,7 +56,7 @@ fn main() -> ! {
 
     let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
 
-    watchdog.start(30.s());
+    watchdog.start(180.s());
 
     // setup serial controller
     let mut uart0 = Serial::uart0(
@@ -118,8 +118,9 @@ fn main() -> ! {
     }
 }
 
+const REPEAT: usize = 1000;
+
 fn time(output: &mut dyn core::fmt::Write, text: &str, bytes: usize, f: &dyn Fn() -> ()) {
-    const REPEAT: usize = 100;
     let start = xtensa_lx6_rt::get_cycle_count();
     for _ in 0..REPEAT {
         f();
@@ -144,14 +145,13 @@ unsafe fn time_memcpy(
     len: usize,
     f: unsafe extern "C" fn(dst: *mut u8, src: *const u8, n: usize) -> *mut u8,
 ) {
-    const REPEAT: usize = 100;
     let start = xtensa_lx6_rt::get_cycle_count();
     for _ in 0..REPEAT {
         f(dst as *const _ as *mut _, src as *const _ as *mut _, len);
     }
     let end = xtensa_lx6_rt::get_cycle_count();
 
-    let time = (end - start) as f32 / ClockControlConfig {}.cpu_frequency().0 as f32;
+    let time = end.wrapping_sub(start) as f32 / ClockControlConfig {}.cpu_frequency().0 as f32;
 
     let cmp_res = memcmp(dst as *const _ as *mut _, src as *const _ as *mut _, len);
 
@@ -159,7 +159,7 @@ unsafe fn time_memcpy(
         output,
         "{:>40}: {:.3}s, {:.3}KB/s, Result: {}",
         format!(
-            "memcmp: {} {} {}",
+            "memcpy: {} {} {}",
             (dst as *const _ as usize) % core::mem::size_of::<usize>(),
             (src as *const _ as usize) % core::mem::size_of::<usize>(),
             len

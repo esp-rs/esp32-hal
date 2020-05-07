@@ -18,8 +18,6 @@
 #![feature(const_fn)]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
 #![cfg_attr(feature = "alloc", feature(alloc_layout_extra))]
-#![cfg_attr(feature = "mem", no_builtins)]
-#![cfg_attr(feature = "mem", feature(core_intrinsics))]
 
 pub use embedded_hal as hal;
 pub use esp32;
