@@ -5,7 +5,8 @@
 //! when using IRAM (which only allows aligned accesses).
 //!
 //! Implementation is optimized for large blocks of data. Assumption is that for small data,
-//! they are inlined by the compiler.
+//! they are inlined by the compiler. Some optimization done for often small sizes as
+//! otherwise lot of slowdown in debug mode.
 //!
 //! Implementation is optimized when dst/s1 and src/s2 have the same alignment.
 //! If alignment of s1 and s2 is unequal, then either s1 or s2 accesses are not aligned
@@ -39,6 +40,25 @@ const CHUNK_SIZES_MEMCMP: [usize; 2] = [8, 1]; // bigger chunks require long jum
 /// If data overlaps and src < dst, the data will be corrupted.
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn memcpy(mut dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    // fast paths for small n
+    if n == PTR_SIZE {
+        *(dst as *mut c_int) = *(src as *mut c_int);
+        return dst;
+    } else if PTR_SIZE > 4 && n == 4 {
+        *(dst as *mut u32) = *(src as *mut u32);
+        return dst;
+    } else if PTR_SIZE > 2 && n == 2 {
+        *(dst as *mut u16) = *(src as *mut u16);
+        return dst;
+    } else if PTR_SIZE > 1 && n == 1 {
+        *(dst as *mut u8) = *(src as *mut u8);
+        return dst;
+    } else if PTR_SIZE > 3 && n == 3 {
+        *(dst as *mut u16) = *(src as *mut u16);
+        *dst.wrapping_add(2) = *src.wrapping_add(2);
+        return dst;
+    }
+
     let src_off = (src as usize).wrapping_sub(dst as usize);
 
     // select minimum of src or dst alignment
@@ -91,6 +111,25 @@ pub unsafe extern "C" fn memcpy(mut dst: *mut u8, src: *const u8, n: usize) -> *
 /// If data overlaps and src > dst, the data will be corrupted.
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn memcpy_reverse(dst: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    // fast paths for small n
+    if n == PTR_SIZE {
+        *(dst as *mut c_int) = *(src as *mut c_int);
+        return dst;
+    } else if PTR_SIZE > 4 && n == 4 {
+        *(dst as *mut u32) = *(src as *mut u32);
+        return dst;
+    } else if PTR_SIZE > 2 && n == 2 {
+        *(dst as *mut u16) = *(src as *mut u16);
+        return dst;
+    } else if PTR_SIZE > 1 && n == 1 {
+        *(dst as *mut u8) = *(src as *mut u8);
+        return dst;
+    } else if PTR_SIZE > 3 && n == 3 {
+        *dst.wrapping_add(2) = *src.wrapping_add(2);
+        *(dst as *mut u16) = *(src as *mut u16);
+        return dst;
+    }
+
     let src_off = (src as usize).wrapping_sub(dst as usize);
 
     // select minimum of src or dst alignment
@@ -155,6 +194,25 @@ pub unsafe extern "C" fn memmove(dst: *mut u8, src: *const u8, n: usize) -> *mut
 /// Fills n-bytes with byte sized value
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn memset(mut s: *mut u8, c: c_int, n: usize) -> *mut u8 {
+    // fast paths for small n
+    if n == PTR_SIZE {
+        *(s as *mut c_int) = c_int::from_ne_bytes([c as u8; PTR_SIZE]);
+        return s;
+    } else if PTR_SIZE > 4 && n == 4 {
+        *(s as *mut u32) = u32::from_ne_bytes([c as u8; 4]);
+        return s;
+    } else if PTR_SIZE > 2 && n == 2 {
+        *(s as *mut u16) = u16::from_ne_bytes([c as u8; 2]);
+        return s;
+    } else if PTR_SIZE > 1 && n == 1 {
+        *(s as *mut u8) = c as u8;
+        return s;
+    } else if PTR_SIZE > 3 && n == 3 {
+        *(s as *mut u16) = u16::from_ne_bytes([c as u8; 2]);
+        *s.wrapping_add(2) = c as u8;
+        return s;
+    }
+
     let end = s.wrapping_add(n);
     let core = s.wrapping_add(s.align_offset(PTR_SIZE));
 
@@ -197,11 +255,23 @@ pub unsafe extern "C" fn memset(mut s: *mut u8, c: c_int, n: usize) -> *mut u8 {
 pub unsafe extern "C" fn memcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i32 {
     let s2_off = (s2 as usize).wrapping_sub(s1 as usize);
 
+    let end = s1.wrapping_add(n);
+
+    // fast path for small n
+    if n <= PTR_SIZE {
+        while s1 < end {
+            let res = *s1 - *s1.wrapping_add(s2_off);
+            if res != 0 {
+                return res as i8 as i32;
+            }
+            s1 = s1.wrapping_add(1);
+        }
+        return 0;
+    }
+
     // select minimum of s2 or s1 alignment
     let s1_align = s1.align_offset(PTR_SIZE);
     let s2_align = s2.align_offset(PTR_SIZE);
-
-    let end = s1.wrapping_add(n);
 
     let min_align = core::cmp::min(s1_align, s2_align);
     let core = s1.wrapping_add(min_align);
@@ -264,6 +334,20 @@ pub unsafe extern "C" fn memcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i
 /// Compare n-bytes of data from s1 and s2 and returns 0 for s1==s2 and !=0 otherwise
 #[cfg_attr(all(feature = "mem", not(feature = "mangled-names")), no_mangle)]
 pub unsafe extern "C" fn bcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i32 {
+    // fast paths for small n
+    if n == PTR_SIZE {
+        return (*(s1 as *const c_int) != *(s2 as *const c_int)) as i32;
+    } else if PTR_SIZE > 4 && n == 4 {
+        return (*(s1 as *const u32) != *(s2 as *const u32)) as i32;
+    } else if PTR_SIZE > 2 && n == 2 {
+        return (*(s1 as *const u16) != *(s2 as *const u16)) as i32;
+    } else if PTR_SIZE > 1 && n == 1 {
+        return (*(s1 as *const u8) != *(s2 as *const u8)) as i32;
+    } else if PTR_SIZE > 3 && n == 3 {
+        return (*(s1 as *const u16) != *(s2 as *const u16)
+            || *s1.wrapping_add(1) != *s2.wrapping_add(1)) as i32;
+    }
+
     let s2_off = (s2 as usize).wrapping_sub(s1 as usize);
 
     // select minimum of s2 or s1 alignment
@@ -278,11 +362,11 @@ pub unsafe extern "C" fn bcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i32
     // compare initial non-aligned bytes
     while s1 < core {
         if *s1 != *s1.wrapping_add(s2_off) {
-            return 1;
+            return true as i32;
         }
         s1 = s1.wrapping_add(1);
         if s1 >= end {
-            return 0;
+            return false as i32;
         }
     }
 
@@ -299,7 +383,7 @@ pub unsafe extern "C" fn bcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i32
                 if *(s1 as *mut c_int).wrapping_add(i)
                     != *(s1.wrapping_add(s2_off) as *mut c_int).wrapping_add(i)
                 {
-                    return 1;
+                    return true as i32;
                 }
                 i = i + 1;
             }
@@ -310,10 +394,10 @@ pub unsafe extern "C" fn bcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i32
     // compare final non-aligned bytes
     while s1 < end {
         if *s1 != *s1.wrapping_add(s2_off) {
-            return 1;
+            return true as i32;
         }
         s1 = s1.wrapping_add(1);
     }
 
-    return 0;
+    return false as i32;
 }
