@@ -11,7 +11,9 @@ use esp32_hal::prelude::*;
 use alloc::raw_vec::RawVec;
 #[cfg(feature = "external_ram")]
 use esp32_hal::alloc::EXTERNAL_ALLOCATOR;
-use esp32_hal::alloc::{Allocator, DEFAULT_ALLOCATOR, DRAM_ALLOCATOR, IRAM_ALLOCATOR};
+use esp32_hal::alloc::{
+    Allocator, AllocatorSize, DEFAULT_ALLOCATOR, DRAM_ALLOCATOR, IRAM_ALLOCATOR,
+};
 
 use esp32_hal::clock_control::{sleep, ClockControl};
 use esp32_hal::dport::Split;
@@ -86,13 +88,15 @@ fn main() -> ! {
     // print startup message
     writeln!(uart0, "\n\nReboot!\n",).unwrap();
 
-    let global_initialized_vec_unique = vec![1, 2, 3];
-    print_info!(uart0, global_initialized_vec_unique[0]);
-
-    let global_initialized_vec_same = vec![0xabu8; 12];
-    print_info!(uart0, global_initialized_vec_same[0]);
-
     unsafe {
+        print_heap_info(&mut uart0);
+
+        let global_initialized_vec_unique = vec![1, 2, 3];
+        print_info!(uart0, global_initialized_vec_unique[0]);
+
+        let global_initialized_vec_same = vec![0x23u8; 12];
+        print_info!(uart0, global_initialized_vec_same[0]);
+
         let dram_rawvec: RawVec<u8, _> = RawVec::with_capacity_in(50, DRAM_ALLOCATOR);
         print_info!(uart0, *dram_rawvec.ptr());
 
@@ -101,9 +105,12 @@ fn main() -> ! {
 
         #[cfg(feature = "external_ram")]
         {
-            crate::dprintln!("External RAM size: {}", unsafe {
+            writeln!(
+                uart0,
+                "\nExternal RAM size: {}\n",
                 esp32_hal::external_ram::get_size()
-            });
+            )
+            .unwrap();
 
             let global_initialized_vec_large = vec![0u8; 1024 * 1024];
             print_info!(uart0, global_initialized_vec_large[0]);
@@ -111,6 +118,12 @@ fn main() -> ! {
             let external_ram_rawvec: RawVec<u8, _> =
                 RawVec::with_capacity_in(50, EXTERNAL_ALLOCATOR);
             print_info!(uart0, *external_ram_rawvec.ptr());
+
+            print_heap_info(&mut uart0);
+        }
+        #[cfg(not(feature = "external_ram"))]
+        {
+            print_heap_info(&mut uart0);
         }
     }
 
@@ -118,6 +131,28 @@ fn main() -> ! {
         sleep(1.s());
         writeln!(uart0, "Alive and waiting for watchdog reset").unwrap();
     }
+}
+
+fn print_single_heap_info(output: &mut dyn core::fmt::Write, allocator: &Allocator, text: &str) {
+    writeln!(
+        output,
+        "{:>15}: free {:>8.3}KB, used {:>8.3}KB out of {:>8.3}KB",
+        text,
+        allocator.free() as f32 / 1024.0,
+        allocator.used() as f32 / 1024.0,
+        allocator.size() as f32 / 1024.0
+    )
+    .unwrap();
+}
+
+fn print_heap_info(output: &mut dyn core::fmt::Write) {
+    writeln!(output).unwrap();
+    print_single_heap_info(output, &GLOBAL_ALLOCATOR, "Global");
+    print_single_heap_info(output, &DRAM_ALLOCATOR, "DRAM");
+    print_single_heap_info(output, &IRAM_ALLOCATOR, "IRAM");
+    #[cfg(feature = "external_ram")]
+    print_single_heap_info(output, &EXTERNAL_ALLOCATOR, "External RAM");
+    writeln!(output).unwrap();
 }
 
 const WDT_WKEY_VALUE: u32 = 0x50D83AA1;

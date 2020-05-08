@@ -18,8 +18,6 @@
 #![feature(const_fn)]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
 #![cfg_attr(feature = "alloc", feature(alloc_layout_extra))]
-#![cfg_attr(feature = "mem", no_builtins)]
-#![cfg_attr(feature = "mem", feature(core_intrinsics))]
 
 pub use embedded_hal as hal;
 pub use esp32;
@@ -64,6 +62,7 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
         static mut _rtc_slow_bss_start: u32;
         static mut _rtc_slow_bss_end: u32;
 
+        static mut _stack_end_cpu0: u32;
     }
 
     // copying data from flash to various data segments is done by the bootloader
@@ -75,6 +74,9 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
 
     #[cfg(feature = "external_ram")]
     external_ram::init();
+
+    // set stack pointer to end of memory: no need to retain stack up to this point
+    xtensa_lx6_rt::set_stack_pointer(&mut _stack_end_cpu0);
 
     // continue with default reset handler
     xtensa_lx6_rt::Reset();

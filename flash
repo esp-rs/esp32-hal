@@ -135,10 +135,6 @@ else
     EXAMPLE_ARG="--example "$EXAMPLE
 fi
 
-# create links to output binaries for linking with debugger
-ln -sf $(pwd)/$BIN_PATH target/current.elf; 
-ln -sf $(pwd)/$BIN_PATH.bin target/current.bin
-
 # set the release flag
 if [ "$TYPE" = "release" ]
 then 
@@ -150,6 +146,10 @@ fi
 CMD="cargo xbuild $RELEASE $EXAMPLE_ARG"
 
 printf "${STAGE}Building application with $CMD...${RESET}\n\n"
+
+rm target/current.elf 2> /dev/null
+rm target/current.bin 2> /dev/null
+
 
 # get error code of any step of the pipe
 set -o pipefail
@@ -194,6 +194,10 @@ if [ $? -ne 0 ]
 then
     exit 1
 fi
+
+# create links to output binaries for linking with debugger
+ln -sf $(pwd)/$BIN_PATH target/current.elf
+ln -sf $(pwd)/$BIN_PATH.bin target/current.bin
 
 if [[ $SKIPFLASH -ne 1 || $TERMINAL -eq 1 ]]
 then

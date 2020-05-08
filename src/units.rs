@@ -2,7 +2,7 @@
 //!
 //! It provides type safety, easy conversion and limited arithmetic support.
 //!
-//! #Usage
+//! # Usage
 //!
 //! ```
 //! let frequency_mhz_1 = MegaHertz(10);
