@@ -62,7 +62,7 @@
         {
             "label": "Build Documentation",
             "type": "shell",
-            "command": "cargo xdoc --open",
+            "command": "cargo xdoc --open --all-features",
             "problemMatcher": {
                 "base": "$rustc",
                 "fileLocation": [

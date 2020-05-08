@@ -5,6 +5,18 @@
 //! The allocators can be safely used in a mixed fashion. (Including multiple GeneralAllocators
 //! with different thresholds)
 //!
+//! **NOTE: the default implementations of memcpy, memset etc. which are used behind the scenes use
+//! unaligned accesses.** This causes exceptions when used together with IRAM.
+//! The replacements in the mem module do handle alignment properly. They can be enable by
+//! including the following in Cargo.toml:
+//! ```
+//! [package.metadata.cargo-xbuild]
+//! memcpy = false
+//! [features]
+//! mem=[]
+//! ```
+//!
+//!
 //! # TODO:
 //! - Improve underlying heap allocator: support for realloc, speed etc.
 //!

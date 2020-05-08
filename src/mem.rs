@@ -2,20 +2,29 @@
 //!
 //! These are normally part of the compiler-builtins crate. However the default routines
 //! do not use word sized aligned instructions, which is slow and moreover leads to crashes
-//! when using IRAM (which only allows aligned accesses).
+//! when using memories/processors which only allows aligned accesses.
 //!
 //! Implementation is optimized for large blocks of data. Assumption is that for small data,
-//! they are inlined by the compiler. Some optimization done for often small sizes as
-//! otherwise lot of slowdown in debug mode.
+//! they are inlined by the compiler. Some optimization done for often used small sizes as
+//! otherwise significant slowdown in debug mode.
 //!
 //! Implementation is optimized when dst/s1 and src/s2 have the same alignment.
 //! If alignment of s1 and s2 is unequal, then either s1 or s2 accesses are not aligned
 //! resulting in slower performance. (If s1 or s2 is aligned, then those accesses are aligned.)
 //!
-//! Further optimization is possible by having dedicated code path for unaligned accesses,
+//! Further optimization is possible by having a dedicated code path for unaligned accesses,
 //! which uses 2*PTR_SIZE to PTR_SIZE shift operation (i.e. llvm.fshr);
-//! but implementation of this intrinsic is not well optimized on all platforms.
+//! but implementation of this intrinsic is not yet optimized and currently leads to worst results.
 //!
+//! Also loop unrolling in the memcpy_reverse function is not fully optimal due to limited current
+//! llvm optimization: uses add with negative offset + store, instead of store with positive
+//! offset; so 3 instructions per loop instead of 2
+//!
+//! A further future optimization possibility is using zero overhead loop, but again
+//! currently not yet supported by llvm for xtensa.
+//!  
+//! For large aligned memset and memcpy reaches ~88% of maximum memory bandwidth;
+//! for memcpy_reverse ~60%.
 #[allow(warnings)]
 #[cfg(target_pointer_width = "64")]
 type c_int = u64;
