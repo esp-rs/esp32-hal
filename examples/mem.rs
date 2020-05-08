@@ -13,7 +13,7 @@ use esp32_hal::alloc::{Allocator, DRAM_ALLOCATOR};
 use esp32_hal::clock_control::{sleep, CPUSource::PLL, ClockControl, ClockControlConfig};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
-use esp32_hal::mem::{bcmp, memcmp, memcpy, memcpy_reverse, memmove, memset};
+use esp32_hal::mem::{memcmp, memcpy, memcpy_reverse, memset};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 
 #[macro_use]
@@ -23,10 +23,6 @@ extern crate alloc;
 pub static GLOBAL_ALLOCATOR: Allocator = DRAM_ALLOCATOR;
 
 #[entry]
-fn main2() -> ! {
-    main();
-}
-
 fn main() -> ! {
     let dp = unsafe { esp32::Peripherals::steal() };
 
@@ -56,7 +52,7 @@ fn main() -> ! {
 
     let (clock_control_config, mut watchdog) = clock_control.freeze().unwrap();
 
-    watchdog.start(180.s());
+    watchdog.start(20.s());
 
     // setup serial controller
     let mut uart0 = Serial::uart0(
@@ -75,14 +71,27 @@ fn main() -> ! {
 
     const BUF_LEN: usize = 1024 * 128;
 
-    writeln!(uart0, "dst").unwrap();
+    writeln!(uart0, "Initializing").unwrap();
+
     let mut dst = vec![0u8; BUF_LEN];
-    writeln!(uart0, "src").unwrap();
     let mut src = vec![0u8; BUF_LEN];
 
+    let start = xtensa_lx6_rt::get_cycle_count();
     for i in 0..src.len() {
         src[i] = i as u8;
     }
+    let end = xtensa_lx6_rt::get_cycle_count();
+
+    let inittime = end.wrapping_sub(start) as f32 / ClockControlConfig {}.cpu_frequency().0 as f32;
+
+    writeln!(
+        uart0,
+        "{:>40}: {:.3}s, {:.3}KB/s",
+        format!("initialized src: {}", src.len()),
+        inittime,
+        src.len() as f32 / inittime / 1024.0,
+    )
+    .unwrap();
 
     time(
         &mut uart0,
@@ -118,7 +127,7 @@ fn main() -> ! {
     }
 }
 
-const REPEAT: usize = 1000;
+const REPEAT: usize = 20;
 
 fn time(output: &mut dyn core::fmt::Write, text: &str, bytes: usize, f: &dyn Fn() -> ()) {
     let start = xtensa_lx6_rt::get_cycle_count();
