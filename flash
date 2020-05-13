@@ -187,6 +187,13 @@ echo
 # convert to bin
 rm $BIN_PATH.bin 2>/dev/null
 esptool.py --chip esp32 elf2image --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED  -o $BIN_PATH.bin $BIN_PATH > /dev/null
+if [ $? -ne 0 ]
+then
+    printf "${ERROR}Error: Output file ($BIN_PATH).bin not generated!${RESET}\n\n"
+    esptool.py --chip esp32 elf2image --flash_mode=$FLASH_MODE --flash_freq $FLASH_SPEED  -o $BIN_PATH.bin $BIN_PATH
+    exit 1
+fi
+
 esptool.py --chip esp32 image_info $BIN_PATH.bin |egrep -v -i "esptool.py|Image version|Checksum|Validation Hash|Segments"
 echo
 
