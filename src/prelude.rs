@@ -18,3 +18,5 @@ pub use embedded_hal::digital::v2::ToggleableOutputPin as _embedded_hal_digital_
 pub use embedded_hal::prelude::*;
 
 pub use xtensa_lx6_rt::entry;
+pub use xtensa_lx6_rt::exception;
+pub use xtensa_lx6_rt::interrupt;
