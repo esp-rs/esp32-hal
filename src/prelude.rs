@@ -6,8 +6,12 @@
 //!
 //! This can be imported as use `esp32_hal::prelude::*`.
 
+pub use xtensa_lx6_rt::entry;
+pub use xtensa_lx6_rt::exception;
+
 pub use crate::analog::SensExt;
 pub use crate::gpio::GpioExt;
+pub use crate::interrupt;
 pub use crate::proc_macros::*;
 pub use crate::units::*;
 
@@ -16,7 +20,3 @@ pub use embedded_hal::digital::v2::OutputPin as _embedded_hal_digital_v2_OutputP
 pub use embedded_hal::digital::v2::StatefulOutputPin as _embedded_hal_digital_v2_StatefulOutputPin;
 pub use embedded_hal::digital::v2::ToggleableOutputPin as _embedded_hal_digital_v2_ToggleableOutputPin;
 pub use embedded_hal::prelude::*;
-
-pub use xtensa_lx6_rt::entry;
-pub use xtensa_lx6_rt::exception;
-pub use xtensa_lx6_rt::interrupt;
