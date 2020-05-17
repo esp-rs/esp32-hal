@@ -1,12 +1,14 @@
 //! ESP32 specific interrupt handling
 //!
-//!
-
+//! routines and variables in this module are stored in RAM because otherwise it may lead
+//! to exceptions when the flash is programmed or erased while the interrupt is called.
 use crate::ram;
 
 use crate::Core::{self, APP, PRO};
 use bare_metal::Nr;
-use esp32::{Interrupt, DPORT};
+pub use esp32::Interrupt::{self, *};
+use esp32::DPORT;
+pub use xtensa_lx6_rt::interrupt::free;
 
 /// Interrupt errors
 #[derive(Debug)]
@@ -15,80 +17,147 @@ pub enum Error {
     InvalidCPUInterrupt,
     InvalidInterruptLevel,
     InternalInterruptsCannotBeMapped,
+    InvalidInterrupt,
 }
 
-const CPU_INTERRUPT_EDGE: u32 = 0b_0111_0000_0100_0000_0000_1100_0000_0000;
+#[ram]
+const CPU_INTERRUPT_EDGE: u32 = 0b_0111_0000_0100_0000_0000_1100_1000_0000;
+
+#[ram]
 const CPU_INTERRUPT_INTERNAL: u32 = 0b_0010_0000_0000_0001_1000_1000_1100_0000;
 
+#[ram]
 const CPU_INTERRUPT_LEVELS: [u32; 8] = [
     0b_0000_0000_0000_0000_0000_0000_0000_0000, // Dummy level 0
     0b_0000_0000_0000_0110_0011_0111_1111_1111, // Level_1
     0b_0000_0000_0011_1000_0000_0000_0000_0000, // Level 2
-    0b_0010_1000_1100_0000_0000_1000_0000_0000, // Level 3
+    0b_0010_1000_1100_0000_1000_1000_0000_0000, // Level 3
     0b_0101_0011_0000_0000_0000_0000_0000_0000, // Level 4
-    0b_1000_0100_0000_0000_0000_0000_0000_0000, // Level 5
+    0b_1000_0100_0000_0001_0000_0000_0000_0000, // Level 5
     0b_0000_0000_0000_0000_0000_0000_0000_0000, // Level 6
-    0b_0000_0000_0000_0000_0000_0000_0000_0000, // Level 7
+    0b_0000_0000_0000_0000_0100_0000_0000_0000, // Level 7
 ];
 
-const INTERRUPT_TO_CPU_LEVEL: [u32; 8] = [
-    6,  // Disable (assign to internal interrupt)
-    1,  // Level 1 level triggered
-    19, // Level 2 level triggered
-    23, // Level 3 level triggered
-    24, // Level 4 level triggered
-    31, // Level 5 level triggered
-    6,  // Level 6=Debug not supported for peripherals (assign to internal interrupt)
-    6,  // Level 7=NMI level triggered not supported for peripherals (assign to internal interrupt)
-];
+#[ram]
+fn interrupt_is_edge(interrupt: Interrupt) -> bool {
+    [
+        TG0_T0_EDGE_INTR,
+        TG0_T1_EDGE_INTR,
+        TG0_WDT_EDGE_INTR,
+        TG0_LACT_EDGE_INTR,
+        TG1_T0_EDGE_INTR,
+        TG1_T1_EDGE_INTR,
+        TG1_WDT_EDGE_INTR,
+        TG1_LACT_EDGE_INTR,
+    ]
+    .contains(&interrupt)
+}
 
-const INTERRUPT_TO_CPU_EDGE: [u32; 8] = [
-    6,  // Disable (assign to internal interrupt)
-    10, // Level 1 edge triggered
-    6,  // Level 2 edge triggered not supported (assign to internal interrupt)
-    22, // Level 3 edge triggered
-    28, // Level 4 edge triggered
-    31, // Level 5 edge triggered not supported (assign to internal interrupt)
-    6,  // Level 6=Debug not supported for peripherals (assign to internal interrupt)
-    14, // Level 7=NMI edge triggered
-];
+#[ram]
+fn interrupt_level_to_cpu_interrupt(
+    interrupt_level: InterruptLevel,
+    edge: bool,
+) -> Result<CPUInterrupt, Error> {
+    #[ram]
+    const INTERRUPT_LEVEL_TO_CPU_INTERRUPT_EDGE: [Option<CPUInterrupt>; 8] = [
+        Some(CPUInterrupt(6)),  // Disable (assign to internal interrupt)
+        Some(CPUInterrupt(10)), // Level 1 edge triggered
+        None, // Level 2 edge triggered not supported (assign to internal interrupt)
+        Some(CPUInterrupt(22)), // Level 3 edge triggered
+        Some(CPUInterrupt(28)), // Level 4 edge triggered
+        Some(CPUInterrupt(31)), // Level 5 edge triggered not supported
+        None, // Level 6 = Debug not supported for peripherals
+        Some(CPUInterrupt(14)), // Level 7 = NMI edge triggered
+    ];
+    #[ram]
+    const INTERRUPT_LEVEL_TO_CPU_INTERRUPT_LEVEL: [Option<CPUInterrupt>; 8] = [
+        Some(CPUInterrupt(6)),  // Disable (assign to internal interrupt)
+        Some(CPUInterrupt(1)),  // Level 1 level triggered
+        Some(CPUInterrupt(19)), // Level 2 level triggered
+        Some(CPUInterrupt(23)), // Level 3 level triggered
+        Some(CPUInterrupt(24)), // Level 4 level triggered
+        Some(CPUInterrupt(31)), // Level 5 level triggered
+        None,                   // Level 6 = Debug not supported for peripherals
+        Some(CPUInterrupt(14)), // Level 7 = NMI level triggered not supported for peripherals
+    ];
+    if edge {
+        INTERRUPT_LEVEL_TO_CPU_INTERRUPT_EDGE[interrupt_level.0].ok_or(Error::InvalidInterruptLevel)
+    } else {
+        INTERRUPT_LEVEL_TO_CPU_INTERRUPT_LEVEL[interrupt_level.0]
+            .ok_or(Error::InvalidInterruptLevel)
+    }
+}
 
+#[ram]
 const CPU_INTERRUPT_USED_LEVELS: u32 = 0b_1001_0001_1100_1000_0100_0100_0000_0001;
 
-const CPU_INTERRUPT_TO_INTERRUPT: [Option<esp32::Interrupt>; 32] = [
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    Some(esp32::Interrupt::INTERNAL_TIMER0_INTR),
-    Some(esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR),
-    None,
-    None,
-    None,
-    Some(esp32::Interrupt::INTERNAL_PROFILING_INTR),
-    None,
-    None,
-    None,
-    Some(esp32::Interrupt::INTERNAL_TIMER1_INTR),
-    Some(esp32::Interrupt::INTERNAL_TIMER2_INTR),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    Some(esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR),
-    None,
-    None,
-];
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
+pub struct CPUInterrupt(pub usize);
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
+pub struct InterruptLevel(pub usize);
+
+fn cpu_interrupt_to_interrupt(cpu_interrupt: CPUInterrupt) -> Result<esp32::Interrupt, Error> {
+    #[ram]
+    const CPU_INTERRUPT_TO_INTERRUPT: [Option<esp32::Interrupt>; 32] = [
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(esp32::Interrupt::INTERNAL_TIMER0_INTR),
+        Some(esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR),
+        None,
+        None,
+        None,
+        Some(esp32::Interrupt::INTERNAL_PROFILING_INTR),
+        None,
+        None,
+        None,
+        Some(esp32::Interrupt::INTERNAL_TIMER1_INTR),
+        Some(esp32::Interrupt::INTERNAL_TIMER2_INTR),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR),
+        None,
+        None,
+    ];
+
+    CPU_INTERRUPT_TO_INTERRUPT[cpu_interrupt.0].ok_or(Error::InvalidCPUInterrupt)
+}
+
+#[ram]
+fn interrupt_to_cpu_interrupt(interrupt: esp32::Interrupt) -> Result<CPUInterrupt, Error> {
+    match interrupt {
+        esp32::Interrupt::INTERNAL_TIMER0_INTR => Ok(CPUInterrupt(6)),
+        esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR => Ok(CPUInterrupt(7)),
+        esp32::Interrupt::INTERNAL_PROFILING_INTR => Ok(CPUInterrupt(11)),
+        esp32::Interrupt::INTERNAL_TIMER1_INTR => Ok(CPUInterrupt(15)),
+        esp32::Interrupt::INTERNAL_TIMER2_INTR => Ok(CPUInterrupt(16)),
+        esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR => Ok(CPUInterrupt(29)),
+        _ => Err(Error::InvalidCPUInterrupt),
+    }
+}
+
+#[ram]
+fn cpu_interrupt_to_level(cpu_interrupt: CPUInterrupt) -> InterruptLevel {
+    #[ram]
+    const CPU_INTERRUPT_TO_LEVEL: [usize; 32] = [
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 1, 1, 7, 3, 5, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 3, 4, 3,
+        4, 5,
+    ];
+    InterruptLevel(CPU_INTERRUPT_TO_LEVEL[cpu_interrupt.0 as usize])
+}
 
 #[ram]
 static INTERRUPT_LEVELS: spin::Mutex<[u128; 8]> = spin::Mutex::new([0u128; 8]);
@@ -138,20 +207,27 @@ unsafe fn level_7_handler(level: u32) {
 #[inline(always)]
 #[ram]
 unsafe fn handle_interrupts(level: u32) {
-    let cpu_interrupt_mask = xtensa_lx6_rt::interrupt::get();
-    let interrupt = if (cpu_interrupt_mask
-        & CPU_INTERRUPT_INTERNAL
-        & CPU_INTERRUPT_LEVELS[level as usize])
-        != 0
-    {
-        let cpu_interrupt_nr =
-            (cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL & CPU_INTERRUPT_LEVELS[level as usize])
-                .trailing_zeros();
+    let cpu_interrupt_mask = xtensa_lx6_rt::interrupt::get()
+        & xtensa_lx6_rt::interrupt::get_mask()
+        & CPU_INTERRUPT_LEVELS[level as usize];
 
-        xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
+    let interrupt = if cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL != 0 {
+        let cpu_interrupt_mask = cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL;
+        let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
 
-        CPU_INTERRUPT_TO_INTERRUPT[cpu_interrupt_nr as usize].unwrap()
+        if (cpu_interrupt_mask & CPU_INTERRUPT_EDGE) != 0 {
+            xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
+        }
+
+        cpu_interrupt_to_interrupt(CPUInterrupt(cpu_interrupt_nr as usize)).unwrap()
     } else {
+        let cpu_interrupt_mask = cpu_interrupt_mask & !CPU_INTERRUPT_INTERNAL;
+        let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
+
+        if (cpu_interrupt_mask & CPU_INTERRUPT_EDGE) != 0 {
+            xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
+        }
+
         let interrupt_mask = get_interrupt_status(crate::get_core());
 
         let interrupt_nr =
@@ -172,18 +248,12 @@ unsafe fn handle_interrupts(level: u32) {
 #[no_mangle]
 #[ram]
 extern "C" fn DefaultHandler(level: u32, interrupt: esp32::Interrupt) {
-    crate::dprintln!("Unhandled interrupt level {} {:?}", level, interrupt);
+    crate::dprintln!("Unhandled interrupt (level {}): {:?}", level, interrupt);
 }
 
-#[no_mangle]
+/// Get status of peripheral interrupts
 #[ram]
-extern "C" fn FROM_CPU_INTR0() {
-    crate::dprintln!("CPU_INTR0");
-    clear_cpu_interrupt(0).unwrap();
-}
-
-#[ram]
-pub fn get_interrupt_status(core: Core) -> u128 {
+fn get_interrupt_status(core: Core) -> u128 {
     unsafe {
         match core {
             PRO => {
@@ -200,57 +270,14 @@ pub fn get_interrupt_status(core: Core) -> u128 {
     }
 }
 
-/// Trigger a (cross-)core interrupt
-///
-/// Valid interrupts are 0-3. Mapping to a certain core and interrupt level is done via
-/// set_interrupt_priority.
-pub fn set_cpu_interrupt(nr: u8) -> Result<(), Error> {
-    unsafe {
-        match nr {
-            0 => (*DPORT::ptr())
-                .cpu_intr_from_cpu_0
-                .write(|w| w.cpu_intr_from_cpu_0().set_bit()),
-            1 => (*DPORT::ptr())
-                .cpu_intr_from_cpu_1
-                .write(|w| w.cpu_intr_from_cpu_1().set_bit()),
-            2 => (*DPORT::ptr())
-                .cpu_intr_from_cpu_2
-                .write(|w| w.cpu_intr_from_cpu_2().set_bit()),
-            3 => (*DPORT::ptr())
-                .cpu_intr_from_cpu_3
-                .write(|w| w.cpu_intr_from_cpu_3().set_bit()),
-            _ => return Err(Error::InvalidCore),
-        }
-    };
-    Ok(())
-}
-/// Trigger a (cross-)core interrupt
-///
-/// Valid interrupts are 0-3. Mapping to a certain core and interrupt level is done via
-/// set_interrupt_priority.
-pub fn clear_cpu_interrupt(nr: u8) -> Result<(), Error> {
-    unsafe {
-        match nr {
-            0 => (*DPORT::ptr())
-                .cpu_intr_from_cpu_0
-                .write(|w| w.cpu_intr_from_cpu_0().clear_bit()),
-            1 => (*DPORT::ptr())
-                .cpu_intr_from_cpu_1
-                .write(|w| w.cpu_intr_from_cpu_1().clear_bit()),
-            2 => (*DPORT::ptr())
-                .cpu_intr_from_cpu_2
-                .write(|w| w.cpu_intr_from_cpu_2().clear_bit()),
-            3 => (*DPORT::ptr())
-                .cpu_intr_from_cpu_3
-                .write(|w| w.cpu_intr_from_cpu_3().clear_bit()),
-            _ => return Err(Error::InvalidCore),
-        }
-    };
-    Ok(())
-}
-
-fn map_interrupt(core: u8, interrupt: Interrupt, cpu_interrupt: u32) -> Result<(), Error> {
-    if cpu_interrupt >= 32 {
+/// Map an interrupt to a CPU interrupt
+#[ram]
+fn map_interrupt(
+    core: crate::Core,
+    interrupt: Interrupt,
+    cpu_interrupt: CPUInterrupt,
+) -> Result<(), Error> {
+    if cpu_interrupt.0 >= 32 {
         return Err(Error::InvalidCPUInterrupt);
     }
     if interrupt.nr() >= Interrupt::INTERNAL_TIMER0_INTR.nr() {
@@ -258,52 +285,145 @@ fn map_interrupt(core: u8, interrupt: Interrupt, cpu_interrupt: u32) -> Result<(
     }
     unsafe {
         let base_reg = match core {
-            0 => (*DPORT::ptr()).pro_mac_intr_map.as_ptr(),
-            1 => (*DPORT::ptr()).app_mac_intr_map.as_ptr(),
-            _ => return Err(Error::InvalidCore),
+            crate::Core::PRO => (*DPORT::ptr()).pro_mac_intr_map.as_ptr(),
+            crate::Core::APP => (*DPORT::ptr()).app_mac_intr_map.as_ptr(),
         };
 
         let reg = base_reg.add(interrupt.nr() as usize);
-        *reg = cpu_interrupt;
+        *reg = cpu_interrupt.0 as u32;
     };
     Ok(())
 }
 
-/// Set interrupt priority for a particular core
+/// Enable interrupt and set priority for a particular core
 ///
-/// Valid levels are 1-7. 0 is used to disable the interrupt
-pub fn set_interrupt_priority(
-    core: u8,
+/// Valid levels are 1-7. 0 is used to disable the interrupt.
+///
+/// CPU internal interrupts can only be set on the current core.
+#[ram]
+pub fn enable_with_priority(
+    core: crate::Core,
     interrupt: Interrupt,
-    level: u8,
-    edge: bool,
+    level: InterruptLevel,
 ) -> Result<(), Error> {
-    let cpu_interrupt = match edge {
-        true => match level {
-            0 | 1 | 3 | 4 | 7 => INTERRUPT_TO_CPU_EDGE[level as usize],
-            _ => return Err(Error::InvalidInterruptLevel),
-        },
-        false => match level {
-            0..=5 | 7 => INTERRUPT_TO_CPU_LEVEL[level as usize],
-            _ => return Err(Error::InvalidInterruptLevel),
-        },
-    };
-
-    xtensa_lx6_rt::interrupt::free(|_| {
-        let mut data = INTERRUPT_LEVELS.lock();
-
-        for i in 0..=7 {
-            (*data)[i] &= !(1 << interrupt.nr());
+    match interrupt_to_cpu_interrupt(interrupt) {
+        Ok(cpu_interrupt) => {
+            if core != crate::get_core() {
+                return Err(Error::InvalidCore);
+            }
+            if level == InterruptLevel(0) {
+                xtensa_lx6_rt::interrupt::disable_mask(1 << cpu_interrupt.0);
+                return Ok(());
+            } else if level == cpu_interrupt_to_level(cpu_interrupt) {
+                unsafe { xtensa_lx6_rt::interrupt::enable_mask(1 << cpu_interrupt.0) };
+                return Ok(());
+            } else {
+                return Err(Error::InvalidInterruptLevel);
+            }
         }
+        Err(_) => {
+            let cpu_interrupt =
+                interrupt_level_to_cpu_interrupt(level, interrupt_is_edge(interrupt))?;
 
-        (*data)[level as usize] |= 1 << interrupt.nr();
+            return xtensa_lx6_rt::interrupt::free(|_| {
+                let mut data = INTERRUPT_LEVELS.lock();
 
-        map_interrupt(core, interrupt, cpu_interrupt)
-    })
+                for i in 0..=7 {
+                    (*data)[i] &= !(1 << interrupt.nr());
+                }
+
+                (*data)[level.0 as usize] |= 1 << interrupt.nr();
+
+                unsafe { xtensa_lx6_rt::interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS) };
+
+                map_interrupt(core, interrupt, cpu_interrupt)
+            });
+        }
+    }
 }
 
-pub fn enable() {
-    unsafe {
-        xtensa_lx6_rt::interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS);
+/// Enable interrupt
+///
+/// For CPU internal interrupts use the default level, for others use level 1
+#[ram]
+pub fn enable(interrupt: Interrupt) -> Result<(), Error> {
+    match interrupt_to_cpu_interrupt(interrupt) {
+        Ok(cpu_interrupt) => {
+            unsafe { xtensa_lx6_rt::interrupt::enable_mask(1 << cpu_interrupt.0) };
+            return Ok(());
+        }
+        Err(_) => enable_with_priority(crate::get_core(), interrupt, InterruptLevel(1)),
     }
+}
+
+/// Disable interrupt
+#[ram]
+pub fn disable(interrupt: Interrupt) -> Result<(), Error> {
+    match interrupt_to_cpu_interrupt(interrupt) {
+        Ok(cpu_interrupt) => {
+            unsafe { xtensa_lx6_rt::interrupt::enable_mask(1 << cpu_interrupt.0) };
+            return Ok(());
+        }
+        Err(_) => enable_with_priority(crate::get_core(), interrupt, InterruptLevel(0)),
+    }
+}
+
+/// Set a (cross-)core interrupt
+///
+/// Valid interrupts are 0-3. Mapping to a certain core and interrupt level is done via
+/// set_interrupt_priority.
+#[ram]
+pub fn set_software_interrupt(interrupt: Interrupt) -> Result<(), Error> {
+    unsafe {
+        match interrupt {
+            FROM_CPU_INTR0 => (*DPORT::ptr())
+                .cpu_intr_from_cpu_0
+                .write(|w| w.cpu_intr_from_cpu_0().set_bit()),
+            FROM_CPU_INTR1 => (*DPORT::ptr())
+                .cpu_intr_from_cpu_1
+                .write(|w| w.cpu_intr_from_cpu_1().set_bit()),
+            FROM_CPU_INTR2 => (*DPORT::ptr())
+                .cpu_intr_from_cpu_2
+                .write(|w| w.cpu_intr_from_cpu_2().set_bit()),
+            FROM_CPU_INTR3 => (*DPORT::ptr())
+                .cpu_intr_from_cpu_3
+                .write(|w| w.cpu_intr_from_cpu_3().set_bit()),
+            INTERNAL_SOFTWARE_LEVEL_1_INTR | INTERNAL_SOFTWARE_LEVEL_3_INTR => {
+                xtensa_lx6_rt::interrupt::set(1 << interrupt_to_cpu_interrupt(interrupt)?.0)
+            }
+
+            _ => return Err(Error::InvalidInterrupt),
+        }
+    };
+    Ok(())
+}
+
+/// Clear a (cross-)core interrupt
+///
+/// Valid interrupts are 0-3. Mapping to a certain core and interrupt level is done via
+/// set_interrupt_priority.
+#[ram]
+pub fn clear_software_interrupt(interrupt: Interrupt) -> Result<(), Error> {
+    unsafe {
+        match interrupt {
+            FROM_CPU_INTR0 => (*DPORT::ptr())
+                .cpu_intr_from_cpu_0
+                .write(|w| w.cpu_intr_from_cpu_0().clear_bit()),
+            FROM_CPU_INTR1 => (*DPORT::ptr())
+                .cpu_intr_from_cpu_1
+                .write(|w| w.cpu_intr_from_cpu_1().clear_bit()),
+            FROM_CPU_INTR2 => (*DPORT::ptr())
+                .cpu_intr_from_cpu_2
+                .write(|w| w.cpu_intr_from_cpu_2().clear_bit()),
+            FROM_CPU_INTR3 => (*DPORT::ptr())
+                .cpu_intr_from_cpu_3
+                .write(|w| w.cpu_intr_from_cpu_3().clear_bit()),
+            INTERNAL_SOFTWARE_LEVEL_1_INTR | INTERNAL_SOFTWARE_LEVEL_3_INTR => {
+                xtensa_lx6_rt::interrupt::clear(1 << interrupt_to_cpu_interrupt(interrupt)?.0)
+            }
+
+            _ => return Err(Error::InvalidCore),
+        }
+    };
+    Ok(())
 }
