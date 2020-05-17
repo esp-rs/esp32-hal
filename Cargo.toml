@@ -31,7 +31,7 @@ esp32-hal-proc-macros = { path = "procmacros" }
 
 xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt.git" }
 esp32 = { version = "0.3.0" }
-
+bare-metal = "0.2"
 nb = "0.1.2"
 spin = "0.5.2"
 embedded-hal = { version = "0.2.3", features = ["unproven"] }

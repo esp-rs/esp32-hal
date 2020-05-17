@@ -174,3 +174,6 @@ _stack_start_cpu1 = _heap_end;
 _stack_end_cpu1 = _stack_start_cpu1 + STACK_SIZE;
 _stack_start_cpu0 = _stack_end_cpu1;
 _stack_end_cpu0 = _stack_start_cpu0 + STACK_SIZE;
+
+EXTERN(DefaultHandler);
+INCLUDE "device.x"

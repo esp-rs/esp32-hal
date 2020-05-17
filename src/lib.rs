@@ -32,6 +32,7 @@ pub mod efuse;
 #[cfg(feature = "external_ram")]
 pub mod external_ram;
 pub mod gpio;
+pub mod interrupt;
 pub mod prelude;
 pub mod serial;
 pub mod units;
