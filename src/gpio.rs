@@ -300,11 +300,12 @@ macro_rules! impl_pullup_pulldown {
     ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $i:expr, $funcXout:ident, $funcXin:ident,
         $sig_in_sel:ident, $func_in_sel:ident, $iomux:ident, has_pullup_pulldown) => {
         pub fn into_pull_up_input(self) -> $pxi<Input<PullUp>> {
-            let gpio = unsafe{ &*GPIO::ptr() };
-            let iomux = unsafe{ &*IO_MUX::ptr() };
+            let gpio = unsafe { &*GPIO::ptr() };
+            let iomux = unsafe { &*IO_MUX::ptr() };
             self.disable_analog();
 
-            gpio.$out_en_clear.modify(|_, w| unsafe { w.bits(0x1 << $i) });
+            gpio.$out_en_clear
+                .modify(|_, w| unsafe { w.bits(0x1 << $i) });
             gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
             gpio.$funcXin.modify(|_, w| unsafe {
                 w
@@ -316,7 +317,9 @@ macro_rules! impl_pullup_pulldown {
                     .bits($pin_num)
             });
 
-            iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
+            iomux
+                .$iomux
+                .modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
             iomux.$iomux.modify(|_, w| w.fun_ie().set_bit());
             iomux.$iomux.modify(|_, w| w.fun_wpd().clear_bit());
             iomux.$iomux.modify(|_, w| w.fun_wpu().set_bit());
@@ -324,11 +327,12 @@ macro_rules! impl_pullup_pulldown {
         }
 
         pub fn into_pull_down_input(self) -> $pxi<Input<PullDown>> {
-            let gpio = unsafe{ &*GPIO::ptr() };
-            let iomux = unsafe{ &*IO_MUX::ptr() };
+            let gpio = unsafe { &*GPIO::ptr() };
+            let iomux = unsafe { &*IO_MUX::ptr() };
             self.disable_analog();
 
-            gpio.$out_en_clear.modify(|_, w| unsafe  { w.bits(0x1 << $i) });
+            gpio.$out_en_clear
+                .modify(|_, w| unsafe { w.bits(0x1 << $i) });
             gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
             gpio.$funcXin.modify(|_, w| unsafe {
                 w
@@ -340,7 +344,9 @@ macro_rules! impl_pullup_pulldown {
                     .bits($pin_num)
             });
 
-            iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
+            iomux
+                .$iomux
+                .modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
             iomux.$iomux.modify(|_, w| w.fun_ie().set_bit());
             iomux.$iomux.modify(|_, w| w.fun_wpd().set_bit());
             iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
@@ -353,8 +359,10 @@ macro_rules! impl_pullup_pulldown {
     };
     ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $i:expr, $funcXout:ident, $funcXin:ident,
         $sig_in_sel:ident, $func_in_sel:ident, $iomux:ident, $pullup_flag:ident) => {
-        compile_error! ("The GPIO pin has to be marked with either \
-            has_pullup_pulldown or no_pullup_pulldown.");
+        compile_error!(
+            "The GPIO pin has to be marked with either \
+            has_pullup_pulldown or no_pullup_pulldown."
+        );
     };
 }
 

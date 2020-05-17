@@ -338,15 +338,15 @@ impl<'a> ClockControlConfig {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().get_lock_count() }
     }
 
-    pub unsafe fn park_core(&mut self, core: u32) -> Result<(), Error> {
+    pub unsafe fn park_core(&mut self, core: crate::Core) {
         CLOCK_CONTROL.as_mut().unwrap().park_core(core)
     }
 
-    pub fn unpark_core(&mut self, core: u32) -> Result<(), Error> {
+    pub fn unpark_core(&mut self, core: crate::Core) {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) }
     }
 
-    pub fn start_core(&mut self, core: u32, f: fn() -> !) -> Result<(), Error> {
+    pub fn start_core(&mut self, core: crate::Core, f: fn() -> !) -> Result<(), Error> {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().start_core(core, f) }
     }
 }

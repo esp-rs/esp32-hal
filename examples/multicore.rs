@@ -106,7 +106,9 @@ fn main() -> ! {
     let _lock = clock_control_config.lock_cpu_frequency();
 
     // start core 1 (APP_CPU)
-    clock_control_config.start_core(1, cpu1_start).unwrap();
+    clock_control_config
+        .start_core(esp32_hal::Core::APP, cpu1_start)
+        .unwrap();
 
     // main loop, which in turn lock and unlocks apb and cpu locks
     let mut x: u32 = 0;
@@ -183,8 +185,8 @@ fn print_info(loop_count: u32, spin_loop_count: u32, prev_ccount: &mut u32) {
 
     writeln!(
         TX.lock().as_mut().unwrap(),
-        "Core: {}, Loop: {}, Spin loops:{}, cycles: {}, cycles since previous {}, Total cycles: {}",
-        xtensa_lx6_rt::get_core_id(),
+        "Core: {:?}, Loop: {}, Spin loops:{}, cycles: {}, cycles since previous {}, Total cycles: {}",
+        esp32_hal::get_core(),
         loop_count,
         spin_loop_count,
         ccount,
@@ -213,21 +215,13 @@ fn disable_timg_wdts(timg0: &mut esp32::TIMG0, timg1: &mut esp32::TIMG1) {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     // park the other core
-    unsafe {
-        ClockControlConfig {}
-            .park_core(1 - xtensa_lx6_rt::get_core_id())
-            .ok()
-    };
+    unsafe { ClockControlConfig {}.park_core(esp32_hal::get_other_core()) };
 
     // print panic message
     dprintln!("\n\n*** {:?}", info);
 
     // park this core
-    unsafe {
-        ClockControlConfig {}
-            .park_core(xtensa_lx6_rt::get_core_id())
-            .ok()
-    };
+    unsafe { ClockControlConfig {}.park_core(esp32_hal::get_core()) };
 
     dprintln!("Not reached because core is parked.");
 

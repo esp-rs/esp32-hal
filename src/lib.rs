@@ -81,3 +81,23 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
     // continue with default reset handler
     xtensa_lx6_rt::Reset();
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Core {
+    PRO = 0,
+    APP = 1,
+}
+
+pub fn get_core() -> Core {
+    match ((xtensa_lx6_rt::get_processor_id() >> 13) & 1) != 0 {
+        false => Core::PRO,
+        true => Core::APP,
+    }
+}
+
+pub fn get_other_core() -> Core {
+    match get_core() {
+        Core::PRO => Core::APP,
+        Core::APP => Core::PRO,
+    }
+}

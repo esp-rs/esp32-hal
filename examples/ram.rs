@@ -53,7 +53,7 @@ fn main() -> ! {
     // print startup message
     writeln!(uart0, "\n\nReboot!\n",).unwrap();
 
-    writeln!(uart0, "Running on core {}\n", xtensa_lx6_rt::get_core_id()).unwrap();
+    writeln!(uart0, "Running on core {:?}\n", esp32_hal::get_core()).unwrap();
 
     ram_tests(&mut uart0);
 

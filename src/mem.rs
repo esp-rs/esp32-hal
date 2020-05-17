@@ -22,7 +22,7 @@
 //!
 //! A further future optimization possibility is using zero overhead loop, but again
 //! currently not yet supported by llvm for xtensa.
-//!  
+//!
 //! For large aligned memset and memcpy reaches ~88% of maximum memory bandwidth;
 //! for memcpy_reverse ~60%.
 #[allow(warnings)]
