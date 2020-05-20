@@ -19,25 +19,53 @@ static TX: spin::Mutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> = spin::Mute
 
 #[interrupt]
 fn FROM_CPU_INTR0() {
-    writeln!(TX.lock().as_mut().unwrap(), "FROM_CPU_INTR0").unwrap();
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  FROM_CPU_INTR0, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
     interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
 }
 
 #[interrupt]
 fn FROM_CPU_INTR1() {
-    writeln!(TX.lock().as_mut().unwrap(), "FROM_CPU_INTR1").unwrap();
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  Start FROM_CPU_INTR1, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
+    interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
+    interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  End FROM_CPU_INTR1, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
     interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR1).unwrap();
 }
 
 #[interrupt]
 fn FROM_CPU_INTR2() {
-    writeln!(TX.lock().as_mut().unwrap(), "FROM_CPU_INTR2").unwrap();
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  FROM_CPU_INTR2, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
     interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
 }
 
 #[interrupt]
 fn FROM_CPU_INTR3() {
-    writeln!(TX.lock().as_mut().unwrap(), "FROM_CPU_INTR3").unwrap();
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  FROM_CPU_INTR3, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
     interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
 }
 
@@ -45,7 +73,19 @@ fn FROM_CPU_INTR3() {
 fn software_level_3() {
     writeln!(
         TX.lock().as_mut().unwrap(),
-        "INTERNAL_SOFTWARE_LEVEL_3_INTR"
+        "  INTERNAL_SOFTWARE_LEVEL_3_INTR, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
+    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+}
+
+#[interrupt(INTERNAL_SOFTWARE_LEVEL_1_INTR)]
+fn random_name() {
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  INTERNAL_SOFTWARE_LEVEL_1_INTR, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
     )
     .unwrap();
     interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
@@ -53,8 +93,17 @@ fn software_level_3() {
 
 #[exception]
 #[ram]
-fn other_exception(cause: xtensa_lx6_rt::exception::ExceptionCause) {
-    writeln!(TX.lock().as_mut().unwrap(), "Exception {:?}", cause).unwrap();
+fn other_exception(
+    cause: xtensa_lx6_rt::exception::ExceptionCause,
+    frame: xtensa_lx6_rt::exception::Context,
+) {
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "Exception {:?}, {:08x?}",
+        cause,
+        frame
+    )
+    .unwrap();
     loop {}
 }
 
@@ -112,23 +161,44 @@ fn main() -> ! {
     interrupt::enable_with_priority(PRO, Interrupt::FROM_CPU_INTR1, InterruptLevel(4)).unwrap();
     interrupt::enable_with_priority(PRO, Interrupt::FROM_CPU_INTR2, InterruptLevel(5)).unwrap();
     interrupt::enable_with_priority(PRO, Interrupt::FROM_CPU_INTR3, InterruptLevel(7)).unwrap();
-
     interrupt::enable(INTERNAL_SOFTWARE_LEVEL_1_INTR).unwrap();
     interrupt::enable(INTERNAL_SOFTWARE_LEVEL_3_INTR).unwrap();
 
+    // Trigger various software interrupts, because done in an interrupt free section will
+    // actually trigger at the end in order of priority
+    interrupt::free(|_| {
+        writeln!(TX.lock().as_mut().unwrap(), "Start Trigger Interrupts",).unwrap();
+        interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
+        interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR1).unwrap();
+        interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
+        // this one will trigger immediately as level 7 is Non-Maskable Intterupt (NMI)
+        interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+        interrupt::set_software_interrupt(Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR).unwrap();
+        interrupt::set_software_interrupt(Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR).unwrap();
+        writeln!(TX.lock().as_mut().unwrap(), "End Trigger Interrupts",).unwrap();
+    });
+
+    // Trigger outside of interrupt free section, triggers immediately
+    writeln!(TX.lock().as_mut().unwrap(), "Start Trigger Interrupt",).unwrap();
     interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
     interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR1).unwrap();
     interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
+    // this one will trigger immediately as level 7 is Non-Maskable Intterupt (NMI)
     interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+    interrupt::set_software_interrupt(Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR).unwrap();
     interrupt::set_software_interrupt(Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR).unwrap();
+    writeln!(TX.lock().as_mut().unwrap(), "End Trigger Interrupt",).unwrap();
 
-    /*
+    // Trigger a LoadStoreError due to unaligned access in the IRAM
+
+    writeln!(TX.lock().as_mut().unwrap(), "\nTrigger exception:",).unwrap();
+
     #[link_section = ".rwtext"]
     static mut IRAM: [u8; 12] = [0; 12];
     unsafe { IRAM[1] = 10 };
-    */
 
-    // unsafe { asm!("quos $0,$0,$0":"+r"(0)) }
+    // Trigger a DivideByZeroError
+    unsafe { asm!("quos $0,$0,$0":"+r"(0)) }
 
     loop {
         sleep(1.s());

@@ -5,5 +5,8 @@ runner = "xtensa-esp32-elf-gdb -q -x xtensa.gdb"
 rustflags = [
   "-C", "link-arg=-nostartfiles",
   "-C", "link-arg=-Wl,-Tlink.x",
+#  "-C", "target-cpu=esp32",
+#"--emit", "llvm-ir,asm",
+
 ]
 target = "xtensa-esp32-none-elf"
