@@ -242,6 +242,7 @@ unsafe fn handle_interrupts(level: u32) {
         let cpu_interrupt_mask = cpu_interrupt_mask & !CPU_INTERRUPT_INTERNAL;
 
         if (cpu_interrupt_mask & CPU_INTERRUPT_EDGE) != 0 {
+            let cpu_interrupt_mask = cpu_interrupt_mask & CPU_INTERRUPT_EDGE;
             let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
             xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
 
