@@ -24,6 +24,10 @@ pub enum Error {
 const CPU_INTERRUPT_EDGE: u32 = 0b_0111_0000_0100_0000_0000_1100_1000_0000;
 
 #[ram]
+const INTERRUPT_EDGE: u128 =
+    0b_0000_0000_0000_0000_0000_0000_0000_0000__0000_0000_0000_0000_0000_0000_0000_0011__1111_1100_0000_0000_0000_0000_0000_0000__0000_0000_0000_0000_0000_0000_0000_0000;
+
+#[ram]
 const CPU_INTERRUPT_INTERNAL: u32 = 0b_0010_0000_0000_0001_1000_1000_1100_0000;
 
 #[ram]
@@ -205,6 +209,16 @@ unsafe fn level_7_handler(level: u32) {
     handle_interrupts(level)
 }
 
+#[ram]
+unsafe fn handle_interrupt(level: u32, interrupt: Interrupt) {
+    let handler = esp32::__INTERRUPTS[interrupt.nr() as usize]._handler;
+    if handler as *const _ == DefaultHandler as *const unsafe extern "C" fn() {
+        DefaultHandler(level, interrupt);
+    } else {
+        handler();
+    }
+}
+
 #[inline(always)]
 #[ram]
 unsafe fn handle_interrupts(level: u32) {
@@ -212,7 +226,7 @@ unsafe fn handle_interrupts(level: u32) {
         & xtensa_lx6_rt::interrupt::get_mask()
         & CPU_INTERRUPT_LEVELS[level as usize];
 
-    let interrupt = if cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL != 0 {
+    if cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL != 0 {
         let cpu_interrupt_mask = cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL;
         let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
 
@@ -220,29 +234,39 @@ unsafe fn handle_interrupts(level: u32) {
             xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
         }
 
-        cpu_interrupt_to_interrupt(CPUInterrupt(cpu_interrupt_nr as usize)).unwrap()
+        // cpu_interrupt_to_interrupt can fail if interrupt already de-asserted: silently ignore
+        if let Ok(interrupt) = cpu_interrupt_to_interrupt(CPUInterrupt(cpu_interrupt_nr as usize)) {
+            handle_interrupt(level, interrupt);
+        }
     } else {
         let cpu_interrupt_mask = cpu_interrupt_mask & !CPU_INTERRUPT_INTERNAL;
-        let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
 
         if (cpu_interrupt_mask & CPU_INTERRUPT_EDGE) != 0 {
+            let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
             xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
+
+            // for edge interrupts cannot rely on the interrupt status register, therefore call all
+            // registered handlers for current level
+            let mut interrupt_mask = INTERRUPT_LEVELS.lock()[level as usize] & INTERRUPT_EDGE;
+            loop {
+                let interrupt_nr = interrupt_mask.trailing_zeros();
+                if let Ok(interrupt) = esp32::Interrupt::try_from(interrupt_nr as u8) {
+                    handle_interrupt(level, interrupt)
+                } else {
+                    break;
+                }
+                interrupt_mask &= !(1u128 << interrupt_nr);
+            }
+        } else {
+            let interrupt_mask =
+                get_interrupt_status(crate::get_core()) & INTERRUPT_LEVELS.lock()[level as usize];
+            let interrupt_nr = interrupt_mask.trailing_zeros();
+
+            // esp32::Interrupt::try_from can fail if interrupt already de-asserted: silently ignore
+            if let Ok(interrupt) = esp32::Interrupt::try_from(interrupt_nr as u8) {
+                handle_interrupt(level, interrupt);
+            }
         }
-
-        let interrupt_mask = get_interrupt_status(crate::get_core());
-
-        let interrupt_nr =
-            (interrupt_mask & INTERRUPT_LEVELS.lock()[level as usize]).trailing_zeros();
-
-        esp32::Interrupt::try_from(interrupt_nr as u8).unwrap()
-    };
-
-    if esp32::__INTERRUPTS[interrupt.nr() as usize]._handler as *const unsafe extern "C" fn()
-        == DefaultHandler as *const unsafe extern "C" fn()
-    {
-        DefaultHandler(level, interrupt);
-    } else {
-        (esp32::__INTERRUPTS[interrupt.nr() as usize]._handler)();
     }
 }
 
@@ -254,7 +278,7 @@ extern "C" fn DefaultHandler(level: u32, interrupt: esp32::Interrupt) {
 
 /// Get status of peripheral interrupts
 #[ram]
-fn get_interrupt_status(core: Core) -> u128 {
+pub fn get_interrupt_status(core: Core) -> u128 {
     unsafe {
         match core {
             PRO => {
