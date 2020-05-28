@@ -62,23 +62,24 @@ fn interrupt_level_to_cpu_interrupt(
     const INTERRUPT_LEVEL_TO_CPU_INTERRUPT_EDGE: [Option<CPUInterrupt>; 8] = [
         Some(CPUInterrupt(6)),  // Disable (assign to internal interrupt)
         Some(CPUInterrupt(10)), // Level 1 edge triggered
-        None, // Level 2 edge triggered not supported (assign to internal interrupt)
+        None,                   // Level 2 edge triggered not supported
         Some(CPUInterrupt(22)), // Level 3 edge triggered
         Some(CPUInterrupt(28)), // Level 4 edge triggered
         Some(CPUInterrupt(31)), // Level 5 edge triggered not supported
-        None, // Level 6 = Debug not supported for peripherals
+        None,                   // Level 6 = Debug not supported for peripherals
         Some(CPUInterrupt(14)), // Level 7 = NMI edge triggered
     ];
     #[ram]
     const INTERRUPT_LEVEL_TO_CPU_INTERRUPT_LEVEL: [Option<CPUInterrupt>; 8] = [
         Some(CPUInterrupt(6)),  // Disable (assign to internal interrupt)
-        Some(CPUInterrupt(1)),  // Level 1 level triggered
+        Some(CPUInterrupt(0)),  // Level 1 level triggered
         Some(CPUInterrupt(19)), // Level 2 level triggered
         Some(CPUInterrupt(23)), // Level 3 level triggered
         Some(CPUInterrupt(24)), // Level 4 level triggered
         Some(CPUInterrupt(31)), // Level 5 level triggered
         None,                   // Level 6 = Debug not supported for peripherals
-        Some(CPUInterrupt(14)), // Level 7 = NMI level triggered not supported for peripherals
+        Some(CPUInterrupt(14)), // Level 7 = NMI level triggered (not supported for peripherals,
+                                //                                      forward to edge interrupt)
     ];
     if edge {
         INTERRUPT_LEVEL_TO_CPU_INTERRUPT_EDGE[interrupt_level.0].ok_or(Error::InvalidInterruptLevel)
