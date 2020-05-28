@@ -165,7 +165,10 @@ fn cpu_interrupt_to_level(cpu_interrupt: CPUInterrupt) -> InterruptLevel {
 }
 
 #[ram]
-static INTERRUPT_LEVELS: spin::Mutex<[u128; 8]> = spin::Mutex::new([0u128; 8]);
+static mut INTERRUPT_LEVELS: [u128; 8] = [0u128; 8];
+
+#[ram]
+static INTERRUPT_LEVELS_MUTEX: spin::Mutex<bool> = spin::Mutex::new(false);
 
 #[xtensa_lx6_rt::interrupt(1)]
 #[ram]
@@ -248,7 +251,7 @@ unsafe fn handle_interrupts(level: u32) {
 
             // for edge interrupts cannot rely on the interrupt status register, therefore call all
             // registered handlers for current level
-            let mut interrupt_mask = INTERRUPT_LEVELS.lock()[level as usize] & INTERRUPT_EDGE;
+            let mut interrupt_mask = INTERRUPT_LEVELS[level as usize] & INTERRUPT_EDGE;
             loop {
                 let interrupt_nr = interrupt_mask.trailing_zeros();
                 if let Ok(interrupt) = esp32::Interrupt::try_from(interrupt_nr as u8) {
@@ -260,7 +263,7 @@ unsafe fn handle_interrupts(level: u32) {
             }
         } else {
             let interrupt_mask =
-                get_interrupt_status(crate::get_core()) & INTERRUPT_LEVELS.lock()[level as usize];
+                get_interrupt_status(crate::get_core()) & INTERRUPT_LEVELS[level as usize];
             let interrupt_nr = interrupt_mask.trailing_zeros();
 
             // esp32::Interrupt::try_from can fail if interrupt already de-asserted: silently ignore
@@ -351,16 +354,14 @@ pub fn enable_with_priority(
             let cpu_interrupt =
                 interrupt_level_to_cpu_interrupt(level, interrupt_is_edge(interrupt))?;
 
-            return xtensa_lx6_rt::interrupt::free(|_| {
-                let mut data = INTERRUPT_LEVELS.lock();
-
+            return xtensa_lx6_rt::interrupt::free(|_| unsafe {
+                let _data = INTERRUPT_LEVELS_MUTEX.lock();
                 for i in 0..=7 {
-                    (*data)[i] &= !(1 << interrupt.nr());
+                    INTERRUPT_LEVELS[i] &= !(1 << interrupt.nr());
                 }
+                INTERRUPT_LEVELS[level.0 as usize] |= 1 << interrupt.nr();
 
-                (*data)[level.0 as usize] |= 1 << interrupt.nr();
-
-                unsafe { xtensa_lx6_rt::interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS) };
+                xtensa_lx6_rt::interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS);
 
                 map_interrupt(core, interrupt, cpu_interrupt)
             });
