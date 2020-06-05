@@ -63,17 +63,10 @@ fn main() -> ! {
 
     uart0.change_baudrate(115200).unwrap();
 
-    uart0.change_baudrate_force_clock(115200, true).unwrap();
-
     // print startup message
     writeln!(uart0, "\n\nReboot!\n",).unwrap();
 
-    writeln!(
-        uart0,
-        "Running on core {:0x}\n",
-        xtensa_lx6_rt::get_core_id()
-    )
-    .unwrap();
+    writeln!(uart0, "Running on core {:?}\n", esp32_hal::get_core()).unwrap();
 
     writeln!(
         uart0,

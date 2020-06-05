@@ -4,9 +4,28 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "cargo xbuild --examples",
+            "label": "Build and Flash Example",
             "type": "shell",
-            "command": "cargo xbuild --examples",
+            "runOptions": {"reevaluateOnRerun": false},
+            "command": "./flash -t --example ${input:example}",
+            "problemMatcher": {
+                "base": "$rustc",
+                "fileLocation": [
+                    "relative"
+                ]
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "clear": true
+            },
+        },
+        {
+            "label": "Build Example",
+            "type": "shell",
+            "runOptions": {"reevaluateOnRerun": false},
+            "command": "./flash -s --example ${input:example}",
             "problemMatcher": {
                 "base": "$rustc",
                 "fileLocation": [
@@ -24,25 +43,26 @@
             }
         },
         {
-            "label": "cargo xdoc --open",
+            "label": "Compile All Examples",
             "type": "shell",
-            "command": "cargo xdoc --open",
+            "command": "cargo xbuild --examples",
             "problemMatcher": {
                 "base": "$rustc",
                 "fileLocation": [
                     "relative"
                 ]
             },
+            "group": "build",
             "presentation": {
-                "reveal": "silent",
+                "reveal": "always",
                 "panel": "shared",
                 "clear": true
             }
         },
         {
-            "label": "flash example",
+            "label": "Build Documentation",
             "type": "shell",
-            "command": "./flash -b 912600 -p /dev/ttyUSB1 -t ${input:example}",
+            "command": "cargo xdoc --open --all-features",
             "problemMatcher": {
                 "base": "$rustc",
                 "fileLocation": [
@@ -55,7 +75,7 @@
                 "panel": "shared",
                 "clear": true
             }
-        }
+        },
     ],
     "inputs": [
         // requires Tasks Shell Input extension
@@ -64,7 +84,7 @@
             "type": "command",
             "command": "shellCommand.execute",
             "args": {
-                "command": "egrep '\\[\\[example\\]\\]|name[ \t]+=' Cargo.toml | egrep '\\[\\[example\\]\\]' -A1 | egrep 'name[ \t]*=' | sed -E 's/name[ \t]*=[ \t]*//; s/\"//g'",
+                "command": "cargo check --offline --example 2>&1 |egrep '^ '| sed -E 's/[ \t]*//g'",
                 "cwd": "${workspaceFolder}/../esp32-hal"
             }
         },

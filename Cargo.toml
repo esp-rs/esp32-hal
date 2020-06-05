@@ -4,25 +4,46 @@ version = "0.1.0"
 authors = ["Scott Mabin <scott@mabez.dev>", "Arjan Mels <arjan@mels.email>"]
 edition = "2018"
 
+
+# Allow overriding of memcpy, memset, etc.
+[package.metadata.cargo-xbuild]
+memcpy = false
+
+
+[features]
+default=["mem"]
+
+# Place program completely in ram (needed when e.g. using only ROM bootloader, or for debugging)
+all_in_ram=[]
+
+# Allow use of external ram. Needs customized bootloader.
+external_ram=["esp32-hal-proc-macros/external_ram"]
+
+# Add support for Global Allocator
+alloc=["linked_list_allocator"]
+
+# Define memcpy, memset etc. as replacement of standard functions
+mem=[]
+
+
 [dependencies]
-xtensa-lx6-rt = { git = "https://github.com/esp-rs/xtensa-lx6-rt.git", rev = "62229c1" }
-esp32 = { version = "0.3.0" }
+esp32-hal-proc-macros = { path = "procmacros" }
+
+xtensa-lx6-rt = { version = "0.1.0" }
+esp32 = { version = "0.4.0" }
+bare-metal = "0.2"
 nb = "0.1.2"
 spin = "0.5.2"
 embedded-hal = { version = "0.2.3", features = ["unproven"] }
+linked_list_allocator = { version = "0.8.4", optional = true, default-features = false, features = ["alloc_ref"] }
 
 [dev-dependencies]
 panic-halt = "0.2.0"
-spin = "0.5"
 
 [[example]]
-name = "blinky"
+name = "alloc"
+required-features = ["alloc"]
 
 [[example]]
-name = "serial"
-
-[[example]]
-name = "rtccntl"
-
-[[example]]
-name = "multicore"
+name = "mem"
+required-features = ["alloc"]

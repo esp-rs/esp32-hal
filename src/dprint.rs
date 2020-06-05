@@ -44,10 +44,18 @@ pub static mut DEBUG_LOG: DebugLog = DebugLog {};
 #[macro_export]
 macro_rules! dprint {
     ($s:expr) => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_str($s).unwrap()};
+        #[allow(unused_unsafe)]
+        unsafe {
+            use core::fmt::Write;
+            $crate::dprint::DEBUG_LOG.write_str($s).unwrap();
+        }
     };
     ($($arg:tt)*) => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_fmt(format_args!($($arg)*)).unwrap()};
+        #[allow(unused_unsafe)]
+        unsafe {
+            use core::fmt::Write;
+            $crate::dprint::DEBUG_LOG.write_fmt(format_args!($($arg)*)).unwrap();
+        }
     };
 }
 
@@ -55,20 +63,35 @@ macro_rules! dprint {
 #[macro_export]
 macro_rules! dprintln {
     () => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_str("\n").unwrap()};
+        #[allow(unused_unsafe)]
+        unsafe {
+            use core::fmt::Write;
+            $crate::dprint::DEBUG_LOG.write_str("\n").unwrap();
+        }
     };
     ($fmt:expr) => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_str(concat!($fmt, "\n")).unwrap()};
+        #[allow(unused_unsafe)]
+        unsafe {
+            use core::fmt::Write;
+            $crate::dprint::DEBUG_LOG.write_str(concat!($fmt, "\n")).unwrap();
+        }
     };
     ($fmt:expr, $($arg:tt)*) => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap()};
+        #[allow(unused_unsafe)]
+        unsafe {
+            use core::fmt::Write;
+            $crate::dprint::DEBUG_LOG.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap();
+        }
     };
 }
 
-/// Macro for sending a formatted string to UART0 for debugging, with a newline.
+/// Macro for flushing the UART0 TX buffer
 #[macro_export]
 macro_rules! dflush {
     () => {
-        unsafe { while !$crate::dprint::DEBUG_LOG.is_idle() {} };
+        #[allow(unused_unsafe)]
+        unsafe {
+            while !$crate::dprint::DEBUG_LOG.is_idle() {}
+        }
     };
 }

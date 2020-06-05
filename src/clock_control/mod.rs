@@ -37,8 +37,8 @@ pub mod watchdog;
 const DEFAULT_XTAL_FREQUENCY: Hertz = Hertz(40_000_000);
 
 // default frequencies for Dynamic Frequency Switching
-const CPU_SOURCE_DEFAULT_DEFAULT: CPUSource = CPUSource::Xtal;
-const CPU_FREQ_MIN_DEFAULT: Hertz = Hertz(10_000_000);
+const CPU_SOURCE_DEFAULT_DEFAULT: CPUSource = CPUSource::PLL;
+const CPU_FREQ_MIN_DEFAULT: Hertz = Hertz(80_000_000);
 const CPU_SOURCE_LOCKED_DEFAULT: CPUSource = CPUSource::PLL;
 const CPU_FREQ_MAX_DEFAULT: Hertz = Hertz(240_000_000);
 const CPU_SOURCE_APB_LOCKED_DEFAULT: CPUSource = CPUSource::PLL;
@@ -338,15 +338,15 @@ impl<'a> ClockControlConfig {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().get_lock_count() }
     }
 
-    pub unsafe fn park_core(&mut self, core: u32) -> Result<(), Error> {
+    pub unsafe fn park_core(&mut self, core: crate::Core) {
         CLOCK_CONTROL.as_mut().unwrap().park_core(core)
     }
 
-    pub fn unpark_core(&mut self, core: u32) -> Result<(), Error> {
+    pub fn unpark_core(&mut self, core: crate::Core) {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) }
     }
 
-    pub fn start_core(&mut self, core: u32, f: fn() -> !) -> Result<(), Error> {
+    pub fn start_core(&mut self, core: crate::Core, f: fn() -> !) -> Result<(), Error> {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().start_core(core, f) }
     }
 }
