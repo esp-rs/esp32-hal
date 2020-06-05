@@ -60,7 +60,7 @@ impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
     ) -> (
         Timer<TIMG, Timer0>,
         Timer<TIMG, Timer1>,
-        watchdog::WatchDog<TIMG>,
+        watchdog::Watchdog<TIMG>,
     ) {
         let timer0 = Timer::<TIMG, Timer0> {
             clock_control,
@@ -74,7 +74,7 @@ impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
             _group: PhantomData {},
             _timer: PhantomData {},
         };
-        (timer0, timer1, watchdog::WatchDog::new(timg, clock_control))
+        (timer0, timer1, watchdog::Watchdog::new(timg, clock_control))
     }
 }
 
@@ -285,7 +285,7 @@ impl Timer<esp32::TIMG0> {
     pub fn timer0(
         _timg: esp32::TIMG0,
         clock_control: ClockControlConfig,
-    ) -> (Self, Self, watchdog::WatchDog) {
+    ) -> (Self, Self, watchdog::Watchdog) {
         let timer0 = Timer::<esp32::TIMG0> {
             clock_control,
             timg: TIMG0::ptr(),
@@ -296,7 +296,7 @@ impl Timer<esp32::TIMG0> {
             timg: TIMG0::ptr(),
             _group: PhantomData {},
         };
-        (timer0, timer1, watchdog::WatchDog::new(clock_control))
+        (timer0, timer1, watchdog::Watchdog::new(clock_control))
     }
 }
 */

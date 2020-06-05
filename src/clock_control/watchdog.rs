@@ -5,7 +5,7 @@
 //! - Consider add default configuration for start with time only
 
 use crate::prelude::*;
-use embedded_hal::watchdog::{Watchdog, WatchdogDisable, WatchdogEnable};
+use embedded_hal::watchdog::{WatchdogDisable, WatchdogEnable};
 use esp32::generic::Variant::Val;
 use esp32::rtccntl::wdtconfig0::*;
 use esp32::RTCCNTL;
@@ -17,7 +17,7 @@ const WATCHDOG_UNBLOCK_KEY: u32 = 0x50D83AA1;
 
 const WATCHDOG_BLOCK_VALUE: u32 = 0x89ABCDEF;
 
-pub struct WatchDog {
+pub struct Watchdog {
     clock_control_config: super::ClockControlConfig,
 }
 
@@ -55,10 +55,10 @@ pub struct WatchdogConfig {
     pub reset_cpu: (bool, bool),
 }
 
-impl WatchDog {
+impl Watchdog {
     /// internal function to create new watchdog structure
     pub(crate) fn new(clock_control_config: super::ClockControlConfig) -> Self {
-        WatchDog {
+        Watchdog {
             clock_control_config,
         }
     }
@@ -181,7 +181,7 @@ impl WatchDog {
 }
 
 /// Enable watchdog timer, only change stage 1 period, don't change default action
-impl WatchdogEnable for WatchDog {
+impl WatchdogEnable for Watchdog {
     type Time = MicroSeconds;
 
     fn start<T: Into<Self::Time>>(&mut self, period: T) {
@@ -207,7 +207,7 @@ impl WatchdogEnable for WatchDog {
 }
 
 /// Disable watchdog timer
-impl<'a> WatchdogDisable for WatchDog {
+impl<'a> WatchdogDisable for Watchdog {
     fn disable(&mut self) {
         self.access_registers(|rtc_control| {
             rtc_control.wdtfeed.write(|w| w.wdt_feed().set_bit());
@@ -219,7 +219,7 @@ impl<'a> WatchdogDisable for WatchDog {
 }
 
 /// Feed (=reset) the watchdog timer
-impl Watchdog for WatchDog {
+impl embedded_hal::watchdog::Watchdog for Watchdog {
     fn feed(&mut self) {
         self.access_registers(|rtc_control| {
             rtc_control.wdtfeed.write(|w| w.wdt_feed().set_bit());

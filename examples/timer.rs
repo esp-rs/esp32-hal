@@ -22,7 +22,7 @@ use spin::Mutex;
 const BLINK_HZ: Hertz = Hertz(2);
 
 static TIMER: Mutex<RefCell<Option<Timer<esp32::TIMG0, Timer0>>>> = Mutex::new(RefCell::new(None));
-static WATCHDOG1: Mutex<RefCell<Option<watchdog::WatchDog<esp32::TIMG1>>>> =
+static WATCHDOG1: Mutex<RefCell<Option<watchdog::Watchdog<esp32::TIMG1>>>> =
     Mutex::new(RefCell::new(None));
 
 #[no_mangle]
