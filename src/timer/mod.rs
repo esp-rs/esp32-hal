@@ -5,7 +5,7 @@
 //!
 //!
 
-use embedded_hal::timer::{CountDown, Periodic};
+use embedded_hal::timer::{Cancel, CountDown, Periodic};
 
 use crate::clock_control::ClockControlConfig;
 use crate::prelude::*;
@@ -21,6 +21,7 @@ pub enum Error {
     UnsupportedWatchdogConfig,
     /// Value out of range
     OutOfRange,
+    Disabled,
 }
 
 /// Hardware timers
@@ -37,6 +38,8 @@ unsafe impl<TIMG: TimerGroup, INST: TimerInst> Send for Timer<TIMG, INST> {}
 pub enum Event {
     /// Timer timed out / count down ended
     TimeOut,
+    /// Timer timed out / count down ended (Edge Interrupt)
+    TimeOutEdge,
 }
 
 #[doc(hidden)]
@@ -109,32 +112,39 @@ macro_rules! timer {
             //  Needs multi-threaded protection as timer0 and 1 use same register
             pub fn listen(&mut self, event: Event) {
                 match event {
-                    Event::TimeOut => unsafe {
-                        interrupt::free(|_| {
-                            TIMER_MUTEX.lock();
-                            (*(self.timg))
-                                .int_ena_timers
-                                .modify(|_, w| w.$INT_ENA().set_bit());
-                        });
-                    },
+                    Event::TimeOut => self.enable_level_interrupt(true),
+                    Event::TimeOutEdge => self.enable_edge_interrupt(true),
                 }
+                unsafe {
+                    interrupt::free(|_| {
+                        TIMER_MUTEX.lock();
+                        (*(self.timg))
+                            .int_ena_timers
+                            .modify(|_, w| w.$INT_ENA().set_bit());
+                    })
+                };
             }
 
             /// Stops listening for an `event`
             //  Needs multi-threaded protection as timer0 and 1 use same register
             pub fn unlisten(&mut self, event: Event) {
                 match event {
-                    Event::TimeOut => unsafe {
-                        interrupt::free(|_| {
-                            TIMER_MUTEX.lock();
-                            (*(self.timg))
-                                .int_ena_timers
-                                .modify(|_, w| w.$INT_ENA().clear_bit())
-                        });
-                    },
+                    Event::TimeOut => self.enable_level_interrupt(false),
+                    Event::TimeOutEdge => self.enable_edge_interrupt(false),
                 }
             }
 
+            /// Clear interrupt once fired
+            pub fn clear_interrupt(&mut self) {
+                self.enable_alarm(true);
+                unsafe {
+                    (*(self.timg))
+                        .int_clr_timers
+                        .write(|w| w.$INT_CLR().set_bit())
+                }
+            }
+
+            /// Set timer value
             pub fn set_value<T: Into<TicksU64>>(&mut self, value: T) {
                 unsafe {
                     let timg = &*(self.timg);
@@ -145,6 +155,7 @@ macro_rules! timer {
                 }
             }
 
+            /// Get timer value
             pub fn get_value(&mut self) -> TicksU64 {
                 unsafe {
                     let timg = &*(self.timg);
@@ -155,6 +166,7 @@ macro_rules! timer {
                 }
             }
 
+            /// Get alarm value
             pub fn get_alarm(&mut self) -> TicksU64 {
                 unsafe {
                     let timg = &*(self.timg);
@@ -178,10 +190,23 @@ macro_rules! timer {
                 }
             }
 
+            /// Enable or disables the timer
             pub fn enable(&mut self, enable: bool) {
                 unsafe { (*(self.timg)).$CONFIG.modify(|_, w| w.$EN().bit(enable)) }
             }
 
+            /// Enable or disables the timer
+            pub fn is_enabled(&mut self) -> bool {
+                unsafe { (*(self.timg)).$CONFIG.read().$EN().bit_is_set() }
+            }
+
+            /// Stop the timer
+            pub fn stop(&mut self) {
+                self.enable(false);
+            }
+
+            /// Set to true to increase the timer value on each tick, set to false to decrease
+            /// the timer value on each tick.
             pub fn increasing(&mut self, enable: bool) {
                 unsafe {
                     (*(self.timg))
@@ -190,6 +215,13 @@ macro_rules! timer {
                 }
             }
 
+            /// Returns true if teh timer is increasing, otherwise decreasing
+            pub fn is_increasing(&mut self) -> bool {
+                unsafe { (*(self.timg)).$CONFIG.read().$INCREASE().bit_is_set() }
+            }
+
+            /// Set to true if the timer needs to be reloaded to initial value once the alarm
+            /// is reached.
             pub fn auto_reload(&mut self, enable: bool) {
                 unsafe {
                     (*(self.timg))
@@ -198,7 +230,7 @@ macro_rules! timer {
                 }
             }
 
-            pub fn enable_edge_interrupt(&mut self, enable: bool) {
+            fn enable_edge_interrupt(&mut self, enable: bool) {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
@@ -206,7 +238,7 @@ macro_rules! timer {
                 }
             }
 
-            pub fn enable_level_interrupt(&mut self, enable: bool) {
+            fn enable_level_interrupt(&mut self, enable: bool) {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
@@ -214,7 +246,7 @@ macro_rules! timer {
                 }
             }
 
-            pub fn enable_alarm(&mut self, enable: bool) {
+            fn enable_alarm(&mut self, enable: bool) {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
@@ -222,30 +254,14 @@ macro_rules! timer {
                 }
             }
 
-            pub fn alarm_active(&mut self) -> bool {
+            fn alarm_active(&mut self) -> bool {
                 unsafe { (*(self.timg)).$CONFIG.read().$ALARM_EN().bit_is_set() }
-            }
-
-            pub fn interrupt_active_raw(&mut self) -> bool {
-                unsafe { (*(self.timg)).int_raw_timers.read().$INT_RAW().bit_is_set() }
-            }
-
-            pub fn interrupt_active(&mut self) -> bool {
-                unsafe { (*(self.timg)).int_st_timers.read().$INT_ST().bit_is_set() }
-            }
-
-            pub fn clear_interrupt(&mut self) {
-                unsafe {
-                    (*(self.timg))
-                        .int_clr_timers
-                        .write(|w| w.$INT_CLR().set_bit())
-                }
             }
 
             /// Set clock divider.
             ///
-            /// 1 divides by
-            pub fn set_divider(&mut self, divider: u32) -> Result<(), Error> {
+            /// Value must be between 2 and 65536 inclusive.
+            fn set_divider(&mut self, divider: u32) -> Result<(), Error> {
                 if divider <= 1 || divider > 65536 {
                     return Err(Error::OutOfRange);
                 }
@@ -264,23 +280,44 @@ macro_rules! timer {
 
         impl<TIMG: TimerGroup> CountDown for Timer<TIMG, $TIMX> {
             type Time = NanoSecondsU64;
+
+            /// Start timer
             fn start<T: Into<Self::Time>>(&mut self, timeout: T) {
                 self.enable(false);
                 self.set_divider(2).unwrap(); // minimum divider value is 2,
                                               // this still allows >14000years with 64 bit values
 
+                self.auto_reload(true);
                 self.set_value(0);
                 self.set_alarm(self.clock_control_config.apb_frequency() / 2 * timeout.into());
+                self.enable_alarm(true);
                 self.enable(true);
             }
 
+            /// Wait for timer to finish
+            ///
+            /// **Note: if the timeout is handled via an interrupt, this will never return.**
             fn wait(&mut self) -> nb::Result<(), void::Void> {
-                if !self.alarm_active() {
+                if self.alarm_active() {
                     Err(nb::Error::WouldBlock)
                 } else {
-                    self.enable_alarm(true);
+                    self.clear_interrupt();
                     Ok(())
                 }
+            }
+        }
+
+        impl<TIMG: TimerGroup> Cancel for Timer<TIMG, $TIMX> {
+            type Error = Error;
+            /// Cancel running timer.
+            ///
+            /// This will stop the timer if running and returns error when not running.
+            fn cancel(&mut self) -> Result<(), Self::Error> {
+                if !self.is_enabled() {
+                    return Err(Self::Error::Disabled);
+                }
+                self.stop();
+                Ok(())
             }
         }
     };

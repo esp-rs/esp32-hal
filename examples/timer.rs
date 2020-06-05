@@ -9,6 +9,7 @@ use esp32_hal::prelude::*;
 
 use core::cell::RefCell;
 use core::ops::DerefMut;
+use embedded_hal::timer::{Cancel, CountDown};
 use esp32_hal::clock_control::sleep;
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
@@ -55,7 +56,7 @@ fn main() -> ! {
         action2: WatchdogAction::RESETSYSTEM,
         action3: WatchdogAction::DISABLE,
         action4: WatchdogAction::DISABLE,
-        period1: 2.s().into(),
+        period1: 5.s().into(),
         period2: 10.s().into(),
         period3: 0.us().into(),
         period4: 0.us().into(),
@@ -65,10 +66,8 @@ fn main() -> ! {
     };
 
     watchdog1.set_config(&wdconfig).unwrap();
-    //watchdog1.start(3.s());
 
-    timer0.enable(true);
-    timer1.enable(true);
+    *WATCHDOG1.lock().borrow_mut() = Some(watchdog1);
 
     let config = Config {
         baudrate: Hertz(115_200),
@@ -82,13 +81,17 @@ fn main() -> ! {
 
     writeln!(tx, "\n\nESP32 Started\n\n").unwrap();
 
-    timer0.set_alarm(70_000_000.into());
-    timer0.enable_alarm(true);
-    timer0.auto_reload(true);
-    timer0.enable_level_interrupt(true);
-    timer0.enable_edge_interrupt(true);
+    timer0.start(900.ms());
+    timer1.start(4.s());
+
+    writeln!(tx, "Waiting for timer0").unwrap();
+    nb::block!(timer0.wait()).unwrap();
+
+    writeln!(tx, "Finished waiting for timer0").unwrap();
 
     timer0.listen(esp32_hal::timer::Event::TimeOut);
+    timer0.listen(esp32_hal::timer::Event::TimeOutEdge);
+
     interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_LEVEL_INTR, InterruptLevel(1)).unwrap();
     interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_EDGE_INTR, InterruptLevel(1)).unwrap();
 
@@ -96,65 +99,47 @@ fn main() -> ! {
     interrupt::enable_with_priority(PRO, Interrupt::TG1_WDT_EDGE_INTR, InterruptLevel(3)).unwrap();
 
     *TIMER.lock().borrow_mut() = Some(timer0);
-    *WATCHDOG1.lock().borrow_mut() = Some(watchdog1);
 
     loop {
-        interrupt::free(|cs| {
+        interrupt::free(|_| {
             if let Some(ref mut timer0) = TIMER.lock().borrow_mut().deref_mut() {
-                writeln!(
-                    tx,
-                    "Timers: {} {} {} {} {:x} {:x} {}",
-                    timer0.get_value(),
-                    timer0.alarm_active(),
-                    timer0.interrupt_active_raw(),
-                    timer0.interrupt_active(),
-                    interrupt::get_interrupt_status(PRO),
-                    xtensa_lx6_rt::interrupt::get(),
-                    timer1.get_value()
-                )
-                .unwrap();
+                writeln!(tx, "Timers: {} {}", timer0.get_value(), timer1.get_value()).unwrap();
+                if let Ok(_) = timer1.wait() {
+                    writeln!(tx, "CANCELLING Timers").unwrap();
+                    timer0.cancel().unwrap();
+                    timer1.cancel().unwrap();
+                }
             }
         });
 
-        sleep((Hertz(1_000_000) / BLINK_HZ).us());
         sleep((Hertz(1_000_000) / BLINK_HZ).us());
     }
 }
 
 #[interrupt]
 fn TG0_T0_LEVEL_INTR() {
-    interrupt::free(|cs| {
+    esp32_hal::dprintln!("  TG0_T0_LEVEL_INTR");
+    interrupt::free(|_| {
         if let Some(ref mut timer0) = TIMER.lock().borrow_mut().deref_mut() {
             timer0.clear_interrupt();
-            timer0.enable_alarm(true);
         }
     });
-    esp32_hal::dprintln!("  TG0_T0_LEVEL_INTR");
 }
 
 #[interrupt]
 fn TG0_T0_EDGE_INTR() {
-    interrupt::free(|cs| {
-        if let Some(ref mut timer0) = TIMER.lock().borrow_mut().deref_mut() {
-            esp32_hal::dprintln!("  TG0_T0_EDGE_INTR");
-
-            dprintln!(
-                "    Timers: {} {} {} {} {:x} {:x}",
-                timer0.get_value(),
-                timer0.alarm_active(),
-                timer0.interrupt_active_raw(),
-                timer0.interrupt_active(),
-                interrupt::get_interrupt_status(PRO),
-                xtensa_lx6_rt::interrupt::get(),
-            );
-            timer0.enable_alarm(true);
-        }
+    esp32_hal::dprintln!("  TG0_T0_EDGE_INTR");
+    interrupt::free(|_| {
+        // edge interrupt is fired before level. If cleared here level interrupt is not fired
+        // if let Some(ref mut timer0) = TIMER.lock().borrow_mut().deref_mut() {
+        // timer0.clear_interrupt();
+        // }
     });
 }
 
 #[interrupt]
 fn TG1_WDT_LEVEL_INTR() {
-    interrupt::free(|cs| {
+    interrupt::free(|_| {
         if let Some(ref mut watchdog1) = WATCHDOG1.lock().borrow_mut().deref_mut() {
             watchdog1.clear_interrupt();
         }
