@@ -11,7 +11,7 @@ memcpy = false
 
 
 [features]
-default=["external_ram", "mem"]
+default=["mem"]
 
 # Place program completely in ram (needed when e.g. using only ROM bootloader, or for debugging)
 all_in_ram=[]

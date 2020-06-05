@@ -1,4 +1,4 @@
-//! Internal implementation details of `xtensa-lx6-rt`.
+//! Internal implementation details of esp32-hal`.
 //!
 //! Do not use this crate directly.
 //!

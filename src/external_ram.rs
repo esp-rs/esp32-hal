@@ -9,7 +9,7 @@ use core::ptr::{read_volatile, write_volatile};
 static mut EXTERNAL_RAM_SIZE: core::mem::MaybeUninit<Option<usize>> =
     core::mem::MaybeUninit::uninit();
 
-/// info about teh cache to be able to trash it
+/// Info about the cache to be able to trash it
 const CACHE_LINE_SIZE: usize = 32;
 const NR_CACHE_LINES: usize = 1024;
 /// number of steps to check RAM in. 8 steps limits to 0.5MB steps
