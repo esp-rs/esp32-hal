@@ -199,6 +199,14 @@ where
             });
         });
     }
+
+    pub fn clear_interrupt(&mut self) {
+        unsafe {
+            (*(self.timg))
+                .int_clr_timers
+                .write(|w| w.wdt_int_clr().set_bit());
+        }
+    }
 }
 
 /// Enable watchdog timer, only change stage 1 period, don't change default action

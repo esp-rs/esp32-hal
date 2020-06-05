@@ -14,7 +14,7 @@ use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::interrupt::{Interrupt, InterruptLevel};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
-use esp32_hal::timer::watchdog::{WatchDogResetDuration, WatchdogAction, WatchdogConfig};
+use esp32_hal::timer::watchdog::{self, WatchDogResetDuration, WatchdogAction, WatchdogConfig};
 use esp32_hal::timer::{Timer, Timer0};
 use esp32_hal::Core::PRO;
 use spin::Mutex;
@@ -22,6 +22,8 @@ use spin::Mutex;
 const BLINK_HZ: Hertz = Hertz(2);
 
 static TIMER: Mutex<RefCell<Option<Timer<esp32::TIMG0, Timer0>>>> = Mutex::new(RefCell::new(None));
+static WATCHDOG1: Mutex<RefCell<Option<watchdog::WatchDog<esp32::TIMG1>>>> =
+    Mutex::new(RefCell::new(None));
 
 #[no_mangle]
 fn main() -> ! {
@@ -89,9 +91,12 @@ fn main() -> ! {
     timer0.listen(esp32_hal::timer::Event::TimeOut);
     interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_LEVEL_INTR, InterruptLevel(1)).unwrap();
     interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_EDGE_INTR, InterruptLevel(1)).unwrap();
+
+    interrupt::enable_with_priority(PRO, Interrupt::TG1_WDT_LEVEL_INTR, InterruptLevel(1)).unwrap();
     interrupt::enable_with_priority(PRO, Interrupt::TG1_WDT_EDGE_INTR, InterruptLevel(3)).unwrap();
 
     *TIMER.lock().borrow_mut() = Some(timer0);
+    *WATCHDOG1.lock().borrow_mut() = Some(watchdog1);
 
     loop {
         interrupt::free(|cs| {
@@ -145,6 +150,21 @@ fn TG0_T0_EDGE_INTR() {
             timer0.enable_alarm(true);
         }
     });
+}
+
+#[interrupt]
+fn TG1_WDT_LEVEL_INTR() {
+    interrupt::free(|cs| {
+        if let Some(ref mut watchdog1) = WATCHDOG1.lock().borrow_mut().deref_mut() {
+            watchdog1.clear_interrupt();
+        }
+    });
+    esp32_hal::dprintln!("  TG1_WDT_LEVEL_INTR");
+}
+
+#[interrupt]
+fn TG1_WDT_EDGE_INTR() {
+    esp32_hal::dprintln!("  TG1_WDT_EDGE_INTR");
 }
 
 const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
