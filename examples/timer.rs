@@ -57,8 +57,8 @@ fn main() -> ! {
         action4: WatchdogAction::DISABLE,
         period1: 2.s().into(),
         period2: 10.s().into(),
-        period3: 0.us(),
-        period4: 0.us(),
+        period3: 0.us().into(),
+        period4: 0.us().into(),
         cpu_reset_duration: WatchDogResetDuration::T800NS,
         sys_reset_duration: WatchDogResetDuration::T800NS,
         divider: 1,
@@ -82,7 +82,7 @@ fn main() -> ! {
 
     writeln!(tx, "\n\nESP32 Started\n\n").unwrap();
 
-    timer0.set_alarm(70_000_000);
+    timer0.set_alarm(70_000_000.into());
     timer0.enable_alarm(true);
     timer0.autoreload(true);
     timer0.enable_level_interrupt(true);

@@ -137,7 +137,7 @@ macro_rules! timer {
 
             pub fn set_value<T: Into<TicksU64>>(&mut self, value: T) {
                 unsafe {
-                    let timg = *(self.timg);
+                    let timg = &*(self.timg);
                     let value: u64 = value.into().into();
                     timg.$LOAD_LO.write(|w| w.bits(value as u32));
                     timg.$LOAD_HI.write(|w| w.bits((value >> 32) as u32));
@@ -147,7 +147,7 @@ macro_rules! timer {
 
             pub fn get_value(&mut self) -> TicksU64 {
                 unsafe {
-                    let timg = *(self.timg);
+                    let timg = &*(self.timg);
                     timg.$UPDATE.write(|w| w.bits(1));
                     TicksU64(
                         ((timg.$HI.read().bits() as u64) << 32) | (timg.$LO.read().bits() as u64),
@@ -157,7 +157,7 @@ macro_rules! timer {
 
             pub fn get_alarm(&mut self) -> TicksU64 {
                 unsafe {
-                    let timg = *(self.timg);
+                    let timg = &*(self.timg);
                     TicksU64(
                         ((timg.$ALARM_HI.read().bits() as u64) << 32)
                             | (timg.$ALARM_LO.read().bits() as u64),
@@ -171,7 +171,7 @@ macro_rules! timer {
             /// setting upper and lower 32 bits.*
             pub fn set_alarm(&mut self, value: TicksU64) {
                 unsafe {
-                    let timg = *(self.timg);
+                    let timg = &*(self.timg);
                     let value: u64 = value.into();
                     timg.$ALARM_HI.write(|w| w.bits((value >> 32) as u32));
                     timg.$ALARM_LO.write(|w| w.bits(value as u32));

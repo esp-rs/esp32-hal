@@ -14,7 +14,6 @@
 //! ```
 
 use core::convert::TryFrom;
-use core::convert::TryInto;
 use core::fmt;
 
 pub trait Quantity: Sized {}
@@ -31,7 +30,8 @@ pub type LargeValueType = u64;
 
 /// defines and implements extension traits for quantities with units
 macro_rules! define {
-    ($primitive:ident, $trait:ident, $( ($type: ident, $quantity: ident, $unit: ident), )+) => {
+    ($primitive:ident, $trait:ident, $( ($type: ident, $quantity: ident, $unit: ident,
+        $print_unit: literal), )+) => {
         $(
             #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
             pub struct $quantity(pub $primitive);
@@ -71,13 +71,13 @@ macro_rules! define {
 
             impl fmt::Debug for $quantity {
                 fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                    write!(f, "{}{}", self.0, stringify!($unit))
+                    write!(f, "{}{}", self.0, $print_unit)
                 }
             }
 
             impl fmt::Display for $quantity {
                 fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                    write!(f, "{}{}", self.0, stringify!($unit))
+                    write!(f, "{}{}", self.0, $print_unit)
                 }
             }
 
@@ -129,17 +129,17 @@ macro_rules! define {
 /// Define ValueType and LargeValueType quantities and conversion from ValueType to LargeValueType
 macro_rules! define_u64 {
     ($( ($type: ident, $quantity: ident, $unit:ident,
-        $type_u64: ident, $quantity_u64: ident, $unit_u64:ident) ),+) => {
+        $type_u64: ident, $quantity_u64: ident, $unit_u64:ident, $print_unit: literal) ),+) => {
         define!(
             ValueType,
             FromValueType,
-            $(($type, $quantity, $unit),)*
+            $(($type, $quantity, $unit, $print_unit),)*
         );
 
         define!(
             LargeValueType,
             FromLargeValueType,
-            $(($type_u64, $quantity_u64, $unit_u64),)*
+            $(($type_u64, $quantity_u64, $unit_u64, $print_unit),)*
         );
 
         $(
@@ -149,9 +149,9 @@ macro_rules! define_u64 {
             }
         }
         impl TryFrom<$quantity_u64> for $quantity {
-            type Error=void::Void;
+            type Error=core::num::TryFromIntError;
             fn try_from(x: $quantity_u64) -> Result<$quantity, Self::Error> {
-                Self(ValueType::try_from(x.0))
+                Ok(Self(ValueType::try_from(x.0)?))
             }
         }
         )*
@@ -187,7 +187,10 @@ macro_rules! multiply {
         impl core::ops::Mul<$freq> for $time {
             type Output = Ticks;
             fn mul(self, rhs: $freq) -> Self::Output {
-                Ticks(self.0 as LargeValueType * rhs.0 as LargeValueType * $factor / $divider)
+                Ticks(
+                    (self.0 as LargeValueType * rhs.0 as LargeValueType * $factor as LargeValueType
+                        / $divider) as u32,
+                )
             }
         }
 
@@ -243,7 +246,7 @@ macro_rules! multiply {
 }
 
 macro_rules! divide {
-    ($time: ty, $time_u64: ty, $freq: ty, $freq_u64: ty,
+    ($freq: ty, $freq_u64: ty, $time: ty, $time_u64: ty,
         $factor: expr, $divider: expr) => {
         impl core::ops::Div<$freq> for Ticks {
             type Output = $time;
@@ -251,22 +254,40 @@ macro_rules! divide {
                 (self.0 * $divider / rhs.0 / $factor).into()
             }
         }
+
+        impl core::ops::Div<$freq> for TicksU64 {
+            type Output = $time_u64;
+            fn div(self, rhs: $freq) -> Self::Output {
+                (self.0 * $divider / rhs.0 as u64 / $factor).into()
+            }
+        }
+
+        impl core::ops::Div<$freq_u64> for TicksU64 {
+            type Output = $time_u64;
+            fn div(self, rhs: $freq_u64) -> Self::Output {
+                (self.0 * $divider / rhs.0 / $factor).into()
+            }
+        }
+
+        impl core::ops::Div<$freq_u64> for Ticks {
+            type Output = $time_u64;
+            fn div(self, rhs: $freq_u64) -> Self::Output {
+                (self.0 as u64 * $divider / rhs.0 / $factor).into()
+            }
+        }
     };
 }
 
-divide!(Seconds, SecondsU64, Hertz, HertzU64, 1, 1);
-divide!(Seconds, SecondsU64, KiloHertz, KiloHertzU64, 1_000, 1);
-divide!(Seconds, SecondsU64, MegaHertz, MegaHertzU64, 1_000_000, 1);
-
 define_u64!(
-    (Frequency, Hertz, Hz, FrequencyU64, HertzU64, Hz_u64),
+    (Frequency, Hertz, Hz, FrequencyU64, HertzU64, Hz_u64, "Hz"),
     (
         Frequency,
         KiloHertz,
         kHz,
         FrequencyU64,
         KiloHertzU64,
-        kHz_u64
+        kHz_u64,
+        "kHz"
     ),
     (
         Frequency,
@@ -274,13 +295,30 @@ define_u64!(
         MHz,
         FrequencyU64,
         MegaHertzU64,
-        MHz_u64
+        MHz_u64,
+        "MHz"
     ),
-    (Time, NanoSeconds, ns, TimeU64, NanoSecondsU64, ns_u64),
-    (Time, MicroSeconds, us, TimeU64, MicroSecondsU64, us_u64),
-    (Time, MilliSeconds, ms, TimeU64, MilliSecondsU64, ms_u64),
-    (Time, Seconds, s, TimeU64, SecondsU64, s_u64),
-    (Count, Ticks, ticks, CountU64, TicksU64, ticks_u64)
+    (Time, NanoSeconds, ns, TimeU64, NanoSecondsU64, ns_u64, "ns"),
+    (
+        Time,
+        MicroSeconds,
+        us,
+        TimeU64,
+        MicroSecondsU64,
+        us_u64,
+        "us"
+    ),
+    (
+        Time,
+        MilliSeconds,
+        ms,
+        TimeU64,
+        MilliSecondsU64,
+        ms_u64,
+        "ms"
+    ),
+    (Time, Seconds, s, TimeU64, SecondsU64, s_u64, "s"),
+    (Count, Ticks, ticks, CountU64, TicksU64, ticks_u64, "")
 );
 
 convert!(KiloHertz, KiloHertzU64, Hertz, HertzU64, 1000);
@@ -364,4 +402,29 @@ multiply!(
     MegaHertzU64,
     1,
     1_000
+);
+
+divide!(
+    Hertz,
+    HertzU64,
+    NanoSeconds,
+    NanoSecondsU64,
+    1_000_000_000,
+    1
+);
+divide!(
+    KiloHertz,
+    KiloHertzU64,
+    NanoSeconds,
+    NanoSecondsU64,
+    1_000_000,
+    1
+);
+divide!(
+    MegaHertz,
+    MegaHertzU64,
+    NanoSeconds,
+    NanoSecondsU64,
+    1_000,
+    1
 );
