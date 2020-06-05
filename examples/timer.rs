@@ -56,7 +56,7 @@ fn main() -> ! {
         action3: WatchdogAction::DISABLE,
         action4: WatchdogAction::DISABLE,
         period1: 2.s().into(),
-        period2: 4.s().into(),
+        period2: 10.s().into(),
         period3: 0.us(),
         period4: 0.us(),
         cpu_reset_duration: WatchDogResetDuration::T800NS,
@@ -64,7 +64,7 @@ fn main() -> ! {
         divider: 1,
     };
 
-    watchdog1.set_config(&wdconfig);
+    watchdog1.set_config(&wdconfig).unwrap();
     //watchdog1.start(3.s());
 
     timer0.enable(true);

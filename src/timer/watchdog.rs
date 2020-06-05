@@ -106,7 +106,9 @@ impl<TIMG: TimerGroup> Watchdog<TIMG> {
         divider: u16,
     ) -> Result<u32, core::num::TryFromIntError> {
         use core::convert::TryFrom;
-        u32::try_from(self.clock_control_config.apb_frequency() / u32::from(divider) * value.into())
+        let freq = self.clock_control_config.apb_frequency() / u32::from(divider);
+        let ticks = freq * value.into();
+        u32::try_from(ticks)
     }
 
     /// Calculate ticks from period

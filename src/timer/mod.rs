@@ -25,7 +25,7 @@ pub enum Error {
 
 /// Hardware timers
 pub struct Timer<TIMG: TimerGroup, INST: TimerInst> {
-    clock_control: ClockControlConfig,
+    clock_control_config: ClockControlConfig,
     timg: *const esp32::timg::RegisterBlock,
     _group: PhantomData<TIMG>,
     _timer: PhantomData<INST>,
@@ -56,25 +56,30 @@ impl TimerInst for Timer1 {}
 impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
     pub fn new(
         timg: TIMG,
-        clock_control: ClockControlConfig,
+        clock_control_config: ClockControlConfig,
     ) -> (
         Timer<TIMG, Timer0>,
         Timer<TIMG, Timer1>,
         watchdog::Watchdog<TIMG>,
     ) {
         let timer0 = Timer::<TIMG, Timer0> {
-            clock_control,
+            clock_control_config,
             timg: &*timg as *const _ as *const esp32::timg::RegisterBlock,
             _group: PhantomData {},
             _timer: PhantomData {},
         };
         let timer1 = Timer::<TIMG, Timer1> {
-            clock_control,
+            clock_control_config,
             timg: &*timg as *const _ as *const esp32::timg::RegisterBlock,
             _group: PhantomData {},
             _timer: PhantomData {},
         };
-        (timer0, timer1, watchdog::Watchdog::new(timg, clock_control))
+
+        (
+            timer0,
+            timer1,
+            watchdog::Watchdog::new(timg, clock_control_config),
+        )
     }
 }
 
@@ -94,8 +99,8 @@ static TIMER_MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 
 macro_rules! timer {
     ($TIMX:ident, $INT_ENA:ident, $CONFIG:ident, $HI:ident, $LO: ident,
-        $LOAD: ident, $LOADHI: ident, $LOADLO:ident, $UPDATE:ident, $ALARMHI:ident,
-        $ALARMLO:ident, $EN:ident, $INCREASE:ident, $AUTORELOAD:ident, $DIVIDER:ident,
+        $LOAD: ident, $LOAD_HI: ident, $LOAD_LO:ident, $UPDATE:ident, $ALARM_HI:ident,
+        $ALARM_LO:ident, $EN:ident, $INCREASE:ident, $AUTORE_LOAD:ident, $DIVIDER:ident,
         $EDGE_INT_EN:ident, $LEVEL_INT_EN:ident, $ALARM_EN:ident,
         $INT_RAW:ident, $INT_ST:ident, $INT_CLR:ident
     ) => {
@@ -130,38 +135,46 @@ macro_rules! timer {
                 }
             }
 
-            pub fn set_value(&mut self, value: u64) {
+            pub fn set_value<T: Into<TicksU64>>(&mut self, value: T) {
                 unsafe {
-                    (*(self.timg)).$LOADLO.write(|w| w.bits(value as u32));
-                    (*(self.timg))
-                        .$LOADHI
-                        .write(|w| w.bits((value >> 32) as u32));
-                    (*(self.timg)).$LOAD.write(|w| w.bits(1));
+                    let timg = *(self.timg);
+                    let value: u64 = value.into().into();
+                    timg.$LOAD_LO.write(|w| w.bits(value as u32));
+                    timg.$LOAD_HI.write(|w| w.bits((value >> 32) as u32));
+                    timg.$LOAD.write(|w| w.bits(1));
                 }
             }
 
-            pub fn get_value(&mut self) -> u64 {
+            pub fn get_value(&mut self) -> TicksU64 {
                 unsafe {
-                    (*(self.timg)).$UPDATE.write(|w| w.bits(1));
-                    (((*(self.timg)).$HI.read().bits() as u64) << 32)
-                        | ((*(self.timg)).$LO.read().bits() as u64)
+                    let timg = *(self.timg);
+                    timg.$UPDATE.write(|w| w.bits(1));
+                    TicksU64(
+                        ((timg.$HI.read().bits() as u64) << 32) | (timg.$LO.read().bits() as u64),
+                    )
                 }
             }
 
-            pub fn get_alarm(&mut self) -> u64 {
+            pub fn get_alarm(&mut self) -> TicksU64 {
                 unsafe {
-                    (((*(self.timg)).$ALARMHI.read().bits() as u64) << 32)
-                        | ((*(self.timg)).$ALARMLO.read().bits() as u64)
+                    let timg = *(self.timg);
+                    TicksU64(
+                        ((timg.$ALARM_HI.read().bits() as u64) << 32)
+                            | (timg.$ALARM_LO.read().bits() as u64),
+                    )
                 }
             }
 
-            pub fn set_alarm(&mut self, value: u64) {
+            /// Set alarm value
+            ///
+            /// *Note: timer is not disabled, so there is a risk for false triggering between
+            /// setting upper and lower 32 bits.*
+            pub fn set_alarm(&mut self, value: TicksU64) {
                 unsafe {
-                    // TODO: surround by disable and enable to prevent false trigger
-                    (*(self.timg)).$ALARMLO.write(|w| w.bits(value as u32));
-                    (*(self.timg))
-                        .$ALARMHI
-                        .write(|w| w.bits((value >> 32) as u32));
+                    let timg = *(self.timg);
+                    let value: u64 = value.into();
+                    timg.$ALARM_HI.write(|w| w.bits((value >> 32) as u32));
+                    timg.$ALARM_LO.write(|w| w.bits(value as u32));
                 }
             }
 
@@ -181,7 +194,7 @@ macro_rules! timer {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
-                        .modify(|_, w| w.$AUTORELOAD().bit(enable))
+                        .modify(|_, w| w.$AUTORE_LOAD().bit(enable))
                 }
             }
 
@@ -226,6 +239,47 @@ macro_rules! timer {
                     (*(self.timg))
                         .int_clr_timers
                         .write(|w| w.$INT_CLR().set_bit())
+                }
+            }
+
+            /// Set clock divider.
+            ///
+            /// 1 divides by
+            pub fn set_divider(&mut self, divider: u32) -> Result<(), Error> {
+                if divider <= 1 || divider > 65536 {
+                    return Err(Error::OutOfRange);
+                }
+
+                unsafe {
+                    (*(self.timg)).$CONFIG.modify(|_, w| {
+                        w.$DIVIDER()
+                            .bits((if divider == 65536 { 0 } else { divider }) as u16)
+                    })
+                };
+
+                Ok(())
+            }
+        }
+        impl<TIMG: TimerGroup> Periodic for Timer<TIMG, $TIMX> {}
+
+        impl<TIMG: TimerGroup> CountDown for Timer<TIMG, $TIMX> {
+            type Time = NanoSecondsU64;
+            fn start<T: Into<Self::Time>>(&mut self, timeout: T) {
+                self.enable(false);
+                self.set_divider(2).unwrap(); // minimum divider value is 2,
+                                              // this still allows >14000years with 64 bit values
+
+                self.set_value(0);
+                self.set_alarm(self.clock_control_config.apb_frequency() / 2 * timeout.into());
+                self.enable(true);
+            }
+
+            fn wait(&mut self) -> nb::Result<(), void::Void> {
+                if !self.alarm_active() {
+                    Err(nb::Error::WouldBlock)
+                } else {
+                    self.enable_alarm(true);
+                    Ok(())
                 }
             }
         }
@@ -279,24 +333,3 @@ timer!(
     t1_int_st,
     t1_int_clr
 );
-
-/*
-impl Timer<esp32::TIMG0> {
-    pub fn timer0(
-        _timg: esp32::TIMG0,
-        clock_control: ClockControlConfig,
-    ) -> (Self, Self, watchdog::Watchdog) {
-        let timer0 = Timer::<esp32::TIMG0> {
-            clock_control,
-            timg: TIMG0::ptr(),
-            _group: PhantomData {},
-        };
-        let timer1 = Timer::<esp32::TIMG0> {
-            clock_control,
-            timg: TIMG0::ptr(),
-            _group: PhantomData {},
-        };
-        (timer0, timer1, watchdog::Watchdog::new(clock_control))
-    }
-}
-*/
