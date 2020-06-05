@@ -57,6 +57,13 @@ pub struct Timer1 {}
 impl TimerInst for Timer1 {}
 
 impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
+    /// Create new timer resources
+    ///
+    /// This function will create 2 timers and 1 watchdog for a timer group.
+    /// It uses the clock_control_config for obtaining the clock configuration.
+    ///
+    /// *Note: time to clock tick conversions are done with the clock frequency when the
+    /// [start](embedded_hal::timer::CountDown::start) function is called. The clock frequency is not locked.*
     pub fn new(
         timg: TIMG,
         clock_control_config: ClockControlConfig,
@@ -87,12 +94,16 @@ impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
 }
 
 impl<INST: TimerInst> Timer<TIMG0, INST> {
+    /// Releases the timer resources. Requires to release all timers and watchdog belonging to
+    /// the same group at once.
     pub fn release(_timer0: Timer<TIMG0, Timer0>, _timer1: Timer<TIMG0, Timer1>) -> TIMG0 {
         unsafe { esp32::Peripherals::steal().TIMG0 }
     }
 }
 
 impl<INST: TimerInst> Timer<TIMG1, INST> {
+    /// Releases the timer resources. Requires to release all timers and watchdog belonging to
+    /// the same group at once.
     pub fn release(_timer0: Timer<TIMG1, Timer0>, _timer1: Timer<TIMG1, Timer1>) -> TIMG1 {
         unsafe { esp32::Peripherals::steal().TIMG1 }
     }
