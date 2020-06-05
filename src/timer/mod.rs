@@ -19,6 +19,7 @@ pub mod watchdog;
 pub enum Error {
     /// Unsupported frequency configuration
     UnsupportedWatchdogConfig,
+    /// Value out of range
     OutOfRange,
 }
 

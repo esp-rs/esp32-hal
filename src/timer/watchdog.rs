@@ -100,12 +100,20 @@ impl<TIMG: TimerGroup> WatchDog<TIMG> {
     }
 
     /// Calculate ticks from period
-    fn calc_ticks_with_divider<T: Into<NanoSeconds>>(&self, value: T, divider: u16) -> u32 {
-        (self.clock_control_config.apb_frequency() / u32::from(divider) * value.into()) as u32
+    fn calc_ticks_with_divider<T: Into<NanoSeconds>>(
+        &self,
+        value: T,
+        divider: u16,
+    ) -> Result<u32, core::num::TryFromIntError> {
+        use core::convert::TryFrom;
+        u32::try_from(self.clock_control_config.apb_frequency() / u32::from(divider) * value.into())
     }
 
     /// Calculate ticks from period
-    fn calc_ticks<T: Into<NanoSeconds>>(&self, value: T) -> u32 {
+    fn calc_ticks<T: Into<NanoSeconds>>(
+        &self,
+        value: T,
+    ) -> Result<u32, core::num::TryFromIntError> {
         self.calc_ticks_with_divider(
             value,
             unsafe { &*(self.timg) }
@@ -151,15 +159,23 @@ impl<TIMG: TimerGroup> WatchDog<TIMG> {
     }
 
     /// Change watchdog timer configuration and start
-    pub fn set_config(&mut self, config: &WatchdogConfig) {
+    pub fn set_config(&mut self, config: &WatchdogConfig) -> Result<(), Error> {
         self.access_registers(|timg| {
             timg.wdtconfig1
                 .write(|w| unsafe { w.wdt_clk_prescale().bits(config.divider) });
 
-            let per1 = self.calc_ticks(config.period1);
-            let per2 = self.calc_ticks(config.period2);
-            let per3 = self.calc_ticks(config.period3);
-            let per4 = self.calc_ticks(config.period4);
+            let per1 = self
+                .calc_ticks(config.period1)
+                .map_err(|_| Error::OutOfRange)?;
+            let per2 = self
+                .calc_ticks(config.period2)
+                .map_err(|_| Error::OutOfRange)?;
+            let per3 = self
+                .calc_ticks(config.period3)
+                .map_err(|_| Error::OutOfRange)?;
+            let per4 = self
+                .calc_ticks(config.period4)
+                .map_err(|_| Error::OutOfRange)?;
 
             unsafe { timg.wdtfeed.write(|w| w.wdt_feed().bits(0)) }
             timg.wdtconfig0.modify(|_, w| {
@@ -193,7 +209,8 @@ impl<TIMG: TimerGroup> WatchDog<TIMG> {
                 super::TIMER_MUTEX.lock();
                 timg.int_ena_timers.modify(|_, w| w.wdt_int_ena().set_bit());
             });
-        });
+            Ok(())
+        })
     }
 
     pub fn clear_interrupt(&mut self) {
@@ -211,7 +228,7 @@ impl<TIMG: TimerGroup> WatchdogEnable for WatchDog<TIMG> {
 
     fn start<T: Into<Self::Time>>(&mut self, period: T) {
         let divider = 1;
-        let ticks = self.calc_ticks_with_divider(period, divider);
+        let ticks = self.calc_ticks_with_divider(period, divider).unwrap();
         self.access_registers(|timg| {
             timg.wdtfeed.write(|w| unsafe { w.wdt_feed().bits(0) });
             timg.wdtconfig1
