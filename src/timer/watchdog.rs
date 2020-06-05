@@ -8,7 +8,7 @@ use super::Error;
 use super::TimerGroup;
 use crate::prelude::*;
 use core::marker::PhantomData;
-use embedded_hal::watchdog::{Watchdog, WatchdogDisable, WatchdogEnable};
+use embedded_hal::watchdog::{WatchdogDisable, WatchdogEnable};
 use esp32::timg::wdtconfig0::*;
 
 pub type WatchdogAction = WDT_STG0_A;
@@ -17,14 +17,13 @@ pub type WatchDogResetDuration = WDT_CPU_RESET_LENGTH_A;
 const WATCHDOG_UNBLOCK_KEY: u32 = 0x50D83AA1;
 const WATCHDOG_BLOCK_VALUE: u32 = 0x89ABCDEF;
 
-pub struct WatchDog<TIMG>
-where
-    TIMG: TimerGroup,
-{
+pub struct WatchDog<TIMG: TimerGroup> {
     clock_control_config: super::ClockControlConfig,
     timg: *const esp32::timg::RegisterBlock,
     _group: PhantomData<TIMG>,
 }
+
+unsafe impl<TIMG: TimerGroup> Send for WatchDog<TIMG> {}
 
 /// Watchdog configuration
 ///
@@ -58,10 +57,7 @@ pub struct WatchdogConfig {
     pub divider: u16,
 }
 
-impl<TIMG> WatchDog<TIMG>
-where
-    TIMG: TimerGroup,
-{
+impl<TIMG: TimerGroup> WatchDog<TIMG> {
     /// internal function to create new watchdog structure
     pub(crate) fn new(timg: TIMG, clock_control_config: super::ClockControlConfig) -> Self {
         WatchDog {
@@ -210,10 +206,7 @@ where
 }
 
 /// Enable watchdog timer, only change stage 1 period, don't change default action
-impl<TIMG> WatchdogEnable for WatchDog<TIMG>
-where
-    TIMG: TimerGroup,
-{
+impl<TIMG: TimerGroup> WatchdogEnable for WatchDog<TIMG> {
     type Time = NanoSeconds;
 
     fn start<T: Into<Self::Time>>(&mut self, period: T) {
@@ -238,10 +231,7 @@ where
 
 /// Disable watchdog timer
 //#[allow(trivial_bounds)]
-impl<'a, TIMG> WatchdogDisable for WatchDog<TIMG>
-where
-    TIMG: TimerGroup,
-{
+impl<'a, TIMG: TimerGroup> WatchdogDisable for WatchDog<TIMG> {
     fn disable(&mut self) {
         self.access_registers(|timg| {
             unsafe { timg.wdtfeed.write(|w| w.wdt_feed().bits(0)) }
@@ -253,10 +243,7 @@ where
 
 /// Feed (=reset) the watchdog timer
 #[allow(trivial_bounds)]
-impl<TIMG> Watchdog for WatchDog<TIMG>
-where
-    TIMG: TimerGroup,
-{
+impl<TIMG: TimerGroup> embedded_hal::watchdog::Watchdog for WatchDog<TIMG> {
     fn feed(&mut self) {
         self.access_registers(|timg| unsafe { timg.wdtfeed.write(|w| w.wdt_feed().bits(0)) });
     }

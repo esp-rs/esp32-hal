@@ -23,14 +23,14 @@ pub enum Error {
 }
 
 /// Hardware timers
-pub struct Timer<TIMG, INST> {
+pub struct Timer<TIMG: TimerGroup, INST: TimerInst> {
     clock_control: ClockControlConfig,
     timg: *const esp32::timg::RegisterBlock,
     _group: PhantomData<TIMG>,
     _timer: PhantomData<INST>,
 }
 
-unsafe impl<TIMG, INST> Send for Timer<TIMG, INST> {}
+unsafe impl<TIMG: TimerGroup, INST: TimerInst> Send for Timer<TIMG, INST> {}
 
 /// Interrupt events
 pub enum Event {
@@ -38,23 +38,21 @@ pub enum Event {
     TimeOut,
 }
 
+#[doc(hidden)]
 pub trait TimerGroup: core::ops::Deref {}
 impl TimerGroup for esp32::TIMG0 {}
 impl TimerGroup for esp32::TIMG1 {}
 
+#[doc(hidden)]
 pub trait TimerInst {}
-
-pub struct TimerX {}
-impl TimerInst for TimerX {}
+#[doc(hidden)]
 pub struct Timer0 {}
 impl TimerInst for Timer0 {}
+#[doc(hidden)]
 pub struct Timer1 {}
 impl TimerInst for Timer1 {}
 
-impl<TIMG> Timer<TIMG, TimerX>
-where
-    TIMG: TimerGroup,
-{
+impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
     pub fn new(
         timg: TIMG,
         clock_control: ClockControlConfig,
@@ -79,19 +77,13 @@ where
     }
 }
 
-impl<INST> Timer<TIMG0, INST>
-where
-    INST: TimerInst,
-{
+impl<INST: TimerInst> Timer<TIMG0, INST> {
     pub fn release(_timer0: Timer<TIMG0, Timer0>, _timer1: Timer<TIMG0, Timer1>) -> TIMG0 {
         unsafe { esp32::Peripherals::steal().TIMG0 }
     }
 }
 
-impl<INST> Timer<TIMG1, INST>
-where
-    INST: TimerInst,
-{
+impl<INST: TimerInst> Timer<TIMG1, INST> {
     pub fn release(_timer0: Timer<TIMG1, Timer0>, _timer1: Timer<TIMG1, Timer1>) -> TIMG1 {
         unsafe { esp32::Peripherals::steal().TIMG1 }
     }
@@ -106,10 +98,7 @@ macro_rules! timer {
         $EDGE_INT_EN:ident, $LEVEL_INT_EN:ident, $ALARM_EN:ident,
         $INT_RAW:ident, $INT_ST:ident, $INT_CLR:ident
     ) => {
-        impl<TIMG> Timer<TIMG, $TIMX>
-        where
-            TIMG: TimerGroup,
-        {
+        impl<TIMG: TimerGroup> Timer<TIMG, $TIMX> {
             /// Starts listening for an `event`
             //  Needs multi-threaded protection as timer0 and 1 use same register
             pub fn listen(&mut self, event: Event) {
