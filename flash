@@ -283,7 +283,7 @@ fi
 if [[ TERMINAL -eq 1 ]]
 then
     printf "\n${STAGE}Starting terminal.${RESET}\n"
-    gnome-terminal --geometry 200x15+0+2000 -- picocom -b $TERM_BAUDRATE $PORT --imap lfcrlf 2>/dev/null
+    gnome-terminal --geometry 200x15+0+9999 -- picocom -b $TERM_BAUDRATE $PORT --imap lfcrlf 2>/dev/null
 fi
 
 
