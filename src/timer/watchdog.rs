@@ -86,36 +86,25 @@ impl<TIMG: TimerGroup> Watchdog<TIMG> {
     }
 
     /// Calculate period from ticks
-    fn calc_period(&self, value: u32) -> Result<MicroSeconds, core::num::TryFromIntError> {
+    fn calc_period<T: Into<Ticks>>(&self, value: T) -> MicroSeconds {
         let divider: u32 = unsafe { &*(self.timg) }
             .wdtconfig1
             .read()
             .wdt_clk_prescale()
             .bits()
             .into();
-        MicroSeconds::from_ticks(
-            value as u64,
-            self.clock_control_config.apb_frequency() / divider,
-        )
+        value.into() / (self.clock_control_config.apb_frequency() / divider)
     }
 
     /// Calculate ticks from period
-    fn calc_ticks_with_divider<T: Into<NanoSeconds>>(
-        &self,
-        value: T,
-        divider: u16,
-    ) -> Result<u32, core::num::TryFromIntError> {
+    fn calc_ticks_with_divider<T: Time>(&self, value: T, divider: u16) -> Ticks {
         use core::convert::TryFrom;
-        let freq = self.clock_control_config.apb_frequency() / u32::from(divider);
-        let ticks = freq * value.into();
-        u32::try_from(ticks)
+        let ticks = self.clock_control_config.apb_frequency() / u32::from(divider) * value.into();
+        ticks
     }
 
     /// Calculate ticks from period
-    fn calc_ticks<T: Into<NanoSeconds>>(
-        &self,
-        value: T,
-    ) -> Result<u32, core::num::TryFromIntError> {
+    fn calc_ticks<T: Time>(&self, value: T) -> Ticks {
         self.calc_ticks_with_divider(
             value,
             unsafe { &*(self.timg) }
@@ -235,7 +224,7 @@ impl<TIMG: TimerGroup> WatchdogEnable for Watchdog<TIMG> {
             timg.wdtfeed.write(|w| unsafe { w.wdt_feed().bits(0) });
             timg.wdtconfig1
                 .write(|w| unsafe { w.wdt_clk_prescale().bits(divider) });
-            timg.wdtconfig2.write(|w| unsafe { w.bits(ticks) });
+            timg.wdtconfig2.write(|w| unsafe { w.bits(ticks.into()) });
             timg.wdtconfig0.modify(|_, w| {
                 w.wdt_flashboot_mod_en()
                     .clear_bit()

@@ -13,19 +13,25 @@
 //! let frequency_hz_1 = 1.Hz() + frequency_khz_3.into();
 //! ```
 
+use core::convert::TryFrom;
+use core::convert::TryInto;
 use core::fmt;
 
 pub trait Quantity: Sized {}
-pub trait Time: Quantity + Into<NanoSecondsU64> {}
-pub trait Frequency: Quantity + Into<HertzU64> {}
-pub trait Count: Quantity + Into<TicksU64> {}
+pub trait Time: Quantity + Into<NanoSeconds> {}
+pub trait Frequency: Quantity + Into<Hertz> {}
+pub trait Count: Quantity + Into<Ticks> {}
+
+pub trait TimeU64: Quantity + Into<NanoSecondsU64> {}
+pub trait FrequencyU64: Quantity + Into<HertzU64> {}
+pub trait CountU64: Quantity + Into<TicksU64> {}
 
 pub type ValueType = u32;
 pub type LargeValueType = u64;
 
 /// defines and implements extension traits for quantities with units
 macro_rules! define {
-    ($primitive:ident, $trait:ident, $( ($type: ident, $quantity:ident, $unit:ident), )+) => {
+    ($primitive:ident, $trait:ident, $( ($type: ident, $quantity: ident, $unit: ident), )+) => {
         $(
             #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
             pub struct $quantity(pub $primitive);
@@ -123,7 +129,7 @@ macro_rules! define {
 /// Define ValueType and LargeValueType quantities and conversion from ValueType to LargeValueType
 macro_rules! define_u64 {
     ($( ($type: ident, $quantity: ident, $unit:ident,
-        $quantity_u64:ident, $unit_u64:ident) ),+) => {
+        $type_u64: ident, $quantity_u64: ident, $unit_u64:ident) ),+) => {
         define!(
             ValueType,
             FromValueType,
@@ -133,7 +139,7 @@ macro_rules! define_u64 {
         define!(
             LargeValueType,
             FromLargeValueType,
-            $(($type, $quantity_u64, $unit_u64),)*
+            $(($type_u64, $quantity_u64, $unit_u64),)*
         );
 
         $(
@@ -141,7 +147,14 @@ macro_rules! define_u64 {
             fn from(x: $quantity) -> Self {
                 Self(x.0 as LargeValueType)
             }
-        })*
+        }
+        impl TryFrom<$quantity_u64> for $quantity {
+            type Error=void::Void;
+            fn try_from(x: $quantity_u64) -> Result<$quantity, Self::Error> {
+                Self(ValueType::try_from(x.0))
+            }
+        }
+        )*
 
     };
 }
@@ -174,7 +187,7 @@ macro_rules! multiply {
         impl core::ops::Mul<$freq> for $time {
             type Output = Ticks;
             fn mul(self, rhs: $freq) -> Self::Output {
-                Ticks(self.0 * rhs.0 * $factor / $divider)
+                Ticks(self.0 as LargeValueType * rhs.0 as LargeValueType * $factor / $divider)
             }
         }
 
@@ -246,14 +259,28 @@ divide!(Seconds, SecondsU64, KiloHertz, KiloHertzU64, 1_000, 1);
 divide!(Seconds, SecondsU64, MegaHertz, MegaHertzU64, 1_000_000, 1);
 
 define_u64!(
-    (Frequency, Hertz, Hz, HertzU64, Hz_u64),
-    (Frequency, KiloHertz, kHz, KiloHertzU64, kHz_u64),
-    (Frequency, MegaHertz, MHz, MegaHertzU64, MHz_u64),
-    (Time, NanoSeconds, ns, NanoSecondsU64, ns_u64),
-    (Time, MicroSeconds, us, MicroSecondsU64, us_u64),
-    (Time, MilliSeconds, ms, MilliSecondsU64, ms_u64),
-    (Time, Seconds, s, SecondsU64, s_u64),
-    (Count, Ticks, ticks, TicksU64, ticks_u64)
+    (Frequency, Hertz, Hz, FrequencyU64, HertzU64, Hz_u64),
+    (
+        Frequency,
+        KiloHertz,
+        kHz,
+        FrequencyU64,
+        KiloHertzU64,
+        kHz_u64
+    ),
+    (
+        Frequency,
+        MegaHertz,
+        MHz,
+        FrequencyU64,
+        MegaHertzU64,
+        MHz_u64
+    ),
+    (Time, NanoSeconds, ns, TimeU64, NanoSecondsU64, ns_u64),
+    (Time, MicroSeconds, us, TimeU64, MicroSecondsU64, us_u64),
+    (Time, MilliSeconds, ms, TimeU64, MilliSecondsU64, ms_u64),
+    (Time, Seconds, s, TimeU64, SecondsU64, s_u64),
+    (Count, Ticks, ticks, CountU64, TicksU64, ticks_u64)
 );
 
 convert!(KiloHertz, KiloHertzU64, Hertz, HertzU64, 1000);
