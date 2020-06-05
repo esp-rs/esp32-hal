@@ -119,6 +119,39 @@ macro_rules! convert {
     };
 }
 
+pub trait QuantityFrom<T, U, V> {
+    type Error;
+    fn from_ticks(count: T, freq: U) -> Result<V, Self::Error>;
+}
+
+/// defines multiply trait for frequency and time
+macro_rules! multiply {
+    ($prim:ident, $time: ty, $freq: ident, $factor: expr, $divider: expr) => {
+        impl core::ops::Mul<$freq> for $time {
+            type Output = $prim;
+            fn mul(self, rhs: $freq) -> $prim {
+                (self.0 as $prim) * (rhs.0 as $prim) * $factor / $divider
+            }
+        }
+        impl core::ops::Mul<$time> for $freq {
+            type Output = $prim;
+            fn mul(self, rhs: $time) -> $prim {
+                (self.0 as $prim) * (rhs.0 as $prim) * $factor / $divider
+            }
+        }
+
+        impl QuantityFrom<$prim, $freq, $time> for $time {
+            type Error = core::num::TryFromIntError;
+            fn from_ticks(count: $prim, freq: $freq) -> Result<$time, Self::Error> {
+                use core::convert::TryFrom;
+                Ok(Self(u32::try_from(
+                    (count * $divider / (freq.0 as $prim) / $factor),
+                )?))
+            }
+        }
+    };
+}
+
 define!(
     u32,
     Hertz,
@@ -150,3 +183,19 @@ convert!(MilliSeconds, MicroSeconds, 1_000);
 convert!(MilliSeconds, NanoSeconds, 1_000_000);
 
 convert!(MicroSeconds, NanoSeconds, 1_000);
+
+multiply!(u64, Seconds, Hertz, 1, 1);
+multiply!(u64, Seconds, KiloHertz, 1_000, 1);
+multiply!(u64, Seconds, MegaHertz, 1_000_000, 1);
+
+multiply!(u64, MilliSeconds, Hertz, 1, 1_000);
+multiply!(u64, MilliSeconds, KiloHertz, 1, 1);
+multiply!(u64, MilliSeconds, MegaHertz, 1_000, 1);
+
+multiply!(u64, MicroSeconds, Hertz, 1, 1_000_000);
+multiply!(u64, MicroSeconds, KiloHertz, 1, 1_000);
+multiply!(u64, MicroSeconds, MegaHertz, 1, 1);
+
+multiply!(u64, NanoSeconds, Hertz, 1, 1_000_000_000);
+multiply!(u64, NanoSeconds, KiloHertz, 1, 1_000_000);
+multiply!(u64, NanoSeconds, MegaHertz, 1, 1_000);

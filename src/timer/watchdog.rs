@@ -4,6 +4,7 @@
 //! - Add convenience methods for configuration
 //! - Consider add default configuration for start with time only
 
+use super::Error;
 use super::TimerGroup;
 use crate::prelude::*;
 use core::marker::PhantomData;
@@ -71,7 +72,7 @@ where
     }
 
     /// function to unlock the watchdog (write unblock key) and lock after use
-    fn access_registers<A, F: FnMut(&esp32::timg::RegisterBlock) -> A>(&mut self, mut f: F) -> A {
+    fn access_registers<A, F: FnMut(&esp32::timg::RegisterBlock) -> A>(&self, mut f: F) -> A {
         // Unprotect write access to registers
 
         let timg = unsafe { &*(self.timg) };
@@ -89,16 +90,35 @@ where
     }
 
     /// Calculate period from ticks
-    fn calc_period(&self, value: u32) -> MicroSeconds {
-        ((1_000_000u64 * value as u64 / u32::from(self.clock_control_config.apb_frequency()) as u64)
-            as u32)
-            .us()
+    fn calc_period(&self, value: u32) -> Result<MicroSeconds, core::num::TryFromIntError> {
+        let divider: u32 = unsafe { &*(self.timg) }
+            .wdtconfig1
+            .read()
+            .wdt_clk_prescale()
+            .bits()
+            .into();
+        MicroSeconds::from_ticks(
+            value as u64,
+            self.clock_control_config.apb_frequency() / divider,
+        )
     }
 
     /// Calculate ticks from period
-    fn calc_ticks(&self, value: MicroSeconds) -> u32 {
-        ((u32::from(value) as u64 * u32::from(self.clock_control_config.apb_frequency()) as u64)
-            / 1_000_000u64) as u32
+    fn calc_ticks_with_divider<T: Into<NanoSeconds>>(&self, value: T, divider: u16) -> u32 {
+        (self.clock_control_config.apb_frequency() / u32::from(divider) * value.into()) as u32
+    }
+
+    /// Calculate ticks from period
+    fn calc_ticks<T: Into<NanoSeconds>>(&self, value: T) -> u32 {
+        self.calc_ticks_with_divider(
+            value,
+            unsafe { &*(self.timg) }
+                .wdtconfig1
+                .read()
+                .wdt_clk_prescale()
+                .bits()
+                .into(),
+        )
     }
 
     /// Get watchdog configuration
@@ -112,13 +132,21 @@ where
         let stg3 = wdtconfig0.wdt_stg3().variant();
 
         Ok(WatchdogConfig {
-            period1: self.calc_period(timg.wdtconfig2.read().bits()),
+            period1: self
+                .calc_period(timg.wdtconfig2.read().bits())
+                .map_err(|_| Error::OutOfRange)?,
             action1: stg0,
-            period2: self.calc_period(timg.wdtconfig3.read().bits()),
+            period2: self
+                .calc_period(timg.wdtconfig3.read().bits())
+                .map_err(|_| Error::OutOfRange)?,
             action2: stg1,
-            period3: self.calc_period(timg.wdtconfig4.read().bits()),
+            period3: self
+                .calc_period(timg.wdtconfig4.read().bits())
+                .map_err(|_| Error::OutOfRange)?,
             action3: stg2,
-            period4: self.calc_period(timg.wdtconfig5.read().bits()),
+            period4: self
+                .calc_period(timg.wdtconfig5.read().bits())
+                .map_err(|_| Error::OutOfRange)?,
             action4: stg3,
             cpu_reset_duration: wdtconfig0.wdt_cpu_reset_length().variant(),
             sys_reset_duration: wdtconfig0.wdt_sys_reset_length().variant(),
@@ -128,12 +156,15 @@ where
 
     /// Change watchdog timer configuration and start
     pub fn set_config(&mut self, config: &WatchdogConfig) {
-        let per1 = self.calc_ticks(config.period1.into());
-        let per2 = self.calc_ticks(config.period2.into());
-        let per3 = self.calc_ticks(config.period3.into());
-        let per4 = self.calc_ticks(config.period4.into());
-
         self.access_registers(|timg| {
+            timg.wdtconfig1
+                .write(|w| unsafe { w.wdt_clk_prescale().bits(config.divider) });
+
+            let per1 = self.calc_ticks(config.period1);
+            let per2 = self.calc_ticks(config.period2);
+            let per3 = self.calc_ticks(config.period3);
+            let per4 = self.calc_ticks(config.period4);
+
             unsafe { timg.wdtfeed.write(|w| w.wdt_feed().bits(0)) }
             timg.wdtconfig0.modify(|_, w| {
                 w.wdt_stg0()
@@ -157,12 +188,15 @@ where
                     .wdt_sys_reset_length()
                     .variant(config.sys_reset_duration)
             });
-            timg.wdtconfig1
-                .write(|w| unsafe { w.wdt_clk_prescale().bits(config.divider) });
             timg.wdtconfig2.write(|w| unsafe { w.bits(per1) });
             timg.wdtconfig3.write(|w| unsafe { w.bits(per2) });
             timg.wdtconfig4.write(|w| unsafe { w.bits(per3) });
             timg.wdtconfig5.write(|w| unsafe { w.bits(per4) });
+
+            interrupt::free(|_| {
+                super::TIMER_MUTEX.lock();
+                timg.int_ena_timers.modify(|_, w| w.wdt_int_ena().set_bit());
+            });
         });
     }
 }
@@ -172,16 +206,16 @@ impl<TIMG> WatchdogEnable for WatchDog<TIMG>
 where
     TIMG: TimerGroup,
 {
-    type Time = MicroSeconds;
+    type Time = NanoSeconds;
 
     fn start<T: Into<Self::Time>>(&mut self, period: T) {
-        let per = self.calc_ticks(period.into());
-
+        let divider = 1;
+        let ticks = self.calc_ticks_with_divider(period, divider);
         self.access_registers(|timg| {
-            unsafe { timg.wdtfeed.write(|w| w.wdt_feed().bits(0)) }
-            timg.wdtconfig2.write(|w| unsafe { w.bits(per) });
+            timg.wdtfeed.write(|w| unsafe { w.wdt_feed().bits(0) });
             timg.wdtconfig1
-                .write(|w| unsafe { w.wdt_clk_prescale().bits(1) });
+                .write(|w| unsafe { w.wdt_clk_prescale().bits(divider) });
+            timg.wdtconfig2.write(|w| unsafe { w.bits(ticks) });
             timg.wdtconfig0.modify(|_, w| {
                 w.wdt_flashboot_mod_en()
                     .clear_bit()

@@ -14,6 +14,7 @@ use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::interrupt::{Interrupt, InterruptLevel};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::timer::watchdog::{WatchDogResetDuration, WatchdogAction, WatchdogConfig};
 use esp32_hal::timer::{Timer, Timer0};
 use esp32_hal::Core::PRO;
 use spin::Mutex;
@@ -46,7 +47,23 @@ fn main() -> ! {
     let (_, _, mut watchdog1) = Timer::new(timg1, clkcntrl_config);
     watchdog_rtc.disable();
     watchdog0.disable();
-    watchdog1.disable();
+
+    let wdconfig = WatchdogConfig {
+        action1: WatchdogAction::INTERRUPT,
+        action2: WatchdogAction::RESETSYSTEM,
+        action3: WatchdogAction::DISABLE,
+        action4: WatchdogAction::DISABLE,
+        period1: 2.s().into(),
+        period2: 4.s().into(),
+        period3: 0.us(),
+        period4: 0.us(),
+        cpu_reset_duration: WatchDogResetDuration::T800NS,
+        sys_reset_duration: WatchDogResetDuration::T800NS,
+        divider: 1,
+    };
+
+    watchdog1.set_config(&wdconfig);
+    //watchdog1.start(3.s());
 
     timer0.enable(true);
     timer1.enable(true);
@@ -69,14 +86,12 @@ fn main() -> ! {
     timer0.enable_level_interrupt(true);
     timer0.enable_edge_interrupt(true);
 
-    interrupt::free(|cs| {
-        timer0.listen(esp32_hal::timer::Event::TimeOut);
-        interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_LEVEL_INTR, InterruptLevel(1))
-            .unwrap();
-        interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_EDGE_INTR, InterruptLevel(1))
-            .unwrap();
-        *TIMER.lock().borrow_mut() = Some(timer0);
-    });
+    timer0.listen(esp32_hal::timer::Event::TimeOut);
+    interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_LEVEL_INTR, InterruptLevel(1)).unwrap();
+    interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_EDGE_INTR, InterruptLevel(1)).unwrap();
+    interrupt::enable_with_priority(PRO, Interrupt::TG1_WDT_EDGE_INTR, InterruptLevel(3)).unwrap();
+
+    *TIMER.lock().borrow_mut() = Some(timer0);
 
     loop {
         interrupt::free(|cs| {
