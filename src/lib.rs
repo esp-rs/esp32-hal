@@ -36,6 +36,7 @@ pub mod gpio;
 pub mod interrupt;
 pub mod prelude;
 pub mod serial;
+pub mod timer;
 pub mod units;
 
 #[cfg(feature = "alloc")]
