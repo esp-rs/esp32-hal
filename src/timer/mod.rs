@@ -100,7 +100,7 @@ static TIMER_MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 macro_rules! timer {
     ($TIMX:ident, $INT_ENA:ident, $CONFIG:ident, $HI:ident, $LO: ident,
         $LOAD: ident, $LOAD_HI: ident, $LOAD_LO:ident, $UPDATE:ident, $ALARM_HI:ident,
-        $ALARM_LO:ident, $EN:ident, $INCREASE:ident, $AUTORE_LOAD:ident, $DIVIDER:ident,
+        $ALARM_LO:ident, $EN:ident, $INCREASE:ident, $AUTO_RELOAD:ident, $DIVIDER:ident,
         $EDGE_INT_EN:ident, $LEVEL_INT_EN:ident, $ALARM_EN:ident,
         $INT_RAW:ident, $INT_ST:ident, $INT_CLR:ident
     ) => {
@@ -190,11 +190,11 @@ macro_rules! timer {
                 }
             }
 
-            pub fn autoreload(&mut self, enable: bool) {
+            pub fn auto_reload(&mut self, enable: bool) {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
-                        .modify(|_, w| w.$AUTORE_LOAD().bit(enable))
+                        .modify(|_, w| w.$AUTO_RELOAD().bit(enable))
                 }
             }
 

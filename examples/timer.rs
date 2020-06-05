@@ -84,7 +84,7 @@ fn main() -> ! {
 
     timer0.set_alarm(70_000_000.into());
     timer0.enable_alarm(true);
-    timer0.autoreload(true);
+    timer0.auto_reload(true);
     timer0.enable_level_interrupt(true);
     timer0.enable_edge_interrupt(true);
 
