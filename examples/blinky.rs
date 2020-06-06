@@ -75,10 +75,9 @@ fn disable_timg_wdts(timg0: &mut hal::esp32::TIMG0, timg1: &mut hal::esp32::TIMG
 
 /// cycle accurate delay using the cycle counter register
 pub fn delay(clocks: u32) {
-    // NOTE: does not account for rollover
-    let target = get_cycle_count() + clocks;
+    let start = get_cycle_count();
     loop {
-        if get_cycle_count() > target {
+        if get_cycle_count().wrapping_sub(start) >= clocks {
             break;
         }
     }
