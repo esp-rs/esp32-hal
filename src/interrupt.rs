@@ -109,7 +109,7 @@ fn interrupt_level_to_cpu_interrupt(
         None,                   // Level 2 edge triggered not supported
         Some(CPUInterrupt(22)), // Level 3 edge triggered
         Some(CPUInterrupt(28)), // Level 4 edge triggered
-        Some(CPUInterrupt(31)), // Level 5 edge triggered not supported
+        None,                   // Level 5 edge triggered not supported
         None,                   // Level 6 = Debug not supported for peripherals
         Some(CPUInterrupt(14)), // Level 7 = NMI edge triggered
     ];
