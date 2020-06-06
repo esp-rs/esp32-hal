@@ -16,15 +16,18 @@ use esp32_hal::dprintln;
 use esp32_hal::interrupt::{Interrupt, InterruptLevel};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 use esp32_hal::timer::watchdog::{self, WatchDogResetDuration, WatchdogAction, WatchdogConfig};
-use esp32_hal::timer::{Timer, Timer0};
+use esp32_hal::timer::{Timer, Timer0, TimerLact};
 use esp32_hal::Core::PRO;
 use spin::Mutex;
 
 const BLINK_HZ: Hertz = Hertz(2);
 
-static TIMER: Mutex<RefCell<Option<Timer<esp32::TIMG0, Timer0>>>> = Mutex::new(RefCell::new(None));
+static TIMER0: Mutex<RefCell<Option<Timer<esp32::TIMG0, Timer0>>>> = Mutex::new(RefCell::new(None));
+static TIMER2: Mutex<RefCell<Option<Timer<esp32::TIMG0, TimerLact>>>> =
+    Mutex::new(RefCell::new(None));
 static WATCHDOG1: Mutex<RefCell<Option<watchdog::Watchdog<esp32::TIMG1>>>> =
     Mutex::new(RefCell::new(None));
+static TX: spin::Mutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> = spin::Mutex::new(None);
 
 #[no_mangle]
 fn main() -> ! {
@@ -46,8 +49,8 @@ fn main() -> ! {
     .unwrap();
 
     let (clkcntrl_config, mut watchdog_rtc) = clkcntrl.freeze().unwrap();
-    let (mut timer0, mut timer1, mut watchdog0) = Timer::new(timg0, clkcntrl_config);
-    let (_, _, mut watchdog1) = Timer::new(timg1, clkcntrl_config);
+    let (mut timer0, mut timer1, mut timer2, mut watchdog0) = Timer::new(timg0, clkcntrl_config);
+    let (_, _, _, mut watchdog1) = Timer::new(timg1, clkcntrl_config);
     watchdog_rtc.disable();
     watchdog0.disable();
 
@@ -56,8 +59,8 @@ fn main() -> ! {
         action2: WatchdogAction::RESETSYSTEM,
         action3: WatchdogAction::DISABLE,
         action4: WatchdogAction::DISABLE,
-        period1: 5.s().into(),
-        period2: 10.s().into(),
+        period1: 6.s().into(),
+        period2: 8.s().into(),
         period3: 0.us().into(),
         period4: 0.us().into(),
         cpu_reset_duration: WatchDogResetDuration::T800NS,
@@ -80,8 +83,10 @@ fn main() -> ! {
     let (mut tx, _) = serial.split();
 
     writeln!(tx, "\n\nESP32 Started\n\n").unwrap();
+    writeln!(tx, "Clock Config: {:#?}", clkcntrl_config).unwrap();
 
-    timer0.start(900.ms());
+    timer0.start(1000.ms());
+    timer2.start(2.s());
     timer1.start(4.s());
 
     writeln!(tx, "Waiting for timer0").unwrap();
@@ -92,22 +97,46 @@ fn main() -> ! {
     timer0.listen(esp32_hal::timer::Event::TimeOut);
     timer0.listen(esp32_hal::timer::Event::TimeOutEdge);
 
+    timer2.listen(esp32_hal::timer::Event::TimeOut);
+    timer2.listen(esp32_hal::timer::Event::TimeOutEdge);
+
     interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_LEVEL_INTR, InterruptLevel(1)).unwrap();
     interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_EDGE_INTR, InterruptLevel(1)).unwrap();
 
     interrupt::enable_with_priority(PRO, Interrupt::TG1_WDT_LEVEL_INTR, InterruptLevel(1)).unwrap();
     interrupt::enable_with_priority(PRO, Interrupt::TG1_WDT_EDGE_INTR, InterruptLevel(3)).unwrap();
 
-    *TIMER.lock().borrow_mut() = Some(timer0);
+    interrupt::enable_with_priority(PRO, Interrupt::TG0_LACT_LEVEL_INTR, InterruptLevel(1))
+        .unwrap();
+    interrupt::enable_with_priority(PRO, Interrupt::TG0_LACT_EDGE_INTR, InterruptLevel(4)).unwrap();
 
+    *TIMER0.lock().borrow_mut() = Some(timer0);
+    *TIMER2.lock().borrow_mut() = Some(timer2);
+    *TX.lock() = Some(tx);
+
+    let mut x = 0;
     loop {
+        x = x + 1;
         interrupt::free(|_| {
-            if let Some(ref mut timer0) = TIMER.lock().borrow_mut().deref_mut() {
-                writeln!(tx, "Timers: {} {}", timer0.get_value(), timer1.get_value()).unwrap();
-                if let Ok(_) = timer1.wait() {
-                    writeln!(tx, "CANCELLING Timers").unwrap();
-                    timer0.cancel().unwrap();
-                    timer1.cancel().unwrap();
+            if let Some(ref mut timer0) = TIMER0.lock().borrow_mut().deref_mut() {
+                if let Some(ref mut timer2) = TIMER2.lock().borrow_mut().deref_mut() {
+                    if let Some(ref mut tx) = TX.lock().deref_mut() {
+                        writeln!(
+                            tx,
+                            "Loop: {} {} {} {} {}",
+                            x,
+                            timer0.get_value(),
+                            timer1.get_value(),
+                            timer2.get_value(),
+                            xtensa_lx6_rt::get_cycle_count()
+                        )
+                        .unwrap();
+                        if let Ok(_) = timer1.wait() {
+                            writeln!(tx, "CANCELLING Timers").unwrap();
+                            timer0.cancel().unwrap();
+                            timer1.cancel().unwrap();
+                        }
+                    }
                 }
             }
         });
@@ -118,9 +147,13 @@ fn main() -> ! {
 
 #[interrupt]
 fn TG0_T0_LEVEL_INTR() {
-    esp32_hal::dprintln!("  TG0_T0_LEVEL_INTR");
     interrupt::free(|_| {
-        if let Some(ref mut timer0) = TIMER.lock().borrow_mut().deref_mut() {
+        if let Some(ref mut tx) = TX.lock().deref_mut() {
+            writeln!(tx, "  TG0_T0_LEVEL_INTR").unwrap();
+        }
+    });
+    interrupt::free(|_| {
+        if let Some(ref mut timer0) = TIMER0.lock().borrow_mut().deref_mut() {
             timer0.clear_interrupt();
         }
     });
@@ -128,28 +161,58 @@ fn TG0_T0_LEVEL_INTR() {
 
 #[interrupt]
 fn TG0_T0_EDGE_INTR() {
-    esp32_hal::dprintln!("  TG0_T0_EDGE_INTR");
     interrupt::free(|_| {
-        // edge interrupt is fired before level. If cleared here level interrupt is not fired
-        // if let Some(ref mut timer0) = TIMER.lock().borrow_mut().deref_mut() {
-        // timer0.clear_interrupt();
-        // }
+        if let Some(ref mut tx) = TX.lock().deref_mut() {
+            writeln!(tx, "  TG0_T0_EDGE_INTR").unwrap();
+        }
+    });
+}
+
+#[interrupt]
+fn TG0_LACT_LEVEL_INTR() {
+    interrupt::free(|_| {
+        if let Some(ref mut tx) = TX.lock().deref_mut() {
+            writeln!(tx, "  TG0_LACT_LEVEL_INTR").unwrap();
+        }
+    });
+    interrupt::free(|_| {
+        if let Some(ref mut timer2) = TIMER2.lock().borrow_mut().deref_mut() {
+            timer2.clear_interrupt();
+        }
+    });
+}
+
+#[interrupt]
+fn TG0_LACT_EDGE_INTR() {
+    interrupt::free(|_| {
+        if let Some(ref mut tx) = TX.lock().deref_mut() {
+            writeln!(tx, "  TG0_LACT_EDGE_INTR").unwrap();
+        }
     });
 }
 
 #[interrupt]
 fn TG1_WDT_LEVEL_INTR() {
     interrupt::free(|_| {
+        if let Some(ref mut tx) = TX.lock().deref_mut() {
+            writeln!(tx, "  TG1_WDT_LEVEL_INTR").unwrap();
+        }
+    });
+
+    interrupt::free(|_| {
         if let Some(ref mut watchdog1) = WATCHDOG1.lock().borrow_mut().deref_mut() {
             watchdog1.clear_interrupt();
         }
     });
-    esp32_hal::dprintln!("  TG1_WDT_LEVEL_INTR");
 }
 
 #[interrupt]
 fn TG1_WDT_EDGE_INTR() {
-    esp32_hal::dprintln!("  TG1_WDT_EDGE_INTR");
+    interrupt::free(|_| {
+        if let Some(ref mut tx) = TX.lock().deref_mut() {
+            writeln!(tx, "  TG1_WDT_EDGE_INTR").unwrap();
+        }
+    });
 }
 
 const WDT_WKEY_VALUE: u32 = 0x50D83AA1;

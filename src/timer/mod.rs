@@ -21,6 +21,7 @@ pub enum Error {
     UnsupportedWatchdogConfig,
     /// Value out of range
     OutOfRange,
+    /// Timer is disabled
     Disabled,
 }
 
@@ -55,6 +56,9 @@ impl TimerInst for Timer0 {}
 #[doc(hidden)]
 pub struct Timer1 {}
 impl TimerInst for Timer1 {}
+#[doc(hidden)]
+pub struct TimerLact {}
+impl TimerInst for TimerLact {}
 
 impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
     /// Create new timer resources
@@ -70,6 +74,7 @@ impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
     ) -> (
         Timer<TIMG, Timer0>,
         Timer<TIMG, Timer1>,
+        Timer<TIMG, TimerLact>,
         watchdog::Watchdog<TIMG>,
     ) {
         let timer0 = Timer::<TIMG, Timer0> {
@@ -84,10 +89,22 @@ impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
             _group: PhantomData {},
             _timer: PhantomData {},
         };
+        let mut timerlact = Timer::<TIMG, TimerLact> {
+            clock_control_config,
+            timg: &*timg as *const _ as *const esp32::timg::RegisterBlock,
+            _group: PhantomData {},
+            _timer: PhantomData {},
+        };
+
+        // TODO: check if timer properly continues in sleep mode
+        timerlact.set_rtc_step(
+            clock_control_config.apb_frequency() / clock_control_config.rtc_frequency(),
+        );
 
         (
             timer0,
             timer1,
+            timerlact,
             watchdog::Watchdog::new(timg, clock_control_config),
         )
     }
@@ -96,7 +113,11 @@ impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
 impl<INST: TimerInst> Timer<TIMG0, INST> {
     /// Releases the timer resources. Requires to release all timers and watchdog belonging to
     /// the same group at once.
-    pub fn release(_timer0: Timer<TIMG0, Timer0>, _timer1: Timer<TIMG0, Timer1>) -> TIMG0 {
+    pub fn release(
+        _timer0: Timer<TIMG0, Timer0>,
+        _timer1: Timer<TIMG0, Timer1>,
+        _timer2: Timer<TIMG0, TimerLact>,
+    ) -> TIMG0 {
         unsafe { esp32::Peripherals::steal().TIMG0 }
     }
 }
@@ -104,7 +125,11 @@ impl<INST: TimerInst> Timer<TIMG0, INST> {
 impl<INST: TimerInst> Timer<TIMG1, INST> {
     /// Releases the timer resources. Requires to release all timers and watchdog belonging to
     /// the same group at once.
-    pub fn release(_timer0: Timer<TIMG1, Timer0>, _timer1: Timer<TIMG1, Timer1>) -> TIMG1 {
+    pub fn release(
+        _timer0: Timer<TIMG1, Timer0>,
+        _timer1: Timer<TIMG1, Timer1>,
+        _timer2: Timer<TIMG1, TimerLact>,
+    ) -> TIMG1 {
         unsafe { esp32::Peripherals::steal().TIMG1 }
     }
 }
@@ -116,7 +141,7 @@ macro_rules! timer {
         $LOAD: ident, $LOAD_HI: ident, $LOAD_LO:ident, $UPDATE:ident, $ALARM_HI:ident,
         $ALARM_LO:ident, $EN:ident, $INCREASE:ident, $AUTO_RELOAD:ident, $DIVIDER:ident,
         $EDGE_INT_EN:ident, $LEVEL_INT_EN:ident, $ALARM_EN:ident,
-        $INT_RAW:ident, $INT_ST:ident, $INT_CLR:ident
+        $INT_RAW:ident, $INT_ST:ident, $INT_CLR:ident, $MIN_DIV:expr, $MAX_DIV:expr
     ) => {
         impl<TIMG: TimerGroup> Timer<TIMG, $TIMX> {
             /// Starts listening for an `event`
@@ -125,7 +150,7 @@ macro_rules! timer {
                 match event {
                     Event::TimeOut => self.enable_level_interrupt(true),
                     Event::TimeOutEdge => self.enable_edge_interrupt(true),
-                }
+                };
                 unsafe {
                     interrupt::free(|_| {
                         TIMER_MUTEX.lock();
@@ -142,21 +167,22 @@ macro_rules! timer {
                 match event {
                     Event::TimeOut => self.enable_level_interrupt(false),
                     Event::TimeOutEdge => self.enable_edge_interrupt(false),
-                }
+                };
             }
 
             /// Clear interrupt once fired
-            pub fn clear_interrupt(&mut self) {
+            pub fn clear_interrupt(&mut self) -> &mut Self {
                 self.enable_alarm(true);
                 unsafe {
                     (*(self.timg))
                         .int_clr_timers
                         .write(|w| w.$INT_CLR().set_bit())
                 }
+                self
             }
 
             /// Set timer value
-            pub fn set_value<T: Into<TicksU64>>(&mut self, value: T) {
+            pub fn set_value<T: Into<TicksU64>>(&mut self, value: T) -> &mut Self {
                 unsafe {
                     let timg = &*(self.timg);
                     let value: u64 = value.into().into();
@@ -164,6 +190,7 @@ macro_rules! timer {
                     timg.$LOAD_HI.write(|w| w.bits((value >> 32) as u32));
                     timg.$LOAD.write(|w| w.bits(1));
                 }
+                self
             }
 
             /// Get timer value
@@ -192,18 +219,20 @@ macro_rules! timer {
             ///
             /// *Note: timer is not disabled, so there is a risk for false triggering between
             /// setting upper and lower 32 bits.*
-            pub fn set_alarm(&mut self, value: TicksU64) {
+            pub fn set_alarm(&mut self, value: TicksU64) -> &mut Self {
                 unsafe {
                     let timg = &*(self.timg);
                     let value: u64 = value.into();
                     timg.$ALARM_HI.write(|w| w.bits((value >> 32) as u32));
                     timg.$ALARM_LO.write(|w| w.bits(value as u32));
                 }
+                self
             }
 
             /// Enable or disables the timer
-            pub fn enable(&mut self, enable: bool) {
+            pub fn enable(&mut self, enable: bool) -> &mut Self {
                 unsafe { (*(self.timg)).$CONFIG.modify(|_, w| w.$EN().bit(enable)) }
+                self
             }
 
             /// Enable or disables the timer
@@ -218,51 +247,56 @@ macro_rules! timer {
 
             /// Set to true to increase the timer value on each tick, set to false to decrease
             /// the timer value on each tick.
-            pub fn increasing(&mut self, enable: bool) {
+            pub fn increasing(&mut self, enable: bool) -> &mut Self {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
                         .modify(|_, w| w.$INCREASE().bit(enable))
                 }
+                self
             }
 
-            /// Returns true if teh timer is increasing, otherwise decreasing
+            /// Returns true if the timer is increasing, otherwise decreasing
             pub fn is_increasing(&mut self) -> bool {
                 unsafe { (*(self.timg)).$CONFIG.read().$INCREASE().bit_is_set() }
             }
 
             /// Set to true if the timer needs to be reloaded to initial value once the alarm
             /// is reached.
-            pub fn auto_reload(&mut self, enable: bool) {
+            pub fn auto_reload(&mut self, enable: bool) -> &mut Self {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
                         .modify(|_, w| w.$AUTO_RELOAD().bit(enable))
                 }
+                self
             }
 
-            fn enable_edge_interrupt(&mut self, enable: bool) {
+            fn enable_edge_interrupt(&mut self, enable: bool) -> &mut Self {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
                         .modify(|_, w| w.$EDGE_INT_EN().bit(enable))
                 }
+                self
             }
 
-            fn enable_level_interrupt(&mut self, enable: bool) {
+            fn enable_level_interrupt(&mut self, enable: bool) -> &mut Self {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
                         .modify(|_, w| w.$LEVEL_INT_EN().bit(enable))
                 }
+                self
             }
 
-            fn enable_alarm(&mut self, enable: bool) {
+            fn enable_alarm(&mut self, enable: bool) -> &mut Self {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
                         .modify(|_, w| w.$ALARM_EN().bit(enable))
                 }
+                self
             }
 
             fn alarm_active(&mut self) -> bool {
@@ -271,9 +305,10 @@ macro_rules! timer {
 
             /// Set clock divider.
             ///
-            /// Value must be between 2 and 65536 inclusive.
-            fn set_divider(&mut self, divider: u32) -> Result<(), Error> {
-                if divider <= 1 || divider > 65536 {
+            /// Value must be between 2 and 65536 inclusive for Timer 0 and 1 and
+            /// between 3 and 65535 for TimerLact.
+            pub fn set_divider(&mut self, divider: u32) -> Result<&mut Self, Error> {
+                if divider < $MIN_DIV || divider > $MAX_DIV {
                     return Err(Error::OutOfRange);
                 }
 
@@ -284,7 +319,7 @@ macro_rules! timer {
                     })
                 };
 
-                Ok(())
+                Ok(self)
             }
         }
         impl<TIMG: TimerGroup> Periodic for Timer<TIMG, $TIMX> {}
@@ -294,15 +329,15 @@ macro_rules! timer {
 
             /// Start timer
             fn start<T: Into<Self::Time>>(&mut self, timeout: T) {
-                self.enable(false);
-                self.set_divider(2).unwrap(); // minimum divider value is 2,
-                                              // this still allows >14000years with 64 bit values
-
-                self.auto_reload(true);
-                self.set_value(0);
-                self.set_alarm(self.clock_control_config.apb_frequency() / 2 * timeout.into());
-                self.enable_alarm(true);
-                self.enable(true);
+                let alarm = self.clock_control_config.apb_frequency() / $MIN_DIV * timeout.into();
+                self.enable(false)
+                    .set_divider($MIN_DIV)
+                    .unwrap()
+                    .auto_reload(true)
+                    .set_value(0)
+                    .set_alarm(alarm)
+                    .enable_alarm(true)
+                    .enable(true);
             }
 
             /// Wait for timer to finish
@@ -334,6 +369,18 @@ macro_rules! timer {
     };
 }
 
+impl<TIMG: TimerGroup> Timer<TIMG, TimerLact> {
+    /// set increment when in sleep mode for Lact timer
+    fn set_rtc_step(&mut self, ticks: u32) -> &mut Self {
+        unsafe {
+            (*(self.timg))
+                .lactrtc
+                .modify(|_, w| w.lact_rtc_step_len().bits(ticks.into()));
+        };
+        self
+    }
+}
+
 timer!(
     Timer0,
     t0_int_ena,
@@ -355,7 +402,9 @@ timer!(
     t0_alarm_en,
     t0_int_raw,
     t0_int_st,
-    t0_int_clr
+    t0_int_clr,
+    2,
+    65536
 );
 
 timer!(
@@ -379,5 +428,33 @@ timer!(
     t1_alarm_en,
     t1_int_raw,
     t1_int_st,
-    t1_int_clr
+    t1_int_clr,
+    2,
+    65536
+);
+
+timer!(
+    TimerLact,
+    lact_int_ena,
+    lactconfig,
+    lacthi,
+    lactlo,
+    lactload,
+    lactloadhi,
+    lactloadlo,
+    lactupdate,
+    lactalarmhi,
+    lactalarmlo,
+    lact_en,
+    lact_increase,
+    lact_autoreload,
+    lact_divider,
+    lact_edge_int_en,
+    lact_level_int_en,
+    lact_alarm_en,
+    lact_int_raw,
+    lact_int_st,
+    lact_int_clr,
+    3,
+    65535
 );
