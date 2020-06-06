@@ -1,8 +1,12 @@
-//! Integrated timer control
+//! Timer peripherals
 //!
+//! ESP32 supports two timer groups, with each timer group supports 3 timers
+//! (Timer 0, 1 and Timer Lact) and a watchdog.
+//! The timers are 64 bits and run from the APB clock divided by a programmable factor.
 //!
-//!
-//!
+//! # TODO
+//! - Implement processor counter (CCOMPARE)
+//! - Implement FRC1 & FRC2 counters
 //!
 
 use embedded_hal::timer::{Cancel, CountDown, Periodic};
@@ -26,6 +30,12 @@ pub enum Error {
 }
 
 /// Hardware timers
+///
+/// The timers can be programmed in a high level way via
+/// [start](embedded_hal::timer::CountDown::start), [wait](embedded_hal::timer::CountDown::wait),
+/// [cancel](embedded_hal::timer::Cancel::cancel).
+///
+/// Lower level access is provided by the other functions.
 pub struct Timer<TIMG: TimerGroup, INST: TimerInst> {
     clock_control_config: ClockControlConfig,
     timg: *const esp32::timg::RegisterBlock,
