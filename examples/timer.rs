@@ -143,7 +143,7 @@ fn main() -> ! {
                             timer0.get_value(),
                             timer1.get_value(),
                             timer2.get_value(),
-                            xtensa_lx6_rt::get_cycle_count()
+                            xtensa_lx6::get_cycle_count()
                         )
                         .unwrap();
                         if let Ok(_) = timer1.wait() {

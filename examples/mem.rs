@@ -16,6 +16,8 @@ use esp32_hal::dprintln;
 use esp32_hal::mem::{memcmp, memcpy, memcpy_reverse, memset};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 
+use xtensa_lx6::get_cycle_count;
+
 #[macro_use]
 extern crate alloc;
 
@@ -76,11 +78,11 @@ fn main() -> ! {
     let mut dst = vec![0u8; BUF_LEN];
     let mut src = vec![0u8; BUF_LEN];
 
-    let start = xtensa_lx6_rt::get_cycle_count();
+    let start = get_cycle_count();
     for i in 0..src.len() {
         src[i] = i as u8;
     }
-    let end = xtensa_lx6_rt::get_cycle_count();
+    let end = get_cycle_count();
 
     let inittime = end.wrapping_sub(start) as f32 / ClockControlConfig {}.cpu_frequency().0 as f32;
 
@@ -130,11 +132,11 @@ fn main() -> ! {
 const REPEAT: usize = 20;
 
 fn time(output: &mut dyn core::fmt::Write, text: &str, bytes: usize, f: &dyn Fn() -> ()) {
-    let start = xtensa_lx6_rt::get_cycle_count();
+    let start = get_cycle_count();
     for _ in 0..REPEAT {
         f();
     }
-    let end = xtensa_lx6_rt::get_cycle_count();
+    let end = get_cycle_count();
 
     let time = (end - start) as f32 / ClockControlConfig {}.cpu_frequency().0 as f32;
     writeln!(
@@ -154,11 +156,11 @@ unsafe fn time_memcpy(
     len: usize,
     f: unsafe extern "C" fn(dst: *mut u8, src: *const u8, n: usize) -> *mut u8,
 ) {
-    let start = xtensa_lx6_rt::get_cycle_count();
+    let start = get_cycle_count();
     for _ in 0..REPEAT {
         f(dst as *const _ as *mut _, src as *const _ as *mut _, len);
     }
-    let end = xtensa_lx6_rt::get_cycle_count();
+    let end = get_cycle_count();
 
     let time = end.wrapping_sub(start) as f32 / ClockControlConfig {}.cpu_frequency().0 as f32;
 

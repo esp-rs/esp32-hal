@@ -10,6 +10,9 @@ use esp32_hal::clock_control::{CPUSource, ClockControl, ClockControlConfig};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+
+use xtensa_lx6::{get_cycle_count, get_stack_pointer};
+
 const BLINK_HZ: Hertz = Hertz(1);
 
 static GLOBAL_COUNT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
@@ -76,12 +79,7 @@ fn main() -> ! {
     )
     .unwrap();
 
-    writeln!(
-        uart0,
-        "Stack Pointer Core 0: {:08x?}",
-        xtensa_lx6_rt::get_stack_pointer()
-    )
-    .unwrap();
+    writeln!(uart0, "Stack Pointer Core 0: {:08x?}", get_stack_pointer()).unwrap();
 
     // register callback which is called when the clock is switched
     clock_control_config
@@ -131,9 +129,9 @@ fn main() -> ! {
                 x = x.wrapping_add(1);
 
                 let cycles = clock_control_config.cpu_frequency() / BLINK_HZ;
-                let start = xtensa_lx6_rt::get_cycle_count();
+                let start = get_cycle_count();
                 let mut loop_count: u32 = 0;
-                while xtensa_lx6_rt::get_cycle_count().wrapping_sub(start) < cycles {
+                while get_cycle_count().wrapping_sub(start) < cycles {
                     loop_count += 1;
                 }
 
@@ -160,15 +158,15 @@ fn cpu1_start() -> ! {
     writeln!(
         TX.lock().as_mut().unwrap(),
         "Stack Pointer Core 1: {:08x?}",
-        xtensa_lx6_rt::get_stack_pointer()
+        get_stack_pointer()
     )
     .unwrap();
 
     loop {
         let cycles = ClockControlConfig {}.cpu_frequency() / BLINK_HZ;
-        let start = xtensa_lx6_rt::get_cycle_count();
+        let start = get_cycle_count();
         let mut loop_count = 0;
-        while xtensa_lx6_rt::get_cycle_count().wrapping_sub(start) < cycles {
+        while get_cycle_count().wrapping_sub(start) < cycles {
             loop_count += 1;
         }
 
@@ -178,7 +176,7 @@ fn cpu1_start() -> ! {
 }
 
 fn print_info(loop_count: u32, spin_loop_count: u32, prev_ccount: &mut u32) {
-    let ccount = xtensa_lx6_rt::get_cycle_count();
+    let ccount = get_cycle_count();
     let ccount_diff = ccount.wrapping_sub(*prev_ccount);
 
     let total = GLOBAL_COUNT.fetch_add(ccount_diff, core::sync::atomic::Ordering::Relaxed);

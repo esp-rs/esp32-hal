@@ -26,7 +26,7 @@ use core::ptr::NonNull;
 use linked_list_allocator::Heap;
 
 use spin::{Mutex, MutexGuard};
-use xtensa_lx6_rt::interrupt;
+use xtensa_lx6::interrupt;
 
 const DEFAULT_EXTERNAL_THRESHOLD: usize = 32 * 1024;
 const DEFAULT_USE_IRAM: bool = true;

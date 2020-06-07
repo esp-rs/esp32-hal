@@ -172,7 +172,7 @@ pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Marks a function as an interrupt handler
 ///
-/// Used to handle on of the [interrupts](interrupt/enum.Interrupt.html).
+/// Used to handle on of the [interrupts](enum.Interrupt.html).
 ///
 /// When specified between braces (`#[interrupt(example)]`) that interrupt will be used and the function
 /// can have an arbitrary name. Otherwise the name of the function must be the name of the

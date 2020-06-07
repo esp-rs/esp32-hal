@@ -4,6 +4,7 @@
 //! - Sleep functionality/Awake lock
 
 use super::Error;
+use xtensa_lx6::interrupt;
 
 /// maximum number of callbacks
 pub const MAX_CALLBACKS: usize = 10;
@@ -107,7 +108,7 @@ impl<'a> super::ClockControl {
     fn do_callbacks(&self) {
         // copy the callbacks to prevent needing to have interrupts disabled the entire time
         // as callback cannot be deleted this is ok.
-        let (nr, callbacks) = xtensa_lx6_rt::interrupt::free(|_| {
+        let (nr, callbacks) = interrupt::free(|_| {
             let nr = self.dfs.nr_callbacks.lock();
             (*nr, self.dfs.callbacks)
         });
@@ -119,7 +120,7 @@ impl<'a> super::ClockControl {
 
     /// lock the CPU to maximum frequency
     pub(crate) fn lock_cpu_frequency(&'a mut self) -> LockCPU {
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.cpu += 1;
 
@@ -135,7 +136,7 @@ impl<'a> super::ClockControl {
 
     /// unlock the CPU frequency
     fn unlock_cpu_frequency(&'a mut self) {
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.cpu -= 1;
 
@@ -152,7 +153,7 @@ impl<'a> super::ClockControl {
 
     // lock the CPU to APB frequency
     pub(crate) fn lock_apb_frequency(&'a mut self) -> LockAPB {
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.apb += 1;
 
@@ -168,7 +169,7 @@ impl<'a> super::ClockControl {
 
     /// unlock the CPU from APB
     fn unlock_apb_frequency(&'a mut self) {
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.apb -= 1;
 
@@ -185,7 +186,7 @@ impl<'a> super::ClockControl {
 
     // lock in awake state
     pub(crate) fn lock_awake(&'a mut self) -> LockAwake {
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.awake += 1;
         });
@@ -196,7 +197,7 @@ impl<'a> super::ClockControl {
 
     /// unlock from the awake state
     fn unlock_awake(&'a mut self) {
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.awake -= 1;
 
@@ -207,7 +208,7 @@ impl<'a> super::ClockControl {
 
     /// lock the PLL/2 frequency
     pub(crate) fn lock_plld2(&'a mut self) -> LockPllD2 {
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.pll_d2 += 1;
             if data.pll_d2 == 1 && self.pll_frequency == super::FREQ_OFF {
@@ -221,7 +222,7 @@ impl<'a> super::ClockControl {
 
     /// unlock the PLL/2 frequency
     fn unlock_plld2(&'a mut self) {
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             let mut data = DFS_MUTEX.lock();
             data.pll_d2 -= 1;
 
@@ -245,7 +246,7 @@ impl<'a> super::ClockControl {
         // need to disable interrupts, because otherwise deadlock can arise
         // when interrupt is called after mutex is obtained and interrupt
         // routine also adds callback
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             let mut nr = self.dfs.nr_callbacks.lock();
 
             if *nr >= MAX_CALLBACKS {

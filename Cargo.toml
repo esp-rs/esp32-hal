@@ -30,6 +30,7 @@ mem=[]
 esp32-hal-proc-macros = { path = "procmacros" }
 
 xtensa-lx6-rt = { version = "0.1.0" }
+xtensa-lx6 = { version = "0.1.0", git="https://github.com/esp-rs/xtensa-lx6" }
 esp32 = { version = "0.4.0" }
 bare-metal = "0.2"
 nb = "0.1.2"
