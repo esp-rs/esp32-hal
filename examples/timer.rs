@@ -1,43 +1,34 @@
 #![no_std]
 #![no_main]
 
-use core::fmt::Write;
-use core::panic::PanicInfo;
+use core::{fmt::Write, panic::PanicInfo};
 
-use esp32_hal::prelude::*;
-
-use core::cell::RefCell;
-use core::ops::DerefMut;
-use embedded_hal::timer::{Cancel, CountDown};
-use esp32_hal::clock_control::sleep;
-use esp32_hal::dport::Split;
-use esp32_hal::dprintln;
-use esp32_hal::interrupt::{Interrupt, InterruptLevel};
-use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
-use esp32_hal::target;
-use esp32_hal::timer::watchdog::{self, WatchDogResetDuration, WatchdogAction, WatchdogConfig};
-use esp32_hal::timer::{Timer, Timer0, Timer1, TimerLact, TimerWithInterrupt};
-use esp32_hal::Core::PRO;
-use spin::Mutex;
+use esp32_hal::{
+    clock_control::sleep,
+    dport::Split,
+    dprintln,
+    interrupt::{Interrupt, InterruptLevel},
+    prelude::*,
+    serial::{config::Config, NoRx, NoTx, Serial},
+    timer::{
+        watchdog::{self, WatchDogResetDuration, WatchdogAction, WatchdogConfig},
+        Timer, Timer0, Timer1, TimerLact, TimerWithInterrupt,
+    },
+    Core::PRO,
+};
 
 const BLINK_HZ: Hertz = Hertz(2);
 
-static TIMER0: Mutex<RefCell<Option<Timer<target::TIMG0, Timer0>>>> =
-    Mutex::new(RefCell::new(None));
-static TIMER2: Mutex<RefCell<Option<Timer<target::TIMG0, TimerLact>>>> =
-    Mutex::new(RefCell::new(None));
-static TIMER3: Mutex<RefCell<Option<Timer<target::TIMG1, Timer0>>>> =
-    Mutex::new(RefCell::new(None));
-static TIMER4: Mutex<RefCell<Option<Timer<target::TIMG1, Timer1>>>> =
-    Mutex::new(RefCell::new(None));
-static TIMER5: Mutex<RefCell<Option<Timer<target::TIMG1, TimerLact>>>> =
-    Mutex::new(RefCell::new(None));
+static TIMER0: MPMutex<Option<Timer<esp32::TIMG0, Timer0>>> = MPMutex::new(None);
+static TIMER1: MPMutex<Option<Timer<esp32::TIMG0, Timer1>>> = MPMutex::new(None);
+static TIMER2: MPMutex<Option<Timer<esp32::TIMG0, TimerLact>>> = MPMutex::new(None);
+static TIMER3: MPMutex<Option<Timer<esp32::TIMG1, Timer0>>> = MPMutex::new(None);
+static TIMER4: MPMutex<Option<Timer<esp32::TIMG1, Timer1>>> = MPMutex::new(None);
+static TIMER5: MPMutex<Option<Timer<esp32::TIMG1, TimerLact>>> = MPMutex::new(None);
+static WATCHDOG1: MPMutex<Option<watchdog::Watchdog<esp32::TIMG1>>> = MPMutex::new(None);
+static TX: MPMutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> = MPMutex::new(None);
 
-static WATCHDOG1: Mutex<RefCell<Option<watchdog::Watchdog<target::TIMG1>>>> =
-    Mutex::new(RefCell::new(None));
-static TX: Mutex<Option<esp32_hal::serial::Tx<target::UART0>>> = spin::Mutex::new(None);
-
-#[no_mangle]
+#[entry]
 fn main() -> ! {
     let dp = target::Peripherals::take().unwrap();
 
@@ -74,7 +65,7 @@ fn main() -> ! {
 
     watchdog1.set_config(&wdconfig).unwrap();
 
-    *WATCHDOG1.lock().borrow_mut() = Some(watchdog1);
+    (&WATCHDOG1).lock(|data| *data = Some(watchdog1));
 
     let config = Config {
         baudrate: Hertz(115_200),
@@ -98,7 +89,6 @@ fn main() -> ! {
 
     writeln!(tx, "Waiting for timer0").unwrap();
     nb::block!(timer0.wait()).unwrap();
-
     writeln!(tx, "Finished waiting for timer0").unwrap();
 
     timer0.listen(esp32_hal::timer::Event::TimeOut);
@@ -111,12 +101,14 @@ fn main() -> ! {
     timer4.listen(esp32_hal::timer::Event::TimeOut);
     timer5.listen(esp32_hal::timer::Event::TimeOut);
 
-    *TIMER0.lock().borrow_mut() = Some(timer0);
-    *TIMER2.lock().borrow_mut() = Some(timer2);
-    *TIMER3.lock().borrow_mut() = Some(timer3);
-    *TIMER4.lock().borrow_mut() = Some(timer4);
-    *TIMER5.lock().borrow_mut() = Some(timer5);
-    *TX.lock() = Some(tx);
+    (&TIMER0).lock(|data| *data = Some(timer0));
+    (&TIMER1).lock(|data| *data = Some(timer1));
+    (&TIMER2).lock(|data| *data = Some(timer2));
+    (&TIMER3).lock(|data| *data = Some(timer3));
+    (&TIMER4).lock(|data| *data = Some(timer4));
+    (&TIMER5).lock(|data| *data = Some(timer5));
+
+    (&TX).lock(|data| *data = Some(tx));
 
     interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_LEVEL_INTR, InterruptLevel(1)).unwrap();
     interrupt::enable_with_priority(PRO, Interrupt::TG0_T0_EDGE_INTR, InterruptLevel(1)).unwrap();
@@ -136,28 +128,25 @@ fn main() -> ! {
     let mut x = 0;
     loop {
         x = x + 1;
-        interrupt::free(|_| {
-            if let Some(ref mut timer0) = TIMER0.lock().borrow_mut().deref_mut() {
-                if let Some(ref mut timer2) = TIMER2.lock().borrow_mut().deref_mut() {
-                    if let Some(ref mut tx) = TX.lock().deref_mut() {
-                        writeln!(
-                            tx,
-                            "Loop: {} {:.3} {} {} {} {}",
-                            x,
-                            u64::from(clkcntrl_config.rtc_nanoseconds()) as f64 / 1000000000.0,
-                            timer0.get_value(),
-                            timer1.get_value(),
-                            timer2.get_value(),
-                            xtensa_lx6::timer::get_cycle_count()
-                        )
-                        .unwrap();
-                        if let Ok(_) = timer1.wait() {
-                            writeln!(tx, "CANCELLING Timers").unwrap();
-                            timer0.cancel().unwrap();
-                            timer1.cancel().unwrap();
-                        }
-                    }
-                }
+        (&TX, &TIMER0, &TIMER1, &TIMER2).lock(|tx, timer0, timer1, timer2| {
+            let tx = tx.as_mut().unwrap();
+            let timer0 = timer0.as_mut().unwrap();
+            let timer1 = timer1.as_mut().unwrap();
+            let timer2 = timer2.as_mut().unwrap();
+            writeln!(
+                tx,
+                "Loop: {} {} {} {} {}",
+                x,
+                timer0.get_value(),
+                timer1.get_value(),
+                timer2.get_value(),
+                xtensa_lx6::get_cycle_count()
+            )
+            .unwrap();
+            if let Ok(_) = timer1.wait() {
+                writeln!(tx, "CANCELLING Timers").unwrap();
+                timer0.cancel().unwrap();
+                timer1.cancel().unwrap();
             }
         });
 
@@ -166,18 +155,17 @@ fn main() -> ! {
 }
 
 fn locked_print(str: &str) {
-    interrupt::free(|_| {
-        if let Some(ref mut tx) = TX.lock().deref_mut() {
-            writeln!(tx, "{}", str).unwrap();
-        }
+    (&TX).lock(|tx| {
+        let tx = tx.as_mut().unwrap();
+
+        writeln!(tx, "{}", str).unwrap();
     });
 }
 
-fn locked_clear(timer_mutex: &Mutex<RefCell<Option<impl TimerWithInterrupt>>>) {
-    interrupt::free(|_| {
-        if let Some(ref mut timer) = timer_mutex.lock().borrow_mut().deref_mut() {
-            timer.clear_interrupt();
-        }
+fn locked_clear(mut timer_mutex: &MPMutex<Option<impl TimerWithInterrupt>>) {
+    timer_mutex.lock(|timer| {
+        let timer = timer.as_mut().unwrap();
+        timer.clear_interrupt();
     });
 }
 
@@ -225,10 +213,9 @@ fn TG1_LACT_LEVEL_INTR() {
 fn TG1_WDT_LEVEL_INTR() {
     locked_print("  TG1_WDT_LEVEL_INTR");
 
-    interrupt::free(|_| {
-        if let Some(ref mut watchdog1) = WATCHDOG1.lock().borrow_mut().deref_mut() {
-            watchdog1.clear_interrupt();
-        }
+    (&WATCHDOG1).lock(|watchdog1| {
+        let watchdog1 = watchdog1.as_mut().unwrap();
+        watchdog1.clear_interrupt();
     });
 }
 
