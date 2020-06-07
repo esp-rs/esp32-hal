@@ -500,13 +500,13 @@ impl ClockControl {
     }
 
     /// Freeze clock settings and return ClockControlConfig
-    pub fn freeze(self) -> Result<(ClockControlConfig, watchdog::WatchDog), Error> {
+    pub fn freeze(self) -> Result<(ClockControlConfig, watchdog::Watchdog), Error> {
         // can only occur one time as ClockControl is moved by this function and
         // the RTCCNTL and APBCTRL peripherals are moved when ClockControl is created
         unsafe { CLOCK_CONTROL = Some(self) };
 
         let res = ClockControlConfig {};
-        Ok((res, watchdog::WatchDog::new(res)))
+        Ok((res, watchdog::Watchdog::new(res)))
     }
 
     // TODO: check what dig_clk8m and dig_clk8m_256 are used for
