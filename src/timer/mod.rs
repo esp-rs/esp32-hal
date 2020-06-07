@@ -60,15 +60,18 @@ impl TimerGroup for esp32::TIMG1 {}
 
 #[doc(hidden)]
 pub trait TimerInst {}
-#[doc(hidden)]
-pub struct Timer0 {}
-impl TimerInst for Timer0 {}
-#[doc(hidden)]
-pub struct Timer1 {}
-impl TimerInst for Timer1 {}
-#[doc(hidden)]
-pub struct TimerLact {}
-impl TimerInst for TimerLact {}
+
+/// Timer trait
+pub trait TimerWithInterrupt: CountDown + Periodic + Cancel {
+    /// Starts listening for an [Event]
+    fn listen(&mut self, event: Event);
+
+    /// Stops listening for an [Event]
+    fn unlisten(&mut self, event: Event);
+
+    /// Clear interrupt once fired
+    fn clear_interrupt(&mut self) -> &mut Self;
+}
 
 impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
     /// Create new timer resources
@@ -153,10 +156,14 @@ macro_rules! timer {
         $EDGE_INT_EN:ident, $LEVEL_INT_EN:ident, $ALARM_EN:ident,
         $INT_RAW:ident, $INT_ST:ident, $INT_CLR:ident, $MIN_DIV:expr, $MAX_DIV:expr
     ) => {
-        impl<TIMG: TimerGroup> Timer<TIMG, $TIMX> {
+        #[doc(hidden)]
+        pub struct $TIMX {}
+        impl TimerInst for $TIMX {}
+
+        impl<TIMG: TimerGroup> TimerWithInterrupt for Timer<TIMG, $TIMX> {
             /// Starts listening for an `event`
             //  Needs multi-threaded protection as timer0 and 1 use same register
-            pub fn listen(&mut self, event: Event) {
+            fn listen(&mut self, event: Event) {
                 match event {
                     Event::TimeOut => self.enable_level_interrupt(true),
                     Event::TimeOutEdge => self.enable_edge_interrupt(true),
@@ -173,7 +180,7 @@ macro_rules! timer {
 
             /// Stops listening for an `event`
             //  Needs multi-threaded protection as timer0 and 1 use same register
-            pub fn unlisten(&mut self, event: Event) {
+            fn unlisten(&mut self, event: Event) {
                 match event {
                     Event::TimeOut => self.enable_level_interrupt(false),
                     Event::TimeOutEdge => self.enable_edge_interrupt(false),
@@ -181,7 +188,7 @@ macro_rules! timer {
             }
 
             /// Clear interrupt once fired
-            pub fn clear_interrupt(&mut self) -> &mut Self {
+            fn clear_interrupt(&mut self) -> &mut Self {
                 self.enable_alarm(true);
                 unsafe {
                     (*(self.timg))
@@ -190,7 +197,9 @@ macro_rules! timer {
                 }
                 self
             }
+        }
 
+        impl<TIMG: TimerGroup> Timer<TIMG, $TIMX> {
             /// Set timer value
             pub fn set_value<T: Into<TicksU64>>(&mut self, value: T) -> &mut Self {
                 unsafe {
