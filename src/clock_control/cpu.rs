@@ -3,6 +3,7 @@
 
 use super::Error;
 use crate::Core::{self, APP, PRO};
+use xtensa_lx6::set_stack_pointer;
 
 static mut START_CORE1_FUNCTION: Option<fn() -> !> = None;
 
@@ -118,7 +119,7 @@ impl super::ClockControl {
         }
 
         // set stack pointer to end of memory: no need to retain stack up to this point
-        xtensa_lx6_rt::set_stack_pointer(&mut _stack_end_cpu1);
+        set_stack_pointer(&mut _stack_end_cpu1);
 
         START_CORE1_FUNCTION.unwrap()();
     }

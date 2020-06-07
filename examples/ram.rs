@@ -11,6 +11,8 @@ use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 
+use xtensa_lx6::get_program_counter;
+
 #[entry]
 fn main() -> ! {
     let dp = unsafe { esp32::Peripherals::steal() };
@@ -68,7 +70,7 @@ fn attr_none_fn(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>
         uart,
         "{:<40}: {:08x?}",
         "attr_none_fn",
-        xtensa_lx6_rt::get_program_counter()
+        get_program_counter()
     )
     .unwrap();
 }
@@ -79,7 +81,7 @@ fn attr_ram_fn(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>)
         uart,
         "{:<40}: {:08x?}",
         "attr_ram_fn",
-        xtensa_lx6_rt::get_program_counter()
+        get_program_counter()
     )
     .unwrap();
 }
@@ -90,7 +92,7 @@ fn attr_ram_fn_rtc_slow(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx
         uart,
         "{:<40}: {:08x?}",
         "attr_ram_fn_rtc_slow",
-        xtensa_lx6_rt::get_program_counter()
+        get_program_counter()
     )
     .unwrap();
 }
@@ -101,7 +103,7 @@ fn attr_ram_fn_rtc_fast(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx
         uart,
         "{:<40}: {:08x?}",
         "attr_ram_fn_rtc_fast",
-        xtensa_lx6_rt::get_program_counter()
+        get_program_counter()
     )
     .unwrap();
 }
@@ -204,7 +206,7 @@ fn ram_tests(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {
 }
 
 #[cfg(not(feature = "external_ram"))]
-fn external_ram(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {}
+fn external_ram(_uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {}
 
 #[cfg(feature = "external_ram")]
 fn external_ram(uart: &mut esp32_hal::serial::Serial<esp32::UART0, (NoTx, NoRx)>) {

@@ -23,6 +23,7 @@ use esp32::generic::Variant::*;
 use esp32::rtccntl::clk_conf::*;
 use esp32::rtccntl::cntl::*;
 use esp32::{APB_CTRL, RTCCNTL, TIMG0};
+use xtensa_lx6::get_cycle_count;
 
 pub mod cpu;
 pub mod dfs;
@@ -359,9 +360,9 @@ impl fmt::Debug for ClockControlConfig {
 
 /// cycle accurate delay using the cycle counter register
 pub fn delay_cycles(clocks: u32) {
-    let start = xtensa_lx6_rt::get_cycle_count();
+    let start = get_cycle_count();
     loop {
-        if xtensa_lx6_rt::get_cycle_count().wrapping_sub(start) >= clocks {
+        if get_cycle_count().wrapping_sub(start) >= clocks {
             break;
         }
     }
@@ -667,9 +668,9 @@ impl ClockControl {
         timg0.rtccalicfg.modify(|_, w| w.start().set_bit());
 
         // check if finished or timeout
-        let start = xtensa_lx6_rt::get_cycle_count();
+        let start = get_cycle_count();
         while timg0.rtccalicfg.read().rdy().bit_is_clear() {
-            if xtensa_lx6_rt::get_cycle_count().wrapping_sub(start) > estimated_cycle_count {
+            if get_cycle_count().wrapping_sub(start) > estimated_cycle_count {
                 return Err(Error::CalibrationTimeOut);
             }
             self.delay(1.us()); // prevent flooding of RTC bus

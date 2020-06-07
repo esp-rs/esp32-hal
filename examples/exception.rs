@@ -11,7 +11,7 @@ use esp32_hal::prelude::*;
 use esp32_hal::clock_control::{sleep, CPUSource::PLL, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
-use esp32_hal::interrupt::{Interrupt, Interrupt::*, InterruptLevel};
+use esp32_hal::interrupt::{clear_software_interrupt, Interrupt, Interrupt::*, InterruptLevel};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 use esp32_hal::Core::PRO;
 
@@ -22,10 +22,10 @@ fn FROM_CPU_INTR0() {
     writeln!(
         TX.lock().as_mut().unwrap(),
         "  FROM_CPU_INTR0, level: {}",
-        xtensa_lx6_rt::interrupt::get_level()
+        xtensa_lx6::interrupt::get_level()
     )
     .unwrap();
-    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
+    clear_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
 }
 
 #[interrupt]
@@ -33,7 +33,7 @@ fn FROM_CPU_INTR1() {
     writeln!(
         TX.lock().as_mut().unwrap(),
         "  Start FROM_CPU_INTR1, level: {}",
-        xtensa_lx6_rt::interrupt::get_level()
+        xtensa_lx6::interrupt::get_level()
     )
     .unwrap();
     interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
@@ -41,10 +41,10 @@ fn FROM_CPU_INTR1() {
     writeln!(
         TX.lock().as_mut().unwrap(),
         "  End FROM_CPU_INTR1, level: {}",
-        xtensa_lx6_rt::interrupt::get_level()
+        xtensa_lx6::interrupt::get_level()
     )
     .unwrap();
-    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR1).unwrap();
+    clear_software_interrupt(Interrupt::FROM_CPU_INTR1).unwrap();
 }
 
 #[interrupt]
@@ -52,10 +52,10 @@ fn FROM_CPU_INTR2() {
     writeln!(
         TX.lock().as_mut().unwrap(),
         "  FROM_CPU_INTR2, level: {}",
-        xtensa_lx6_rt::interrupt::get_level()
+        xtensa_lx6::interrupt::get_level()
     )
     .unwrap();
-    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
+    clear_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
 }
 
 #[interrupt]
@@ -63,10 +63,10 @@ fn FROM_CPU_INTR3() {
     writeln!(
         TX.lock().as_mut().unwrap(),
         "  FROM_CPU_INTR3, level: {}",
-        xtensa_lx6_rt::interrupt::get_level()
+        xtensa_lx6::interrupt::get_level()
     )
     .unwrap();
-    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+    clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
 }
 
 #[interrupt(INTERNAL_SOFTWARE_LEVEL_3_INTR)]
@@ -74,10 +74,10 @@ fn software_level_3() {
     writeln!(
         TX.lock().as_mut().unwrap(),
         "  INTERNAL_SOFTWARE_LEVEL_3_INTR, level: {}",
-        xtensa_lx6_rt::interrupt::get_level()
+        xtensa_lx6::interrupt::get_level()
     )
     .unwrap();
-    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+    clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
 }
 
 #[interrupt(INTERNAL_SOFTWARE_LEVEL_1_INTR)]
@@ -85,10 +85,10 @@ fn random_name() {
     writeln!(
         TX.lock().as_mut().unwrap(),
         "  INTERNAL_SOFTWARE_LEVEL_1_INTR, level: {}",
-        xtensa_lx6_rt::interrupt::get_level()
+        xtensa_lx6::interrupt::get_level()
     )
     .unwrap();
-    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+    clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
 }
 
 #[exception]
@@ -202,7 +202,7 @@ fn main() -> ! {
 
     loop {
         sleep(1.s());
-        xtensa_lx6_rt::interrupt::free(|_| {
+        interrupt::free(|_| {
             writeln!(TX.lock().as_mut().unwrap(), "Wait for watchdog reset").unwrap()
         });
     }

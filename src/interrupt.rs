@@ -16,7 +16,7 @@
 //! to define low level/naked interrupt handlers. (This will override the interrupt
 //! handling offered by this crate for that specific interrupt level. This should especially be
 //! considered when using Level 7 = Non Maskable Interrupt level as these will not be turned off
-//! during [interrupt::free](xtensa_lx6_rt::interrupt::free) sections.)
+//! during [interrupt::free](interrupt::free) sections.)
 //!
 //! **Note: If multiple edge triggered interrupts are assigned to the same [level][InterruptLevel],
 //!   it is not possible to detect which peripheral triggered the interrupt. Therefore all
@@ -34,7 +34,7 @@ use bare_metal::Nr;
 pub use esp32::Interrupt::{self, *};
 use esp32::DPORT;
 pub use proc_macros::interrupt;
-pub use xtensa_lx6_rt::interrupt::free;
+pub use xtensa_lx6::interrupt::{self, free};
 
 /// Interrupt errors
 #[derive(Debug)]
@@ -54,7 +54,7 @@ pub enum Error {
 /// Level 0 is used to disable interrupts.
 ///
 /// **Note: Level 7 (NMI) will not be disabled by the
-/// [interrupt::free](xtensa_lx6_rt::interrupt::free) section. This risks race conditions in
+/// [interrupt::free](interrupt::free) section. This risks race conditions in
 /// various places.
 /// **
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
@@ -263,16 +263,15 @@ unsafe fn handle_interrupt(level: u32, interrupt: Interrupt) {
 #[inline(always)]
 #[ram]
 unsafe fn handle_interrupts(level: u32) {
-    let cpu_interrupt_mask = xtensa_lx6_rt::interrupt::get()
-        & xtensa_lx6_rt::interrupt::get_mask()
-        & CPU_INTERRUPT_LEVELS[level as usize];
+    let cpu_interrupt_mask =
+        interrupt::get() & interrupt::get_mask() & CPU_INTERRUPT_LEVELS[level as usize];
 
     if cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL != 0 {
         let cpu_interrupt_mask = cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL;
         let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
 
         if (cpu_interrupt_mask & CPU_INTERRUPT_EDGE) != 0 {
-            xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
+            interrupt::clear(1 << cpu_interrupt_nr);
         }
 
         // cpu_interrupt_to_interrupt can fail if interrupt already de-asserted: silently ignore
@@ -285,7 +284,7 @@ unsafe fn handle_interrupts(level: u32) {
         if (cpu_interrupt_mask & CPU_INTERRUPT_EDGE) != 0 {
             let cpu_interrupt_mask = cpu_interrupt_mask & CPU_INTERRUPT_EDGE;
             let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
-            xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
+            interrupt::clear(1 << cpu_interrupt_nr);
 
             // for edge interrupts cannot rely on the interrupt status register, therefore call all
             // registered handlers for current level
@@ -382,10 +381,10 @@ pub fn enable_with_priority(
                 return Err(Error::InvalidCore);
             }
             if level == InterruptLevel(0) {
-                xtensa_lx6_rt::interrupt::disable_mask(1 << cpu_interrupt.0);
+                interrupt::disable_mask(1 << cpu_interrupt.0);
                 return Ok(());
             } else if level == cpu_interrupt_to_level(cpu_interrupt) {
-                unsafe { xtensa_lx6_rt::interrupt::enable_mask(1 << cpu_interrupt.0) };
+                unsafe { interrupt::enable_mask(1 << cpu_interrupt.0) };
                 return Ok(());
             } else {
                 return Err(Error::InvalidInterruptLevel);
@@ -395,14 +394,14 @@ pub fn enable_with_priority(
             let cpu_interrupt =
                 interrupt_level_to_cpu_interrupt(level, interrupt_is_edge(interrupt))?;
 
-            return xtensa_lx6_rt::interrupt::free(|_| unsafe {
+            return interrupt::free(|_| unsafe {
                 let _data = INTERRUPT_LEVELS_MUTEX.lock();
                 for i in 0..=7 {
                     INTERRUPT_LEVELS[i] &= !(1 << interrupt.nr());
                 }
                 INTERRUPT_LEVELS[level.0 as usize] |= 1 << interrupt.nr();
 
-                xtensa_lx6_rt::interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS);
+                interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS);
 
                 map_interrupt(core, interrupt, cpu_interrupt)
             });
@@ -422,7 +421,7 @@ pub fn enable_with_priority(
 pub fn enable(interrupt: Interrupt) -> Result<(), Error> {
     match interrupt_to_cpu_interrupt(interrupt) {
         Ok(cpu_interrupt) => {
-            unsafe { xtensa_lx6_rt::interrupt::enable_mask(1 << cpu_interrupt.0) };
+            unsafe { interrupt::enable_mask(1 << cpu_interrupt.0) };
             return Ok(());
         }
         Err(_) => enable_with_priority(crate::get_core(), interrupt, InterruptLevel(1)),
@@ -434,7 +433,7 @@ pub fn enable(interrupt: Interrupt) -> Result<(), Error> {
 pub fn disable(interrupt: Interrupt) -> Result<(), Error> {
     match interrupt_to_cpu_interrupt(interrupt) {
         Ok(cpu_interrupt) => {
-            unsafe { xtensa_lx6_rt::interrupt::enable_mask(1 << cpu_interrupt.0) };
+            unsafe { interrupt::enable_mask(1 << cpu_interrupt.0) };
             return Ok(());
         }
         Err(_) => enable_with_priority(crate::get_core(), interrupt, InterruptLevel(0)),
@@ -462,7 +461,7 @@ pub fn set_software_interrupt(interrupt: Interrupt) -> Result<(), Error> {
                 .cpu_intr_from_cpu_3
                 .write(|w| w.cpu_intr_from_cpu_3().set_bit()),
             INTERNAL_SOFTWARE_LEVEL_1_INTR | INTERNAL_SOFTWARE_LEVEL_3_INTR => {
-                xtensa_lx6_rt::interrupt::set(1 << interrupt_to_cpu_interrupt(interrupt)?.0)
+                interrupt::set(1 << interrupt_to_cpu_interrupt(interrupt)?.0)
             }
 
             _ => return Err(Error::InvalidInterrupt),
@@ -492,7 +491,7 @@ pub fn clear_software_interrupt(interrupt: Interrupt) -> Result<(), Error> {
                 .cpu_intr_from_cpu_3
                 .write(|w| w.cpu_intr_from_cpu_3().clear_bit()),
             INTERNAL_SOFTWARE_LEVEL_1_INTR | INTERNAL_SOFTWARE_LEVEL_3_INTR => {
-                xtensa_lx6_rt::interrupt::clear(1 << interrupt_to_cpu_interrupt(interrupt)?.0)
+                interrupt::clear(1 << interrupt_to_cpu_interrupt(interrupt)?.0)
             }
 
             _ => return Err(Error::InvalidInterrupt),

@@ -79,7 +79,7 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
     external_ram::init();
 
     // set stack pointer to end of memory: no need to retain stack up to this point
-    xtensa_lx6_rt::set_stack_pointer(&mut _stack_end_cpu0);
+    xtensa_lx6::set_stack_pointer(&mut _stack_end_cpu0);
 
     // continue with default reset handler
     xtensa_lx6_rt::Reset();
@@ -92,7 +92,7 @@ pub enum Core {
 }
 
 pub fn get_core() -> Core {
-    match ((xtensa_lx6_rt::get_processor_id() >> 13) & 1) != 0 {
+    match ((xtensa_lx6::get_processor_id() >> 13) & 1) != 0 {
         false => Core::PRO,
         true => Core::APP,
     }

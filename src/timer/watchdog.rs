@@ -9,6 +9,7 @@ use super::TimerGroup;
 use crate::prelude::*;
 use core::marker::PhantomData;
 use embedded_hal::watchdog::{WatchdogDisable, WatchdogEnable};
+use esp32::timg::wdtconfig0::WDT_STG0_A;
 use esp32::timg::wdtconfig0::*;
 
 pub type WatchdogAction = WDT_STG0_A;
