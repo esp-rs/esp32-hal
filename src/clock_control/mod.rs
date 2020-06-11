@@ -197,6 +197,9 @@ static CLOCK_CONTROL_MUTEX: CriticalSectionSpinLockMutex<()> =
 /// Clock configuration & locking for Dynamic Frequency Switching.
 /// It allows thread and interrupt safe way to switch between default,
 /// high CPU and APB frequency configuration.
+
+// All the single word reads of frequencies and sources are thread and interrupt safe
+// as these are atomic.
 #[derive(Copy, Clone)]
 pub struct ClockControlConfig {}
 
