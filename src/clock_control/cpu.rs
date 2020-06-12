@@ -4,12 +4,9 @@
 use super::Error;
 use crate::target;
 use crate::Core::{self, APP, PRO};
-use xtensa_lx6::interrupt;
 use xtensa_lx6::set_stack_pointer;
 
 static mut START_CORE1_FUNCTION: Option<fn() -> !> = None;
-
-static CPU_MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 
 impl super::ClockControl {
     pub unsafe fn park_core(&mut self, core: Core) {
