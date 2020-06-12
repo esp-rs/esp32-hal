@@ -12,7 +12,7 @@ use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 use esp32_hal::target;
 
-use xtensa_lx6::{get_cycle_count, get_stack_pointer};
+use xtensa_lx6::{get_stack_pointer, timer::get_cycle_count};
 
 const BLINK_HZ: Hertz = Hertz(1);
 
@@ -105,9 +105,7 @@ fn main() -> ! {
     let _lock = clock_control_config.lock_cpu_frequency();
 
     // start core 1 (APP_CPU)
-    clock_control_config
-        .start_core(esp32_hal::Core::APP, cpu1_start)
-        .unwrap();
+    clock_control_config.start_app_core(cpu1_start).unwrap();
 
     // main loop, which in turn lock and unlocks apb and cpu locks
     let mut x: u32 = 0;
