@@ -138,8 +138,9 @@ fn main() -> ! {
                     if let Some(ref mut tx) = TX.lock().deref_mut() {
                         writeln!(
                             tx,
-                            "Loop: {} {} {} {} {}",
+                            "Loop: {} {:.3} {} {} {} {}",
                             x,
+                            u64::from(clkcntrl_config.rtc_nanoseconds()) as f64 / 1000000000.0,
                             timer0.get_value(),
                             timer1.get_value(),
                             timer2.get_value(),
