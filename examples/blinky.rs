@@ -6,7 +6,7 @@ extern crate panic_halt;
 extern crate xtensa_lx6_rt;
 
 use hal::prelude::*;
-use xtensa_lx6::get_cycle_count;
+use xtensa_lx6::timer::get_cycle_count;
 
 /// The default clock source is the onboard crystal
 /// In most cases 40mhz (but can be as low as 2mhz depending on the board)

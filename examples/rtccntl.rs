@@ -116,7 +116,7 @@ fn main() -> ! {
 
                 x = x.wrapping_add(1);
 
-                let ccount = xtensa_lx6::get_cycle_count();
+                let ccount = xtensa_lx6::timer::get_cycle_count();
                 let ccount_diff = ccount.wrapping_sub(prev_ccount);
 
                 writeln!(
