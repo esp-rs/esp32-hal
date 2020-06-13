@@ -29,9 +29,12 @@
 //! to exceptions when the flash is programmed or erased while the interrupt is called.*
 use crate::ram;
 
-use crate::target;
-pub use crate::target::Interrupt::{self, *};
-use crate::target::DPORT;
+use crate::prelude::*;
+pub use crate::target::{
+    self,
+    Interrupt::{self, *},
+    DPORT,
+};
 use crate::Core::{self, APP, PRO};
 use bare_metal::Nr;
 pub use proc_macros::interrupt;
@@ -207,7 +210,8 @@ fn cpu_interrupt_to_level(cpu_interrupt: CPUInterrupt) -> InterruptLevel {
 static mut INTERRUPT_LEVELS: [u128; 8] = [0u128; 8];
 
 #[ram]
-static INTERRUPT_LEVELS_MUTEX: spin::Mutex<bool> = spin::Mutex::new(false);
+static INTERRUPT_LEVELS_MUTEX: CriticalSectionSpinLockMutex<bool> =
+    CriticalSectionSpinLockMutex::new(false);
 
 #[xtensa_lx6_rt::interrupt(1)]
 #[ram]
@@ -395,8 +399,7 @@ pub fn enable_with_priority(
             let cpu_interrupt =
                 interrupt_level_to_cpu_interrupt(level, interrupt_is_edge(interrupt))?;
 
-            return interrupt::free(|_| unsafe {
-                let _data = INTERRUPT_LEVELS_MUTEX.lock();
+            return (&INTERRUPT_LEVELS_MUTEX).lock(|_| unsafe {
                 for i in 0..=7 {
                     INTERRUPT_LEVELS[i] &= !(1 << interrupt.nr());
                 }

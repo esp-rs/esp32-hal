@@ -10,6 +10,7 @@ use esp32_hal::{
     interrupt::{Interrupt, InterruptLevel},
     prelude::*,
     serial::{config::Config, NoRx, NoTx, Serial},
+    target,
     timer::{
         watchdog::{self, WatchDogResetDuration, WatchdogAction, WatchdogConfig},
         Timer, Timer0, Timer1, TimerLact, TimerWithInterrupt,
@@ -19,14 +20,22 @@ use esp32_hal::{
 
 const BLINK_HZ: Hertz = Hertz(2);
 
-static TIMER0: MPMutex<Option<Timer<esp32::TIMG0, Timer0>>> = MPMutex::new(None);
-static TIMER1: MPMutex<Option<Timer<esp32::TIMG0, Timer1>>> = MPMutex::new(None);
-static TIMER2: MPMutex<Option<Timer<esp32::TIMG0, TimerLact>>> = MPMutex::new(None);
-static TIMER3: MPMutex<Option<Timer<esp32::TIMG1, Timer0>>> = MPMutex::new(None);
-static TIMER4: MPMutex<Option<Timer<esp32::TIMG1, Timer1>>> = MPMutex::new(None);
-static TIMER5: MPMutex<Option<Timer<esp32::TIMG1, TimerLact>>> = MPMutex::new(None);
-static WATCHDOG1: MPMutex<Option<watchdog::Watchdog<esp32::TIMG1>>> = MPMutex::new(None);
-static TX: MPMutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> = MPMutex::new(None);
+static TIMER0: CriticalSectionSpinLockMutex<Option<Timer<esp32::TIMG0, Timer0>>> =
+    CriticalSectionSpinLockMutex::new(None);
+static TIMER1: CriticalSectionSpinLockMutex<Option<Timer<esp32::TIMG0, Timer1>>> =
+    CriticalSectionSpinLockMutex::new(None);
+static TIMER2: CriticalSectionSpinLockMutex<Option<Timer<esp32::TIMG0, TimerLact>>> =
+    CriticalSectionSpinLockMutex::new(None);
+static TIMER3: CriticalSectionSpinLockMutex<Option<Timer<esp32::TIMG1, Timer0>>> =
+    CriticalSectionSpinLockMutex::new(None);
+static TIMER4: CriticalSectionSpinLockMutex<Option<Timer<esp32::TIMG1, Timer1>>> =
+    CriticalSectionSpinLockMutex::new(None);
+static TIMER5: CriticalSectionSpinLockMutex<Option<Timer<esp32::TIMG1, TimerLact>>> =
+    CriticalSectionSpinLockMutex::new(None);
+static WATCHDOG1: CriticalSectionSpinLockMutex<Option<watchdog::Watchdog<esp32::TIMG1>>> =
+    CriticalSectionSpinLockMutex::new(None);
+static TX: CriticalSectionSpinLockMutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> =
+    CriticalSectionSpinLockMutex::new(None);
 
 #[entry]
 fn main() -> ! {
@@ -140,7 +149,7 @@ fn main() -> ! {
                 timer0.get_value(),
                 timer1.get_value(),
                 timer2.get_value(),
-                xtensa_lx6::get_cycle_count()
+                xtensa_lx6::timer::get_cycle_count()
             )
             .unwrap();
             if let Ok(_) = timer1.wait() {
@@ -162,7 +171,7 @@ fn locked_print(str: &str) {
     });
 }
 
-fn locked_clear(mut timer_mutex: &MPMutex<Option<impl TimerWithInterrupt>>) {
+fn locked_clear(mut timer_mutex: &CriticalSectionSpinLockMutex<Option<impl TimerWithInterrupt>>) {
     timer_mutex.lock(|timer| {
         let timer = timer.as_mut().unwrap();
         timer.clear_interrupt();

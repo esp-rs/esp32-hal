@@ -160,8 +160,7 @@ impl<'a> super::ClockControlConfig {
 
     /// Halt the designated core
     pub unsafe fn park_core(&mut self, core: crate::Core) {
-        interrupt::free(|_| {
-            CLOCK_CONTROL_MUTEX.lock();
+        (&CLOCK_CONTROL_MUTEX).lock(|_| {
             CLOCK_CONTROL.as_mut().unwrap().park_core(core);
         })
     }
@@ -170,20 +169,16 @@ impl<'a> super::ClockControlConfig {
     ///
     /// The second core will start running with the function `entry`.
     pub fn unpark_core(&mut self, core: crate::Core) {
-        interrupt::free(|_| {
-            CLOCK_CONTROL_MUTEX.lock();
-            unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) }
-        })
+        (&CLOCK_CONTROL_MUTEX)
+            .lock(|_| unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) })
     }
 
     /// Start the APP (second) core
     ///
     /// The second core will start running with the function `entry`.
     pub fn start_app_core(&mut self, entry: fn() -> !) -> Result<(), Error> {
-        interrupt::free(|_| {
-            CLOCK_CONTROL_MUTEX.lock();
-            unsafe { CLOCK_CONTROL.as_mut().unwrap().start_app_core(entry) }
-        })
+        (&CLOCK_CONTROL_MUTEX)
+            .lock(|_| unsafe { CLOCK_CONTROL.as_mut().unwrap().start_app_core(entry) })
     }
 
     // The following routines handle thread and interrupt safety themselves

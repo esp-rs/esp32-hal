@@ -191,7 +191,8 @@ enum CalibrateRTCSource {
 // static ClockControl to allow DFS, etc.
 static mut CLOCK_CONTROL: Option<ClockControl> = None;
 // mutex to allow safe multi-threaded access
-static CLOCK_CONTROL_MUTEX: spin::Mutex<()> = spin::Mutex::new(());
+static CLOCK_CONTROL_MUTEX: CriticalSectionSpinLockMutex<()> =
+    CriticalSectionSpinLockMutex::new(());
 
 /// Clock configuration & locking for Dynamic Frequency Switching.
 /// It allows thread and interrupt safe way to switch between default,
@@ -1293,9 +1294,7 @@ impl ClockControl {
                 .bit_is_clear()
             {}
 
-            if let Some(ticks) = interrupt::free(|_| {
-                CLOCK_CONTROL_MUTEX.lock();
-
+            if let Some(ticks) = (&CLOCK_CONTROL_MUTEX).lock(|_| {
                 // there is a small chance that this function is interrupted or called from
                 // the other core between detecting the valid and entering the interrupt free
                 // and mutex protection reading check again inside the critical section

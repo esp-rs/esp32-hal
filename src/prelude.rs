@@ -23,4 +23,4 @@ pub use embedded_hal::prelude::*;
 pub use embedded_hal::timer::{Cancel, CountDown, Periodic};
 
 pub use xtensa_lx6::mutex::mutex_trait::prelude::*;
-pub use xtensa_lx6::mutex::CriticalSectionSpinLockMutex as MPMutex;
+pub use xtensa_lx6::mutex::CriticalSectionSpinLockMutex;
