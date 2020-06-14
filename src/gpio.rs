@@ -193,15 +193,17 @@ macro_rules! impl_output {
 
                     self.disable_analog();
 
-                    iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(alternate) });
-                    gpio.$pin.modify(|_,w| w.pad_driver().bit(open_drain));
-
                     // NOTE(unsafe) atomic read to a stateless register
                     gpio.$out_en_set.write(|w| unsafe  { w.bits(1 << $i) });
+                    gpio.$pin.modify(|_,w| w.pad_driver().bit(open_drain));
                     gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
 
-                    iomux.$iomux.modify(|_, w| w.fun_wpd().clear_bit());
-                    iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
+                    iomux.$iomux.modify(|_, w| unsafe {
+                        w
+                            .mcu_sel().bits(alternate)
+                            .fun_wpd().clear_bit()
+                            .fun_wpu().clear_bit()
+                    });
                 }
 
                 pub fn into_push_pull_output(self) -> $pxi<Output<PushPull>> {
@@ -287,56 +289,12 @@ macro_rules! impl_pullup_pulldown {
     ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $i:expr, $funcXout:ident, $funcXin:ident,
         $iomux:ident, has_pullup_pulldown) => {
         pub fn into_pull_up_input(self) -> $pxi<Input<PullUp>> {
-            let gpio = unsafe { &*GPIO::ptr() };
-            let iomux = unsafe { &*IO_MUX::ptr() };
-            self.disable_analog();
-
-            gpio.$out_en_clear
-                .modify(|_, w| unsafe { w.bits(0x1 << $i) });
-            gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
-            gpio.$funcXin.modify(|_, w| unsafe {
-                w
-                    // route through GPIO matrix
-                    .sel()
-                    .set_bit()
-                    // use the GPIO pad
-                    .in_sel()
-                    .bits($pin_num)
-            });
-
-            iomux
-                .$iomux
-                .modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
-            iomux.$iomux.modify(|_, w| w.fun_ie().set_bit());
-            iomux.$iomux.modify(|_, w| w.fun_wpd().clear_bit());
-            iomux.$iomux.modify(|_, w| w.fun_wpu().set_bit());
+            self.set_input(false, false);
             $pxi { _mode: PhantomData }
         }
 
         pub fn into_pull_down_input(self) -> $pxi<Input<PullDown>> {
-            let gpio = unsafe { &*GPIO::ptr() };
-            let iomux = unsafe { &*IO_MUX::ptr() };
-            self.disable_analog();
-
-            gpio.$out_en_clear
-                .modify(|_, w| unsafe { w.bits(0x1 << $i) });
-            gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
-            gpio.$funcXin.modify(|_, w| unsafe {
-                w
-                    // route through GPIO matrix
-                    .sel()
-                    .clear_bit()
-                    // use the GPIO pad
-                    .in_sel()
-                    .bits($pin_num)
-            });
-
-            iomux
-                .$iomux
-                .modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
-            iomux.$iomux.modify(|_, w| w.fun_ie().set_bit());
-            iomux.$iomux.modify(|_, w| w.fun_wpd().set_bit());
-            iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
+            self.set_input(true, false);
             $pxi { _mode: PhantomData }
         }
     };
@@ -373,27 +331,36 @@ macro_rules! impl_input {
             }
 
             impl<MODE> $pxi<MODE> {
-                pub fn into_floating_input(self) -> $pxi<Input<Floating>> {
-                    let gpio = unsafe{ &*GPIO::ptr() };
-                    let iomux = unsafe{ &*IO_MUX::ptr() };
+                fn set_input(&self, pulldown: bool, pullup: bool) {
+                    let gpio = unsafe { &*GPIO::ptr() };
+                    let iomux = unsafe { &*IO_MUX::ptr() };
                     self.disable_analog();
 
-                    gpio.$out_en_clear.modify(|_, w| unsafe { w.bits(0x1 << $i) });
+                    // NOTE(unsafe) atomic read to a stateless register
+                    gpio.$out_en_clear
+                        .modify(|_, w| unsafe { w.bits(0x1 << $i) });
                     gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
                     gpio.$funcXin.modify(|_, w| unsafe {
-                        w
-                            // route through GPIO matrix
-                            .sel()
-                            .clear_bit()
-                            // use the GPIO pad
+                        w.sel()
+                            .set_bit() // route through GPIO matrix
                             .in_sel()
-                            .bits($pin_num)
+                            .bits($pin_num) // use the GPIO pad
                     });
 
-                    iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
-                    iomux.$iomux.modify(|_, w| w.fun_ie().set_bit());
-                    iomux.$iomux.modify(|_, w| w.fun_wpd().clear_bit());
-                    iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
+                    iomux.$iomux.modify(|_, w| unsafe {
+                        w.mcu_sel()
+                            .bits(0b10)
+                            .fun_ie()
+                            .set_bit()
+                            .fun_wpd()
+                            .bit(pulldown)
+                            .fun_wpu()
+                            .bit(pullup)
+                    });
+                }
+
+                pub fn into_floating_input(self) -> $pxi<Input<Floating>> {
+                    self.set_input(false, false);
                     $pxi { _mode: PhantomData }
                 }
 
