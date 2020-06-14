@@ -141,7 +141,7 @@ gpio! {
 }
 
 macro_rules! impl_output {
-    ($en:ident, $outs:ident, $outc:ident, [
+    ($out_en_set:ident, $outs:ident, $outc:ident, [
         // index, gpio pin name, funcX name, iomux pin name
         $($pxi:ident: ($i:expr, $pin:ident, $funcXout:ident, $iomux:ident),)+
     ]) => {
@@ -186,69 +186,56 @@ macro_rules! impl_output {
             }
 
             impl<MODE> $pxi<MODE> {
-                pub fn into_push_pull_output(self) -> $pxi<Output<PushPull>> {
+
+                fn set_output(&self, alternate: u8, open_drain: bool) {
                     let gpio = unsafe{ &*GPIO::ptr() };
                     let iomux = unsafe{ &*IO_MUX::ptr() };
+
                     self.disable_analog();
 
-                    gpio.$en.modify(|_, w| unsafe  { w.bits(0x1 << $i) });
+                    iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(alternate) });
+                    gpio.$pin.modify(|_,w| w.pad_driver().bit(open_drain));
+
+                    // NOTE(unsafe) atomic read to a stateless register
+                    gpio.$out_en_set.write(|w| unsafe  { w.bits(1 << $i) });
                     gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
 
-                    iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
-                    iomux.$iomux.modify(|_, w| w.fun_wpd().set_bit());
-                    iomux.$iomux.modify(|_, w| w.fun_wpu().set_bit());
+                    iomux.$iomux.modify(|_, w| w.fun_wpd().clear_bit());
+                    iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
+                }
+
+                pub fn into_push_pull_output(self) -> $pxi<Output<PushPull>> {
+                    self.set_output(2, false);
                     $pxi { _mode: PhantomData }
                 }
 
                 pub fn into_open_drain_output(self) -> $pxi<Output<OpenDrain>> {
-                    let gpio = unsafe{ &*GPIO::ptr() };
-                    let iomux = unsafe{ &*IO_MUX::ptr() };
-                    self.disable_analog();
-
-                    gpio.$en.modify(|_, w| unsafe  { w.bits(0x1 << $i) });
-                    gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
-
-                    iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(0b10) });
-                    iomux.$iomux.modify(|_, w| w.fun_wpd().clear_bit());
-                    iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
+                    self.set_output(2, true);
                     $pxi { _mode: PhantomData }
                 }
 
-                fn set_alternate(&self, n: u8) {
-                    let gpio = unsafe{ &*GPIO::ptr() };
-                    let iomux = unsafe{ &*IO_MUX::ptr() };
-                    self.disable_analog();
-
-                    gpio.$en.modify(|_, w| unsafe  { w.bits(0x1 << $i) });
-                    gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
-
-                    iomux.$iomux.modify(|_, w| unsafe { w.mcu_sel().bits(n) });
-                    iomux.$iomux.modify(|_, w| w.fun_wpd().clear_bit());
-                    iomux.$iomux.modify(|_, w| w.fun_wpu().clear_bit());
-                }
-
                 pub fn into_alternate_1(self) -> $pxi<Alternate<AF1>> {
-                    self.set_alternate(0);
+                    self.set_output(0, false);
                     $pxi { _mode: PhantomData }
                 }
 
                 pub fn into_alternate_2(self) -> $pxi<Alternate<AF2>> {
-                    self.set_alternate(1);
+                    self.set_output(1, false);
                     $pxi { _mode: PhantomData }
                 }
 
                 pub fn into_alternate_4(self) -> $pxi<Alternate<AF4>> {
-                    self.set_alternate(3);
+                    self.set_output(3, false);
                     $pxi { _mode: PhantomData }
                 }
 
                 pub fn into_alternate_5(self) -> $pxi<Alternate<AF5>> {
-                    self.set_alternate(4);
+                    self.set_output(4, false);
                     $pxi { _mode: PhantomData }
                 }
 
                 pub fn into_alternate_6(self) -> $pxi<Alternate<AF6>> {
-                    self.set_alternate(5);
+                    self.set_output(5, false);
                     $pxi { _mode: PhantomData }
                 }
             }
