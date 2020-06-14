@@ -19,15 +19,11 @@ impl ADC<ADC1> {
     ) -> i32 {
         let rtcio = unsafe { &*RTCIO::ptr() };
 
-        rtcio
-            .rtc_io_hall_sens
-            .modify(|_, w| w.rtc_io_hall_phase().clear_bit());
+        rtcio.hall_sens.modify(|_, w| w.hall_phase().clear_bit());
         let vp1: u16 = nb::block!(self.read(vp_pin)).unwrap();
         let vn1: u16 = nb::block!(self.read(vn_pin)).unwrap();
 
-        rtcio
-            .rtc_io_hall_sens
-            .modify(|_, w| w.rtc_io_hall_phase().set_bit());
+        rtcio.hall_sens.modify(|_, w| w.hall_phase().set_bit());
         let vp2: u16 = nb::block!(self.read(vp_pin)).unwrap();
         let vn2: u16 = nb::block!(self.read(vn_pin)).unwrap();
 

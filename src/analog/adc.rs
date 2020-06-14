@@ -127,13 +127,9 @@ impl ADC<ADC1> {
         let rtcio = unsafe { &*RTCIO::ptr() };
 
         if config.hall_sensor {
-            rtcio
-                .rtc_io_hall_sens
-                .modify(|_, w| w.rtc_io_xpd_hall().set_bit());
+            rtcio.hall_sens.modify(|_, w| w.xpd_hall().set_bit());
         } else {
-            rtcio
-                .rtc_io_hall_sens
-                .modify(|_, w| w.rtc_io_xpd_hall().clear_bit());
+            rtcio.hall_sens.modify(|_, w| w.xpd_hall().clear_bit());
         }
 
         let adc = ADC {
