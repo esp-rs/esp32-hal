@@ -5,11 +5,11 @@
 //!
 
 use embedded_hal::adc::OneShot;
-use esp32::RTCIO;
 
 use crate::analog::adc::ADC;
 use crate::analog::ADC1;
 use crate::gpio::{Analog, Gpio36, Gpio39};
+use crate::target::RTCIO;
 
 impl ADC<ADC1> {
     pub fn read_hall_sensor(

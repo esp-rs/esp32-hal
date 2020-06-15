@@ -1,5 +1,5 @@
 use {
-    crate::esp32::{GPIO, IO_MUX, RTCIO},
+    crate::target::{GPIO, IO_MUX, RTCIO},
     core::{convert::Infallible, marker::PhantomData},
     embedded_hal::digital::v2::{InputPin, OutputPin, StatefulOutputPin, ToggleableOutputPin},
 };

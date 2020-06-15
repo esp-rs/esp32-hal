@@ -13,9 +13,10 @@ use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::interrupt::{clear_software_interrupt, Interrupt, Interrupt::*, InterruptLevel};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::target;
 use esp32_hal::Core::PRO;
 
-static TX: spin::Mutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> = spin::Mutex::new(None);
+static TX: spin::Mutex<Option<esp32_hal::serial::Tx<target::UART0>>> = spin::Mutex::new(None);
 
 #[interrupt]
 fn FROM_CPU_INTR0() {
@@ -109,7 +110,7 @@ fn other_exception(
 
 #[entry]
 fn main() -> ! {
-    let dp = esp32::Peripherals::take().unwrap();
+    let dp = target::Peripherals::take().unwrap();
 
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
@@ -210,7 +211,7 @@ fn main() -> ! {
 
 const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
-fn disable_timg_wdts(timg0: &mut esp32::TIMG0, timg1: &mut esp32::TIMG1) {
+fn disable_timg_wdts(timg0: &mut target::TIMG0, timg1: &mut target::TIMG1) {
     timg0
         .wdtwprotect
         .write(|w| unsafe { w.bits(WDT_WKEY_VALUE) });

@@ -19,6 +19,7 @@ use esp32_hal::clock_control::{sleep, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::target;
 
 #[macro_use]
 extern crate alloc;
@@ -48,7 +49,7 @@ macro_rules! print_info {
 
 #[entry]
 fn main() -> ! {
-    let dp = unsafe { esp32::Peripherals::steal() };
+    let dp = target::Peripherals::take().expect("Failed to obtain Peripherals");
 
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
@@ -157,7 +158,7 @@ fn print_heap_info(output: &mut dyn core::fmt::Write) {
 
 const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
-fn disable_timg_wdts(timg0: &mut esp32::TIMG0, timg1: &mut esp32::TIMG1) {
+fn disable_timg_wdts(timg0: &mut target::TIMG0, timg1: &mut target::TIMG1) {
     timg0
         .wdtwprotect
         .write(|w| unsafe { w.bits(WDT_WKEY_VALUE) });

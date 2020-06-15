@@ -2,6 +2,7 @@
 //!
 
 use super::Error;
+use crate::target;
 use crate::Core::{self, APP, PRO};
 use xtensa_lx6::set_stack_pointer;
 
@@ -95,7 +96,7 @@ impl super::ClockControl {
     fn enable_cache(&mut self, core: Core) {
         // get timer group 0 registers, do it this way instead of
         // having to pass in yet another peripheral for this clock control
-        let spi0 = unsafe { &(*esp32::SPI0::ptr()) };
+        let spi0 = unsafe { &(*target::SPI0::ptr()) };
 
         match core {
             PRO => {

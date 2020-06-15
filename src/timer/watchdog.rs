@@ -7,10 +7,11 @@
 use super::Error;
 use super::TimerGroup;
 use crate::prelude::*;
+use crate::target;
+use crate::target::timg::wdtconfig0::WDT_STG0_A;
+use crate::target::timg::wdtconfig0::*;
 use core::marker::PhantomData;
 use embedded_hal::watchdog::{WatchdogDisable, WatchdogEnable};
-use esp32::timg::wdtconfig0::WDT_STG0_A;
-use esp32::timg::wdtconfig0::*;
 
 pub type WatchdogAction = WDT_STG0_A;
 pub type WatchDogResetDuration = WDT_CPU_RESET_LENGTH_A;
@@ -20,7 +21,7 @@ const WATCHDOG_BLOCK_VALUE: u32 = 0x89ABCDEF;
 
 pub struct Watchdog<TIMG: TimerGroup> {
     clock_control_config: super::ClockControlConfig,
-    timg: *const esp32::timg::RegisterBlock,
+    timg: *const target::timg::RegisterBlock,
     _group: PhantomData<TIMG>,
 }
 
@@ -63,13 +64,13 @@ impl<TIMG: TimerGroup> Watchdog<TIMG> {
     pub(crate) fn new(timg: TIMG, clock_control_config: super::ClockControlConfig) -> Self {
         Watchdog {
             clock_control_config,
-            timg: &*timg as *const _ as *const esp32::timg::RegisterBlock,
+            timg: &*timg as *const _ as *const target::timg::RegisterBlock,
             _group: PhantomData,
         }
     }
 
     /// function to unlock the watchdog (write unblock key) and lock after use
-    fn access_registers<A, F: FnMut(&esp32::timg::RegisterBlock) -> A>(&self, mut f: F) -> A {
+    fn access_registers<A, F: FnMut(&target::timg::RegisterBlock) -> A>(&self, mut f: F) -> A {
         // Unprotect write access to registers
 
         let timg = unsafe { &*(self.timg) };

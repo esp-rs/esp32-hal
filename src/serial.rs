@@ -15,7 +15,8 @@ use core::marker::PhantomData;
 
 use embedded_hal::serial;
 
-use crate::esp32::{UART0, UART1, UART2};
+use crate::target;
+use crate::target::{UART0, UART1, UART2};
 use crate::units::*;
 
 const UART_FIFO_SIZE: u8 = 128;
@@ -182,7 +183,7 @@ macro_rules! halUart {
                     pins: PINS,
                     config: config::Config,
                     clock_control:  crate::clock_control::ClockControlConfig,
-                    dport: &mut esp32::DPORT
+                    dport: &mut target::DPORT
                 ) -> Result<Self, Error>
                 where
                     PINS: Pins<$UARTX>,
@@ -198,20 +199,20 @@ macro_rules! halUart {
                         Ok(serial)
                 }
 
-                fn reset(&mut self, dport:&mut esp32::DPORT) -> &mut Self {
+                fn reset(&mut self, dport:&mut target::DPORT) -> &mut Self {
                     dport.perip_rst_en.modify(|_,w| w.$uartX().set_bit());
                     dport.perip_rst_en.modify(|_,w| w.$uartX().clear_bit());
                     self
                 }
 
-                pub fn enable(&mut self, dport:&mut esp32::DPORT) -> &mut Self {
+                pub fn enable(&mut self, dport:&mut target::DPORT) -> &mut Self {
                     dport.perip_clk_en.modify(|_,w| w.uart_mem().set_bit());
                     dport.perip_clk_en.modify(|_,w| w.$uartX().set_bit());
                     dport.perip_rst_en.modify(|_,w| w.$uartX().clear_bit());
                     self
                 }
 
-                pub fn disable(&mut self, dport:&mut esp32::DPORT) -> &mut Self {
+                pub fn disable(&mut self, dport:&mut target::DPORT) -> &mut Self {
                     dport.perip_clk_en.modify(|_,w| w.$uartX().clear_bit());
                     dport.perip_rst_en.modify(|_,w| w.$uartX().set_bit());
 

@@ -3,7 +3,7 @@
 
 use super::Error;
 use crate::prelude::*;
-use esp32::generic::Variant::Val;
+use crate::target::generic::Variant::Val;
 
 // Delays (in microseconds) for changing pll settings
 // TODO according to esp-idf: some of these are excessive, and should be reduced.

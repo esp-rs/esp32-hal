@@ -4,7 +4,7 @@
 //! This is unsafe! It is asynchronous with normal UART0 usage and
 //! interrupts are not disabled.
 
-use esp32::UART0;
+use crate::target::UART0;
 
 pub struct DebugLog {}
 
