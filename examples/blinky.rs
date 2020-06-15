@@ -6,6 +6,7 @@ extern crate panic_halt;
 extern crate xtensa_lx6_rt;
 
 use hal::prelude::*;
+use hal::target;
 use xtensa_lx6::get_cycle_count;
 
 /// The default clock source is the onboard crystal
@@ -16,7 +17,7 @@ const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
 #[no_mangle]
 fn main() -> ! {
-    let dp = unsafe { hal::esp32::Peripherals::steal() };
+    let dp = unsafe { target::Peripherals::steal() };
 
     let mut rtccntl = dp.RTCCNTL;
     let mut timg0 = dp.TIMG0;
@@ -39,7 +40,7 @@ fn main() -> ! {
     }
 }
 
-fn disable_rtc_wdt(rtccntl: &mut hal::esp32::RTCCNTL) {
+fn disable_rtc_wdt(rtccntl: &mut target::RTCCNTL) {
     /* Disables the RTCWDT */
     rtccntl
         .wdtwprotect
@@ -61,7 +62,7 @@ fn disable_rtc_wdt(rtccntl: &mut hal::esp32::RTCCNTL) {
     rtccntl.wdtwprotect.write(|w| unsafe { w.bits(0x0) });
 }
 
-fn disable_timg_wdts(timg0: &mut hal::esp32::TIMG0, timg1: &mut hal::esp32::TIMG1) {
+fn disable_timg_wdts(timg0: &mut target::TIMG0, timg1: &mut target::TIMG1) {
     timg0
         .wdtwprotect
         .write(|w| unsafe { w.bits(WDT_WKEY_VALUE) });

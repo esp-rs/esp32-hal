@@ -9,8 +9,8 @@ pub mod config;
 pub mod dac;
 pub mod hall;
 
+use crate::target::SENS;
 use core::marker::PhantomData;
-use esp32::SENS;
 
 pub struct ADC1 {
     _private: PhantomData<()>,

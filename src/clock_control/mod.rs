@@ -17,12 +17,13 @@
 //! - Automatic enabling/disabling of 8MHz source (when not in use for rtc_fast_clk or cpu frequency)
 
 use crate::prelude::*;
+use crate::target;
+use crate::target::dport::cpu_per_conf::CPUPERIOD_SEL_A;
+use crate::target::generic::Variant::*;
+use crate::target::rtccntl::clk_conf::*;
+use crate::target::rtccntl::cntl::*;
+use crate::target::{APB_CTRL, RTCCNTL, TIMG0};
 use core::fmt;
-use esp32::dport::cpu_per_conf::CPUPERIOD_SEL_A;
-use esp32::generic::Variant::*;
-use esp32::rtccntl::clk_conf::*;
-use esp32::rtccntl::cntl::*;
-use esp32::{APB_CTRL, RTCCNTL, TIMG0};
 use xtensa_lx6::get_cycle_count;
 
 pub mod cpu;
@@ -639,9 +640,9 @@ impl ClockControl {
         }
 
         let rtc_source = match source {
-            CalibrateRTCSource::SlowRTC => esp32::timg::rtccalicfg::CLK_SEL_A::RTC_MUX,
-            CalibrateRTCSource::RTC8MD256 => esp32::timg::rtccalicfg::CLK_SEL_A::CK8M_D256,
-            CalibrateRTCSource::Xtal32k => esp32::timg::rtccalicfg::CLK_SEL_A::XTAL32K,
+            CalibrateRTCSource::SlowRTC => target::timg::rtccalicfg::CLK_SEL_A::RTC_MUX,
+            CalibrateRTCSource::RTC8MD256 => target::timg::rtccalicfg::CLK_SEL_A::CK8M_D256,
+            CalibrateRTCSource::Xtal32k => target::timg::rtccalicfg::CLK_SEL_A::XTAL32K,
         };
 
         // get timer group 0 registers, do it this way instead of
@@ -1229,7 +1230,7 @@ impl ClockControl {
         unsafe {
             timg0.rtccalicfg.modify(|_, w| {
                 w.clk_sel()
-                    .variant(esp32::timg::rtccalicfg::CLK_SEL_A::RTC_MUX)
+                    .variant(target::timg::rtccalicfg::CLK_SEL_A::RTC_MUX)
                     .max()
                     .bits(0)
                     .start_cycling()

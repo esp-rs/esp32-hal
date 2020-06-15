@@ -20,7 +20,7 @@
 #![cfg_attr(feature = "alloc", feature(alloc_layout_extra))]
 
 pub use embedded_hal as hal;
-pub use esp32;
+pub use esp32 as target;
 
 extern crate esp32_hal_proc_macros as proc_macros;
 pub use proc_macros::interrupt;

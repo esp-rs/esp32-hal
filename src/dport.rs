@@ -3,7 +3,7 @@
 //! This peripheral contains many registers, which are used for various different functions.
 //! Registers needed in other blocks can be split off.
 //!
-use esp32::{dport, DPORT};
+use crate::target::{dport, DPORT};
 
 /// Cpu Period Configuration Register
 pub struct ClockControl {}

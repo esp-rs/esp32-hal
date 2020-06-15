@@ -10,17 +10,18 @@ use esp32_hal::clock_control::{CPUSource, ClockControl, ClockControlConfig};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::target;
 
 use xtensa_lx6::{get_cycle_count, get_stack_pointer};
 
 const BLINK_HZ: Hertz = Hertz(1);
 
 static GLOBAL_COUNT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-static TX: spin::Mutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> = spin::Mutex::new(None);
+static TX: spin::Mutex<Option<esp32_hal::serial::Tx<target::UART0>>> = spin::Mutex::new(None);
 
 #[no_mangle]
 fn main() -> ! {
-    let dp = unsafe { esp32::Peripherals::steal() };
+    let dp = unsafe { target::Peripherals::steal() };
 
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
@@ -198,7 +199,7 @@ fn print_info(loop_count: u32, spin_loop_count: u32, prev_ccount: &mut u32) {
 
 const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
-fn disable_timg_wdts(timg0: &mut esp32::TIMG0, timg1: &mut esp32::TIMG1) {
+fn disable_timg_wdts(timg0: &mut target::TIMG0, timg1: &mut target::TIMG1) {
     timg0
         .wdtwprotect
         .write(|w| unsafe { w.bits(WDT_WKEY_VALUE) });

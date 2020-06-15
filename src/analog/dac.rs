@@ -7,10 +7,10 @@
 //!
 
 use core::marker::PhantomData;
-use esp32::{RTCIO, SENS};
 
 use crate::analog::{DAC1, DAC2};
 use crate::gpio::{Analog, Gpio25, Gpio26};
+use crate::target::{RTCIO, SENS};
 
 pub struct DAC<DAC> {
     _dac: PhantomData<DAC>,

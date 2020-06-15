@@ -1,7 +1,7 @@
 #![allow(non_camel_case_types)]
 
 use crate::prelude::*;
-use esp32::EFUSE;
+use crate::target::EFUSE;
 
 pub struct Efuse;
 

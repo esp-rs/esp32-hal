@@ -13,8 +13,9 @@ use embedded_hal::timer::{Cancel, CountDown, Periodic};
 
 use crate::clock_control::ClockControlConfig;
 use crate::prelude::*;
+use crate::target;
+use crate::target::{TIMG0, TIMG1};
 use core::marker::PhantomData;
-use esp32::{TIMG0, TIMG1};
 
 pub mod watchdog;
 
@@ -38,7 +39,7 @@ pub enum Error {
 /// Lower level access is provided by the other functions.
 pub struct Timer<TIMG: TimerGroup, INST: TimerInst> {
     clock_control_config: ClockControlConfig,
-    timg: *const esp32::timg::RegisterBlock,
+    timg: *const target::timg::RegisterBlock,
     _group: PhantomData<TIMG>,
     _timer: PhantomData<INST>,
 }
@@ -55,8 +56,8 @@ pub enum Event {
 
 #[doc(hidden)]
 pub trait TimerGroup: core::ops::Deref {}
-impl TimerGroup for esp32::TIMG0 {}
-impl TimerGroup for esp32::TIMG1 {}
+impl TimerGroup for target::TIMG0 {}
+impl TimerGroup for target::TIMG1 {}
 
 #[doc(hidden)]
 pub trait TimerInst {}
@@ -92,19 +93,19 @@ impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
     ) {
         let timer0 = Timer::<TIMG, Timer0> {
             clock_control_config,
-            timg: &*timg as *const _ as *const esp32::timg::RegisterBlock,
+            timg: &*timg as *const _ as *const target::timg::RegisterBlock,
             _group: PhantomData {},
             _timer: PhantomData {},
         };
         let timer1 = Timer::<TIMG, Timer1> {
             clock_control_config,
-            timg: &*timg as *const _ as *const esp32::timg::RegisterBlock,
+            timg: &*timg as *const _ as *const target::timg::RegisterBlock,
             _group: PhantomData {},
             _timer: PhantomData {},
         };
         let mut timerlact = Timer::<TIMG, TimerLact> {
             clock_control_config,
-            timg: &*timg as *const _ as *const esp32::timg::RegisterBlock,
+            timg: &*timg as *const _ as *const target::timg::RegisterBlock,
             _group: PhantomData {},
             _timer: PhantomData {},
         };
@@ -131,7 +132,7 @@ impl<INST: TimerInst> Timer<TIMG0, INST> {
         _timer1: Timer<TIMG0, Timer1>,
         _timer2: Timer<TIMG0, TimerLact>,
     ) -> TIMG0 {
-        unsafe { esp32::Peripherals::steal().TIMG0 }
+        unsafe { target::Peripherals::steal().TIMG0 }
     }
 }
 
@@ -143,7 +144,7 @@ impl<INST: TimerInst> Timer<TIMG1, INST> {
         _timer1: Timer<TIMG1, Timer1>,
         _timer2: Timer<TIMG1, TimerLact>,
     ) -> TIMG1 {
-        unsafe { esp32::Peripherals::steal().TIMG1 }
+        unsafe { target::Peripherals::steal().TIMG1 }
     }
 }
 

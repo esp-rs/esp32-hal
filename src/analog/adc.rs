@@ -21,11 +21,11 @@
 
 use core::marker::PhantomData;
 use embedded_hal::adc::{Channel, OneShot};
-use esp32::{RTCIO, SENS};
 
 use crate::analog::config;
 use crate::analog::{ADC1, ADC2};
 use crate::gpio::*;
+use crate::target::{RTCIO, SENS};
 
 pub struct ADC<ADC> {
     adc: PhantomData<ADC>,

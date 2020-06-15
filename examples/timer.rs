@@ -14,6 +14,7 @@ use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::interrupt::{Interrupt, InterruptLevel};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::target;
 use esp32_hal::timer::watchdog::{self, WatchDogResetDuration, WatchdogAction, WatchdogConfig};
 use esp32_hal::timer::{Timer, Timer0, Timer1, TimerLact, TimerWithInterrupt};
 use esp32_hal::Core::PRO;
@@ -21,21 +22,24 @@ use spin::Mutex;
 
 const BLINK_HZ: Hertz = Hertz(2);
 
-static TIMER0: Mutex<RefCell<Option<Timer<esp32::TIMG0, Timer0>>>> = Mutex::new(RefCell::new(None));
-static TIMER2: Mutex<RefCell<Option<Timer<esp32::TIMG0, TimerLact>>>> =
+static TIMER0: Mutex<RefCell<Option<Timer<target::TIMG0, Timer0>>>> =
     Mutex::new(RefCell::new(None));
-static TIMER3: Mutex<RefCell<Option<Timer<esp32::TIMG1, Timer0>>>> = Mutex::new(RefCell::new(None));
-static TIMER4: Mutex<RefCell<Option<Timer<esp32::TIMG1, Timer1>>>> = Mutex::new(RefCell::new(None));
-static TIMER5: Mutex<RefCell<Option<Timer<esp32::TIMG1, TimerLact>>>> =
+static TIMER2: Mutex<RefCell<Option<Timer<target::TIMG0, TimerLact>>>> =
+    Mutex::new(RefCell::new(None));
+static TIMER3: Mutex<RefCell<Option<Timer<target::TIMG1, Timer0>>>> =
+    Mutex::new(RefCell::new(None));
+static TIMER4: Mutex<RefCell<Option<Timer<target::TIMG1, Timer1>>>> =
+    Mutex::new(RefCell::new(None));
+static TIMER5: Mutex<RefCell<Option<Timer<target::TIMG1, TimerLact>>>> =
     Mutex::new(RefCell::new(None));
 
-static WATCHDOG1: Mutex<RefCell<Option<watchdog::Watchdog<esp32::TIMG1>>>> =
+static WATCHDOG1: Mutex<RefCell<Option<watchdog::Watchdog<target::TIMG1>>>> =
     Mutex::new(RefCell::new(None));
-static TX: Mutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> = spin::Mutex::new(None);
+static TX: Mutex<Option<esp32_hal::serial::Tx<target::UART0>>> = spin::Mutex::new(None);
 
 #[no_mangle]
 fn main() -> ! {
-    let dp = esp32::Peripherals::take().unwrap();
+    let dp = target::Peripherals::take().unwrap();
 
     let (mut dport, dport_clock_control) = dp.DPORT.split();
 

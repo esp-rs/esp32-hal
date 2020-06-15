@@ -5,10 +5,11 @@
 //! - Consider add default configuration for start with time only
 
 use crate::prelude::*;
+use crate::target;
+use crate::target::generic::Variant::Val;
+use crate::target::rtccntl::wdtconfig0::*;
+use crate::target::RTCCNTL;
 use embedded_hal::watchdog::{WatchdogDisable, WatchdogEnable};
-use esp32::generic::Variant::Val;
-use esp32::rtccntl::wdtconfig0::*;
-use esp32::RTCCNTL;
 
 pub type WatchdogAction = WDT_STG0_A;
 pub type WatchDogResetDuration = WDT_CPU_RESET_LENGTH_A;
@@ -64,7 +65,7 @@ impl Watchdog {
     }
 
     /// function to unlock the watchdog (write unblock key) and lock after use
-    fn access_registers<A, F: FnMut(&esp32::rtccntl::RegisterBlock) -> A>(
+    fn access_registers<A, F: FnMut(&target::rtccntl::RegisterBlock) -> A>(
         &mut self,
         mut f: F,
     ) -> A {

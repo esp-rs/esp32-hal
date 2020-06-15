@@ -29,10 +29,11 @@
 //! to exceptions when the flash is programmed or erased while the interrupt is called.*
 use crate::ram;
 
+use crate::target;
+pub use crate::target::Interrupt::{self, *};
+use crate::target::DPORT;
 use crate::Core::{self, APP, PRO};
 use bare_metal::Nr;
-pub use esp32::Interrupt::{self, *};
-use esp32::DPORT;
 pub use proc_macros::interrupt;
 pub use xtensa_lx6::interrupt::{self, free};
 
@@ -139,30 +140,26 @@ const CPU_INTERRUPT_USED_LEVELS: u32 = 0b_1001_0001_1100_1000_0100_0100_0000_000
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
 struct CPUInterrupt(pub usize);
 
-fn cpu_interrupt_to_interrupt(cpu_interrupt: CPUInterrupt) -> Result<esp32::Interrupt, Error> {
+fn cpu_interrupt_to_interrupt(cpu_interrupt: CPUInterrupt) -> Result<target::Interrupt, Error> {
     #[ram]
-    const CPU_INTERRUPT_TO_INTERRUPT: [Option<esp32::Interrupt>; 32] = [
+    const CPU_INTERRUPT_TO_INTERRUPT: [Option<target::Interrupt>; 32] = [
         None,
         None,
         None,
         None,
         None,
         None,
-        Some(esp32::Interrupt::INTERNAL_TIMER0_INTR),
-        Some(esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR),
+        Some(target::Interrupt::INTERNAL_TIMER0_INTR),
+        Some(target::Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR),
         None,
         None,
         None,
-        Some(esp32::Interrupt::INTERNAL_PROFILING_INTR),
+        Some(target::Interrupt::INTERNAL_PROFILING_INTR),
         None,
         None,
         None,
-        Some(esp32::Interrupt::INTERNAL_TIMER1_INTR),
-        Some(esp32::Interrupt::INTERNAL_TIMER2_INTR),
-        None,
-        None,
-        None,
-        None,
+        Some(target::Interrupt::INTERNAL_TIMER1_INTR),
+        Some(target::Interrupt::INTERNAL_TIMER2_INTR),
         None,
         None,
         None,
@@ -171,7 +168,11 @@ fn cpu_interrupt_to_interrupt(cpu_interrupt: CPUInterrupt) -> Result<esp32::Inte
         None,
         None,
         None,
-        Some(esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR),
+        None,
+        None,
+        None,
+        None,
+        Some(target::Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR),
         None,
         None,
     ];
@@ -180,14 +181,14 @@ fn cpu_interrupt_to_interrupt(cpu_interrupt: CPUInterrupt) -> Result<esp32::Inte
 }
 
 #[ram]
-fn interrupt_to_cpu_interrupt(interrupt: esp32::Interrupt) -> Result<CPUInterrupt, Error> {
+fn interrupt_to_cpu_interrupt(interrupt: target::Interrupt) -> Result<CPUInterrupt, Error> {
     match interrupt {
-        esp32::Interrupt::INTERNAL_TIMER0_INTR => Ok(CPUInterrupt(6)),
-        esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR => Ok(CPUInterrupt(7)),
-        esp32::Interrupt::INTERNAL_PROFILING_INTR => Ok(CPUInterrupt(11)),
-        esp32::Interrupt::INTERNAL_TIMER1_INTR => Ok(CPUInterrupt(15)),
-        esp32::Interrupt::INTERNAL_TIMER2_INTR => Ok(CPUInterrupt(16)),
-        esp32::Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR => Ok(CPUInterrupt(29)),
+        target::Interrupt::INTERNAL_TIMER0_INTR => Ok(CPUInterrupt(6)),
+        target::Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR => Ok(CPUInterrupt(7)),
+        target::Interrupt::INTERNAL_PROFILING_INTR => Ok(CPUInterrupt(11)),
+        target::Interrupt::INTERNAL_TIMER1_INTR => Ok(CPUInterrupt(15)),
+        target::Interrupt::INTERNAL_TIMER2_INTR => Ok(CPUInterrupt(16)),
+        target::Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR => Ok(CPUInterrupt(29)),
         _ => Err(Error::InvalidCPUInterrupt),
     }
 }
@@ -252,7 +253,7 @@ unsafe fn level_7_handler(level: u32) {
 
 #[ram]
 unsafe fn handle_interrupt(level: u32, interrupt: Interrupt) {
-    let handler = esp32::__INTERRUPTS[interrupt.nr() as usize]._handler;
+    let handler = target::__INTERRUPTS[interrupt.nr() as usize]._handler;
     if handler as *const _ == DefaultHandler as *const unsafe extern "C" fn() {
         DefaultHandler(level, interrupt);
     } else {
@@ -291,7 +292,7 @@ unsafe fn handle_interrupts(level: u32) {
             let mut interrupt_mask = INTERRUPT_LEVELS[level as usize] & INTERRUPT_EDGE;
             loop {
                 let interrupt_nr = interrupt_mask.trailing_zeros();
-                if let Ok(interrupt) = esp32::Interrupt::try_from(interrupt_nr as u8) {
+                if let Ok(interrupt) = target::Interrupt::try_from(interrupt_nr as u8) {
                     handle_interrupt(level, interrupt)
                 } else {
                     break;
@@ -303,8 +304,8 @@ unsafe fn handle_interrupts(level: u32) {
                 get_interrupt_status(crate::get_core()) & INTERRUPT_LEVELS[level as usize];
             let interrupt_nr = interrupt_mask.trailing_zeros();
 
-            // esp32::Interrupt::try_from can fail if interrupt already de-asserted: silently ignore
-            if let Ok(interrupt) = esp32::Interrupt::try_from(interrupt_nr as u8) {
+            // target::Interrupt::try_from can fail if interrupt already de-asserted: silently ignore
+            if let Ok(interrupt) = target::Interrupt::try_from(interrupt_nr as u8) {
                 handle_interrupt(level, interrupt);
             }
         }
@@ -313,7 +314,7 @@ unsafe fn handle_interrupts(level: u32) {
 
 #[no_mangle]
 #[ram]
-extern "C" fn DefaultHandler(level: u32, interrupt: esp32::Interrupt) {
+extern "C" fn DefaultHandler(level: u32, interrupt: target::Interrupt) {
     crate::dprintln!("Unhandled interrupt (level {}): {:?}", level, interrupt);
 }
 
