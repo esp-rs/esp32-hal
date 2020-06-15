@@ -240,6 +240,24 @@ macro_rules! impl_output {
                     self.set_output(5, false);
                     $pxi { _mode: PhantomData }
                 }
+
+                /// Enable/Disable input circuitry
+                pub fn input(self, on: bool) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_ie().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull up resistor
+                pub fn internal_pull_up(self, on: bool) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_wpu().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull down resistor
+                pub fn internal_pull_down(self, on: bool) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_wpd().bit(on));
+                    self
+                }
             }
         )+
     };
