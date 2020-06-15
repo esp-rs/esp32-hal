@@ -17,7 +17,7 @@ const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
 
 #[no_mangle]
 fn main() -> ! {
-    let dp = unsafe { target::Peripherals::steal() };
+    let dp = target::Peripherals::take().expect("Failed to obtain Peripherals");
 
     let mut rtccntl = dp.RTCCNTL;
     let mut timg0 = dp.TIMG0;

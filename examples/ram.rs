@@ -16,7 +16,7 @@ use xtensa_lx6::get_program_counter;
 
 #[entry]
 fn main() -> ! {
-    let dp = unsafe { target::Peripherals::steal() };
+    let dp = target::Peripherals::take().expect("Failed to obtain Peripherals");
 
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
