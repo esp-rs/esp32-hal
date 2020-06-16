@@ -1,7 +1,7 @@
 use {
     crate::target::{GPIO, IO_MUX, RTCIO},
     core::{convert::Infallible, marker::PhantomData},
-    embedded_hal::digital::v2::{InputPin, OutputPin, StatefulOutputPin, ToggleableOutputPin},
+    embedded_hal::digital::v2::{OutputPin as _, StatefulOutputPin as _},
 };
 
 mod mux;
@@ -14,6 +14,37 @@ pub trait GpioExt {
 
     /// Splits the GPIO block into independent pins and registers
     fn split(self) -> Self::Parts;
+}
+
+pub trait Pin {
+    fn set_drive_strength(&mut self, strength: DriveStrength) -> &mut Self;
+    fn enable_open_drain(&mut self, on: bool) -> &mut Self;
+    fn enable_input(&mut self, on: bool) -> &mut Self;
+    fn internal_pull_up(&mut self, on: bool) -> &mut Self;
+    fn internal_pull_down(&mut self, on: bool) -> &mut Self;
+    fn set_drive_strength_in_sleep_mode(&mut self, strength: DriveStrength) -> &mut Self;
+    fn input_in_sleep_mode(&mut self, on: bool) -> &mut Self;
+    fn internal_pull_up_in_sleep_mode(&mut self, on: bool) -> &mut Self;
+    fn internal_pull_down_in_sleep_mode(&mut self, on: bool) -> &mut Self;
+    fn output_in_sleep_mode(&mut self, on: bool) -> &mut Self;
+    fn sleep_mode(&mut self, on: bool) -> &mut Self;
+    fn connect_input_to_peripheral(&mut self, signal: InputSignal, invert: bool) -> &mut Self;
+    fn connect_peripheral_to_output(
+        &mut self,
+        signal: OutputSignal,
+        invert: bool,
+        enable_from_gpio: bool,
+        invert_enable: bool,
+    ) -> &mut Self;
+}
+
+pub trait InputPin: Pin + embedded_hal::digital::v2::InputPin {}
+pub trait OutputPin:
+    Pin
+    + embedded_hal::digital::v2::OutputPin
+    + embedded_hal::digital::v2::StatefulOutputPin
+    + embedded_hal::digital::v2::ToggleableOutputPin
+{
 }
 
 /// Input mode (type state)
@@ -72,11 +103,9 @@ pub enum DriveStrength {
 }
 
 macro_rules! gpio {
-    ($GPIO:ident: [
-        $($pxi:ident: ($pname:ident, $MODE:ty),)+
-    ]) => {
+    ( $($pxi:ident: ($pname:ident, $MODE:ty),)+ ) => {
 
-        impl GpioExt for $GPIO {
+        impl GpioExt for GPIO {
             type Parts = Parts;
 
             fn split(self) -> Self::Parts {
@@ -103,13 +132,11 @@ macro_rules! gpio {
                 _mode: PhantomData<MODE>,
             }
         )+
-
     };
 }
 
 // All info on reset state pulled from 4.10 IO_MUX Pad List in the reference manual
 gpio! {
-   GPIO: [
        Gpio0: (gpio0, Input<PullUp>),
        Gpio1: (gpio1, Input<PullUp>),
        Gpio2: (gpio2, Input<PullDown>),
@@ -147,7 +174,6 @@ gpio! {
        Gpio37: (gpio37, Input<Floating>),
        Gpio38: (gpio38, Input<Floating>),
        Gpio39: (gpio39, Input<Floating>),
-   ]
 }
 
 macro_rules! impl_output {
@@ -157,6 +183,8 @@ macro_rules! impl_output {
     ]) => {
         $(
             impl<MODE> OutputPin for $pxi<Output<MODE>> {
+            }
+            impl<MODE> embedded_hal::digital::v2::OutputPin for $pxi<Output<MODE>> {
                 type Error = Infallible;
 
                 fn set_high(&mut self) -> Result<(), Self::Error> {
@@ -172,7 +200,7 @@ macro_rules! impl_output {
                 }
             }
 
-            impl<MODE> StatefulOutputPin for $pxi<Output<MODE>> {
+            impl<MODE> embedded_hal::digital::v2::StatefulOutputPin for $pxi<Output<MODE>> {
                 fn is_set_high(&self) -> Result<bool, Self::Error> {
                      // NOTE(unsafe) atomic read to a stateless register
                     unsafe { Ok((*GPIO::ptr()).$outs.read().bits() & (1 << $bit) != 0) }
@@ -183,7 +211,7 @@ macro_rules! impl_output {
                 }
             }
 
-            impl<MODE> ToggleableOutputPin for $pxi<Output<MODE>> {
+            impl<MODE> embedded_hal::digital::v2::ToggleableOutputPin for $pxi<Output<MODE>> {
                 type Error = Infallible;
 
                 fn toggle(&mut self) -> Result<(), Self::Error> {
@@ -254,83 +282,6 @@ macro_rules! impl_output {
                     self.set_output(5, false);
                     $pxi { _mode: PhantomData }
                 }
-
-                /// Set drive strength
-                pub fn set_drive_strength(self, strength: DriveStrength) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| unsafe {
-                        w.fun_drv().bits(strength as u8)
-                    });
-                    self
-                }
-
-                /// Enable/Disable input circuitry
-                pub fn input(self, on: bool) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_ie().bit(on));
-                    self
-                }
-
-                /// Enable/Disable internal pull up resistor
-                pub fn internal_pull_up(self, on: bool) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_wpu().bit(on));
-                    self
-                }
-
-                /// Enable/Disable internal pull down resistor
-                pub fn internal_pull_down(self, on: bool) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_wpd().bit(on));
-                    self
-                }
-
-                /// Set drive strength
-                pub fn set_drive_strength_in_sleep_mode(self, strength: DriveStrength) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| unsafe {
-                        w.mcu_drv().bits(strength as u8)
-                    });
-                    self
-                }
-
-                /// Enable/Disable input circuitry while in sleep mode
-                pub fn input_in_sleep_mode(self, on: bool) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_ie().bit(on));
-                    self
-                }
-
-                /// Enable/Disable internal pull up resistor while in sleep mode
-                pub fn internal_pull_up_in_sleep_mode(self, on: bool) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_wpu().bit(on));
-                    self
-                }
-
-                /// Enable/Disable internal pull down resistor while in sleep mode
-                pub fn internal_pull_down_in_sleep_mode(self, on: bool) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_wpd().bit(on));
-                    self
-                }
-
-                /// Enable/Disable internal pull down resistor while in sleep mode
-                pub fn output_in_sleep_mode(self, on: bool) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_oe().bit(on));
-                    self
-                }
-
-                /// Enable/Disable the sleep mode of the pad
-                pub fn sleep_mode(self, on: bool) -> Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.slp_sel().bit(on));
-                    self
-                }
-
-                /// Connect peripheral to output
-                pub fn connect_peripheral_to_output(self, signal: OutputSignal, invert: bool,
-                    enable_from_gpio: bool, invert_enable: bool) -> Self {
-                    unsafe{ &*GPIO::ptr() }.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
-                        w
-                        .out_sel().bits(signal as u16)
-                        .out_inv_sel().bit(invert)
-                        .oen_sel().bit(enable_from_gpio)
-                        .oen_inv_sel().bit(invert_enable)
-                    });
-                    self
-                }
             }
         )+
     };
@@ -377,7 +328,7 @@ impl_output! {
 }
 
 macro_rules! impl_pullup_pulldown {
-    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $bit:expr, $iomux:ident, 
+    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $bit:expr, $iomux:ident,
         has_pullup_pulldown) => {
         pub fn into_pull_up_input(self) -> $pxi<Input<PullUp>> {
             self.set_input(false, false);
@@ -389,11 +340,11 @@ macro_rules! impl_pullup_pulldown {
             $pxi { _mode: PhantomData }
         }
     };
-    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $bit:expr, $iomux:ident, 
+    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $bit:expr, $iomux:ident,
         no_pullup_pulldown) => {
         /* No pullup/pulldown resistor is available on this pin. */
     };
-    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $bit:expr, $iomux:ident, 
+    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $bit:expr, $iomux:ident,
         $pullup_flag:ident) => {
         compile_error!(
             "The GPIO pin has to be marked with either \
@@ -408,7 +359,8 @@ macro_rules! impl_input {
         $($pxi:ident: ($pin_num:expr, $bit:expr, $iomux:ident, $resistors:ident),)+
     ]) => {
         $(
-            impl<MODE> InputPin for $pxi<Input<MODE>> {
+//            impl<MODE> InputPin for $pxi<Output<MODE>> {}
+            impl<MODE> embedded_hal::digital::v2::InputPin for $pxi<Input<MODE>> {
                 type Error = Infallible;
 
                 fn is_high(&self) -> Result<bool, Self::Error> {
@@ -448,9 +400,84 @@ macro_rules! impl_input {
                     $pxi { _mode: PhantomData }
                 }
 
+                impl_pullup_pulldown!($out_en_clear, $pxi, $pin_num, $bit, $iomux, $resistors);
+            }
+
+            impl<MODE> Pin for $pxi<MODE> {
+
+                /// Set drive strength
+                fn set_drive_strength(&mut self, strength: DriveStrength) -> &mut Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| unsafe {
+                        w.fun_drv().bits(strength as u8)
+                    });
+                    self
+                }
+
+                /// Enable/Disable input circuitry
+                fn enable_input(&mut self, on: bool) -> &mut Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_ie().bit(on));
+                    self
+                }
+
+                /// Enable/Disable open drain
+                fn enable_open_drain(&mut self, on: bool) -> &mut Self {
+                    unsafe{ &*GPIO::ptr() }.pin[$pin_num].modify(|_, w| w.pad_driver().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull up resistor
+                fn internal_pull_up(&mut self, on: bool) ->&mut  Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_wpu().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull down resistor
+                fn internal_pull_down(&mut self, on: bool) -> &mut Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_wpd().bit(on));
+                    self
+                }
+
+                /// Set drive strength
+                fn set_drive_strength_in_sleep_mode(&mut self, strength: DriveStrength) -> &mut Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| unsafe {
+                        w.mcu_drv().bits(strength as u8)
+                    });
+                    self
+                }
+
+                /// Enable/Disable input circuitry while in sleep mode
+                fn input_in_sleep_mode(&mut self, on: bool) -> &mut Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_ie().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull up resistor while in sleep mode
+                fn internal_pull_up_in_sleep_mode(&mut self, on: bool) -> &mut Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_wpu().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull down resistor while in sleep mode
+                fn internal_pull_down_in_sleep_mode(&mut self, on: bool) -> &mut Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_wpd().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull down resistor while in sleep mode
+                fn output_in_sleep_mode(&mut self, on: bool) -> &mut Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_oe().bit(on));
+                    self
+                }
+
+                /// Enable/Disable the sleep mode of the pad
+                fn sleep_mode(&mut self, on: bool) -> &mut Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.slp_sel().bit(on));
+                    self
+                }
+
                 /// Connect input to peripheral
-                pub fn connect_input_to_peripheral(self, signal: InputSignal,
-                    invert: bool) -> Self {
+                fn connect_input_to_peripheral(&mut self, signal: InputSignal,
+                    invert: bool) -> &mut Self {
                     unsafe{ &*GPIO::ptr() }.func_in_sel_cfg[signal as usize].modify(|_, w| unsafe {
                         w
                         .sel().set_bit()
@@ -460,8 +487,23 @@ macro_rules! impl_input {
                     self
                 }
 
-                impl_pullup_pulldown!($out_en_clear, $pxi, $pin_num, $bit, $iomux, $resistors);
+                /// Connect peripheral to output
+                fn connect_peripheral_to_output(&mut self, signal: OutputSignal, invert: bool,
+                    enable_from_gpio: bool, invert_enable: bool) -> &mut Self {
+                    unsafe{ &*GPIO::ptr() }.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
+                        w
+                        .out_sel().bits(signal as u16)
+                        .out_inv_sel().bit(invert)
+                        .oen_sel().bit(enable_from_gpio)
+                        .oen_inv_sel().bit(invert_enable)
+                    });
+                    self
+                }
+
+
+
             }
+
         )+
     };
 }

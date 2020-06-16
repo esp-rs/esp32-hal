@@ -15,10 +15,10 @@ pub use crate::interrupt;
 pub use crate::proc_macros::*;
 pub use crate::units::*;
 
-pub use embedded_hal::digital::v2::InputPin as _embedded_hal_digital_v2_InputPin;
-pub use embedded_hal::digital::v2::OutputPin as _embedded_hal_digital_v2_OutputPin;
-pub use embedded_hal::digital::v2::StatefulOutputPin as _embedded_hal_digital_v2_StatefulOutputPin;
-pub use embedded_hal::digital::v2::ToggleableOutputPin as _embedded_hal_digital_v2_ToggleableOutputPin;
+pub use embedded_hal::digital::v2::InputPin as _;
+pub use embedded_hal::digital::v2::OutputPin as _;
+pub use embedded_hal::digital::v2::StatefulOutputPin as _;
+pub use embedded_hal::digital::v2::ToggleableOutputPin as _;
 pub use embedded_hal::prelude::*;
 pub use embedded_hal::timer::{Cancel, CountDown, Periodic};
 
