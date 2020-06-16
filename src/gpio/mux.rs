@@ -1,5 +1,5 @@
 #[allow(non_camel_case_types)]
-pub enum InputFunction {
+pub enum InputSignal {
     SPICLK = 0,
     SPIQ = 1,
     SPID = 2,
@@ -184,7 +184,7 @@ pub enum InputFunction {
 }
 
 #[allow(non_camel_case_types)]
-pub enum OutputFunction {
+pub enum OutputSignal {
     SPICLK = 0,
     SPIQ = 1,
     SPID = 2,
@@ -408,4 +408,5 @@ pub enum OutputFunction {
     SIG_IN_FUNC226 = 226,
     SIG_IN_FUNC227 = 227,
     SIG_IN_FUNC228 = 228,
+    GPIO = 256,
 }

@@ -64,6 +64,13 @@ pub struct AF5;
 /// Alternate Function 6
 pub struct AF6;
 
+pub enum DriveStrength {
+    I5mA = 0,
+    I10mA = 1,
+    I20mA = 2,
+    I40mA = 3,
+}
+
 macro_rules! gpio {
     ($GPIO:ident: [
         $($pxi:ident: ($pname:ident, $MODE:ty),)+
@@ -146,7 +153,7 @@ gpio! {
 macro_rules! impl_output {
     ($out_en_set:ident, $outs:ident, $outc:ident, [
         // index, gpio pin name, funcX name, iomux pin name
-        $($pxi:ident: ($i:expr, $pin:ident, $funcXout:ident, $iomux:ident),)+
+        $($pxi:ident: ($pin_num:expr, $bit:expr, $iomux:ident),)+
     ]) => {
         $(
             impl<MODE> OutputPin for $pxi<Output<MODE>> {
@@ -154,13 +161,13 @@ macro_rules! impl_output {
 
                 fn set_high(&mut self) -> Result<(), Self::Error> {
                     // NOTE(unsafe) atomic write to a stateless register
-                    unsafe { (*GPIO::ptr()).$outs.write(|w| w.bits(1 << $i)) };
+                    unsafe { (*GPIO::ptr()).$outs.write(|w| w.bits(1 << $bit)) };
                     Ok(())
                 }
 
                 fn set_low(&mut self) -> Result<(), Self::Error> {
                     // NOTE(unsafe) atomic write to a stateless register
-                    unsafe { (*GPIO::ptr()).$outc.write(|w| w.bits(1 << $i)) };
+                    unsafe { (*GPIO::ptr()).$outc.write(|w| w.bits(1 << $bit)) };
                     Ok(())
                 }
             }
@@ -168,7 +175,7 @@ macro_rules! impl_output {
             impl<MODE> StatefulOutputPin for $pxi<Output<MODE>> {
                 fn is_set_high(&self) -> Result<bool, Self::Error> {
                      // NOTE(unsafe) atomic read to a stateless register
-                    unsafe { Ok((*GPIO::ptr()).$outs.read().bits() & (1 << $i) != 0) }
+                    unsafe { Ok((*GPIO::ptr()).$outs.read().bits() & (1 << $bit) != 0) }
                 }
 
                 fn is_set_low(&self) -> Result<bool, Self::Error> {
@@ -197,15 +204,19 @@ macro_rules! impl_output {
                     self.disable_analog();
 
                     // NOTE(unsafe) atomic read to a stateless register
-                    gpio.$out_en_set.write(|w| unsafe  { w.bits(1 << $i) });
-                    gpio.$pin.modify(|_,w| w.pad_driver().bit(open_drain));
-                    gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
+                    gpio.$out_en_set.write(|w| unsafe  { w.bits(1 << $bit) });
+                    gpio.pin[$pin_num].modify(|_,w| w.pad_driver().bit(open_drain));
+                    gpio.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
+                        w.out_sel().bits(OutputSignal::GPIO as u16)
+                    });
 
                     iomux.$iomux.modify(|_, w| unsafe {
                         w
                             .mcu_sel().bits(alternate)
                             .fun_wpd().clear_bit()
                             .fun_wpu().clear_bit()
+                            .fun_drv().bits(DriveStrength::I20mA as u8)
+                            .slp_sel().clear_bit()
                     });
                 }
 
@@ -244,6 +255,14 @@ macro_rules! impl_output {
                     $pxi { _mode: PhantomData }
                 }
 
+                /// Set drive strength
+                pub fn set_drive_strength(self, strength: DriveStrength) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| unsafe {
+                        w.fun_drv().bits(strength as u8)
+                    });
+                    self
+                }
+
                 /// Enable/Disable input circuitry
                 pub fn input(self, on: bool) -> Self {
                     unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_ie().bit(on));
@@ -261,6 +280,57 @@ macro_rules! impl_output {
                     unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_wpd().bit(on));
                     self
                 }
+
+                /// Set drive strength
+                pub fn set_drive_strength_in_sleep_mode(self, strength: DriveStrength) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| unsafe {
+                        w.mcu_drv().bits(strength as u8)
+                    });
+                    self
+                }
+
+                /// Enable/Disable input circuitry while in sleep mode
+                pub fn input_in_sleep_mode(self, on: bool) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_ie().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull up resistor while in sleep mode
+                pub fn internal_pull_up_in_sleep_mode(self, on: bool) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_wpu().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull down resistor while in sleep mode
+                pub fn internal_pull_down_in_sleep_mode(self, on: bool) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_wpd().bit(on));
+                    self
+                }
+
+                /// Enable/Disable internal pull down resistor while in sleep mode
+                pub fn output_in_sleep_mode(self, on: bool) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_oe().bit(on));
+                    self
+                }
+
+                /// Enable/Disable the sleep mode of the pad
+                pub fn sleep_mode(self, on: bool) -> Self {
+                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.slp_sel().bit(on));
+                    self
+                }
+
+                /// Connect peripheral to output
+                pub fn connect_peripheral_to_output(self, signal: OutputSignal, invert: bool,
+                    enable_from_gpio: bool, invert_enable: bool) -> Self {
+                    unsafe{ &*GPIO::ptr() }.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
+                        w
+                        .out_sel().bits(signal as u16)
+                        .out_inv_sel().bit(invert)
+                        .oen_sel().bit(enable_from_gpio)
+                        .oen_inv_sel().bit(invert_enable)
+                    });
+                    self
+                }
             }
         )+
     };
@@ -268,47 +338,47 @@ macro_rules! impl_output {
 
 impl_output! {
     enable_w1ts, out_w1ts, out_w1tc, [
-        Gpio0: (0, pin0, func0_out_sel_cfg, gpio0),
-        Gpio1: (1, pin1, func1_out_sel_cfg, u0txd),
-        Gpio2: (2, pin2, func2_out_sel_cfg, gpio2),
-        Gpio3: (3, pin3, func3_out_sel_cfg, u0rxd),
-        Gpio4: (4, pin4, func4_out_sel_cfg, gpio4),
-        Gpio5: (5, pin5, func5_out_sel_cfg, gpio5),
-        Gpio6: (6, pin6, func6_out_sel_cfg, sd_clk),
-        Gpio7: (7, pin7, func7_out_sel_cfg, sd_data0),
-        Gpio8: (8, pin8, func8_out_sel_cfg, sd_data1),
-        Gpio9: (9, pin9, func9_out_sel_cfg, sd_data2),
-        Gpio10: (10, pin10, func10_out_sel_cfg, sd_data3),
-        Gpio11: (11, pin11, func11_out_sel_cfg, sd_cmd),
-        Gpio12: (12, pin12, func12_out_sel_cfg, mtdi),
-        Gpio13: (13, pin13, func13_out_sel_cfg, mtck),
-        Gpio14: (14, pin14, func14_out_sel_cfg, mtms),
-        Gpio15: (15, pin15, func15_out_sel_cfg, mtdo),
-        Gpio16: (16, pin16, func16_out_sel_cfg, gpio16),
-        Gpio17: (17, pin17, func17_out_sel_cfg, gpio17),
-        Gpio18: (18, pin18, func18_out_sel_cfg, gpio18),
-        Gpio19: (19, pin19, func19_out_sel_cfg, gpio19),
-        Gpio20: (20, pin20, func20_out_sel_cfg, gpio20),
-        Gpio21: (21, pin21, func21_out_sel_cfg, gpio21),
-        Gpio22: (22, pin22, func22_out_sel_cfg, gpio22),
-        Gpio23: (23, pin23, func23_out_sel_cfg, gpio23),
-        Gpio25: (25, pin25, func25_out_sel_cfg, gpio25),
-        Gpio26: (26, pin26, func26_out_sel_cfg, gpio26),
-        Gpio27: (27, pin27, func27_out_sel_cfg, gpio27),
+        Gpio0: (0, 0, gpio0),
+        Gpio1: (1, 1, u0txd),
+        Gpio2: (2, 2, gpio2),
+        Gpio3: (3, 3, u0rxd),
+        Gpio4: (4, 4, gpio4),
+        Gpio5: (5, 5, gpio5),
+        Gpio6: (6, 6, sd_clk),
+        Gpio7: (7, 7, sd_data0),
+        Gpio8: (8, 8, sd_data1),
+        Gpio9: (9, 9, sd_data2),
+        Gpio10: (10, 10, sd_data3),
+        Gpio11: (11, 11, sd_cmd),
+        Gpio12: (12, 12, mtdi),
+        Gpio13: (13, 13, mtck),
+        Gpio14: (14, 14, mtms),
+        Gpio15: (15, 15, mtdo),
+        Gpio16: (16, 16, gpio16),
+        Gpio17: (17, 17, gpio17),
+        Gpio18: (18, 18, gpio18),
+        Gpio19: (19, 19, gpio19),
+        Gpio20: (20, 20, gpio20),
+        Gpio21: (21, 21, gpio21),
+        Gpio22: (22, 22, gpio22),
+        Gpio23: (23, 23, gpio23),
+        Gpio25: (25, 25, gpio25),
+        Gpio26: (26, 26, gpio26),
+        Gpio27: (27, 27, gpio27),
     ]
 }
 
 impl_output! {
     enable1_w1ts, out1_w1ts, out1_w1tc, [
-        Gpio32: (0, pin32, func32_out_sel_cfg, gpio32),
-        Gpio33: (1, pin33, func33_out_sel_cfg, gpio33),
+        Gpio32: (32, 0, gpio32),
+        Gpio33: (33, 1, gpio33),
         /* Deliberately omitting 34-39 as these can *only* be inputs */
     ]
 }
 
 macro_rules! impl_pullup_pulldown {
-    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $i:expr, $funcXout:ident, $funcXin:ident,
-        $iomux:ident, has_pullup_pulldown) => {
+    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $bit:expr, $iomux:ident, 
+        has_pullup_pulldown) => {
         pub fn into_pull_up_input(self) -> $pxi<Input<PullUp>> {
             self.set_input(false, false);
             $pxi { _mode: PhantomData }
@@ -319,12 +389,12 @@ macro_rules! impl_pullup_pulldown {
             $pxi { _mode: PhantomData }
         }
     };
-    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $i:expr, $funcXout:ident, $funcXin:ident,
-        $iomux:ident, no_pullup_pulldown) => {
+    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $bit:expr, $iomux:ident, 
+        no_pullup_pulldown) => {
         /* No pullup/pulldown resistor is available on this pin. */
     };
-    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $i:expr, $funcXout:ident, $funcXin:ident,
-        $iomux:ident, $pullup_flag:ident) => {
+    ($out_en_clear:ident, $pxi:ident, $pin_num:expr, $bit:expr, $iomux:ident, 
+        $pullup_flag:ident) => {
         compile_error!(
             "The GPIO pin has to be marked with either \
             has_pullup_pulldown or no_pullup_pulldown."
@@ -335,15 +405,14 @@ macro_rules! impl_pullup_pulldown {
 macro_rules! impl_input {
     ($out_en_clear:ident, $reg:ident, $reader:ident [
         // index, gpio pin name, funcX name, iomux pin name, has pullup/down resistors
-        $($pxi:ident: ($pin_num:expr, $i:expr, $pin:ident, $funcXout:ident, $funcXin:ident,
-            $iomux:ident, $resistors:ident),)+
+        $($pxi:ident: ($pin_num:expr, $bit:expr, $iomux:ident, $resistors:ident),)+
     ]) => {
         $(
             impl<MODE> InputPin for $pxi<Input<MODE>> {
                 type Error = Infallible;
 
                 fn is_high(&self) -> Result<bool, Self::Error> {
-                    Ok(unsafe {& *GPIO::ptr() }.$reg.read().$reader().bits() & (1 << $i) != 0)
+                    Ok(unsafe {& *GPIO::ptr() }.$reg.read().$reader().bits() & (1 << $bit) != 0)
                 }
 
                 fn is_low(&self) -> Result<bool, Self::Error> {
@@ -358,25 +427,19 @@ macro_rules! impl_input {
                     self.disable_analog();
 
                     // NOTE(unsafe) atomic read to a stateless register
-                    gpio.$out_en_clear
-                        .modify(|_, w| unsafe { w.bits(0x1 << $i) });
-                    gpio.$funcXout.modify(|_, w| unsafe { w.bits(0x100) });
-                    gpio.$funcXin.modify(|_, w| unsafe {
-                        w.sel()
-                            .set_bit() // route through GPIO matrix
-                            .in_sel()
-                            .bits($pin_num) // use the GPIO pad
+                    gpio.$out_en_clear.modify(|_, w| unsafe { w.bits(1 << $bit) });
+
+                    gpio.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
+                        w.out_sel().bits(OutputSignal::GPIO as u16)
                     });
 
                     iomux.$iomux.modify(|_, w| unsafe {
-                        w.mcu_sel()
-                            .bits(0b10)
-                            .fun_ie()
-                            .set_bit()
-                            .fun_wpd()
-                            .bit(pulldown)
-                            .fun_wpu()
-                            .bit(pullup)
+                        w
+                            .mcu_sel().bits(0b10)
+                            .fun_ie().set_bit()
+                            .fun_wpd().bit(pulldown)
+                            .fun_wpu().bit(pullup)
+                            .slp_sel().clear_bit()
                     });
                 }
 
@@ -385,8 +448,19 @@ macro_rules! impl_input {
                     $pxi { _mode: PhantomData }
                 }
 
-                impl_pullup_pulldown!($out_en_clear, $pxi, $pin_num, $i, $funcXout, $funcXin,
-                    $iomux, $resistors);
+                /// Connect input to peripheral
+                pub fn connect_input_to_peripheral(self, signal: InputSignal,
+                    invert: bool) -> Self {
+                    unsafe{ &*GPIO::ptr() }.func_in_sel_cfg[signal as usize].modify(|_, w| unsafe {
+                        w
+                        .sel().set_bit()
+                        .in_inv_sel().bit(invert)
+                        .in_sel().bits($pin_num)
+                    });
+                    self
+                }
+
+                impl_pullup_pulldown!($out_en_clear, $pxi, $pin_num, $bit, $iomux, $resistors);
             }
         )+
     };
@@ -394,46 +468,46 @@ macro_rules! impl_input {
 
 impl_input! {
     enable_w1tc, in_, in_data [
-        Gpio0: (0, 0, pin0, func0_out_sel_cfg, func0_in_sel_cfg, gpio0, has_pullup_pulldown),
-        Gpio1: (1, 1, pin1, func1_out_sel_cfg, func1_in_sel_cfg, u0txd, has_pullup_pulldown),
-        Gpio2: (2, 2, pin2, func2_out_sel_cfg, func2_in_sel_cfg, gpio2, has_pullup_pulldown),
-        Gpio3: (3, 3, pin3, func3_out_sel_cfg, func3_in_sel_cfg, u0rxd, has_pullup_pulldown),
-        Gpio4: (4, 4, pin4, func4_out_sel_cfg, func4_in_sel_cfg, gpio4, has_pullup_pulldown),
-        Gpio5: (5, 5, pin5, func5_out_sel_cfg, func5_in_sel_cfg, gpio5, has_pullup_pulldown),
-        Gpio6: (6, 6, pin6, func6_out_sel_cfg, func6_in_sel_cfg, sd_clk, has_pullup_pulldown),
-        Gpio7: (7, 7, pin7, func7_out_sel_cfg, func7_in_sel_cfg, sd_data0, has_pullup_pulldown),
-        Gpio8: (8, 8, pin8, func8_out_sel_cfg, func8_in_sel_cfg, sd_data1, has_pullup_pulldown),
-        Gpio9: (9, 9, pin9, func9_out_sel_cfg, func9_in_sel_cfg, sd_data2, has_pullup_pulldown),
-        Gpio10: (10, 10, pin10, func10_out_sel_cfg, func10_in_sel_cfg, sd_data3, has_pullup_pulldown),
-        Gpio11: (11, 11, pin11, func11_out_sel_cfg, func11_in_sel_cfg, sd_cmd, has_pullup_pulldown),
-        Gpio12: (12, 12, pin12, func12_out_sel_cfg, func12_in_sel_cfg, mtdi, has_pullup_pulldown),
-        Gpio13: (13, 13, pin13, func13_out_sel_cfg, func13_in_sel_cfg, mtck, has_pullup_pulldown),
-        Gpio14: (14, 14, pin14, func14_out_sel_cfg, func14_in_sel_cfg, mtms, has_pullup_pulldown),
-        Gpio15: (15, 15, pin15, func15_out_sel_cfg, func15_in_sel_cfg, mtdo, has_pullup_pulldown),
-        Gpio16: (16, 16, pin16, func16_out_sel_cfg, func16_in_sel_cfg, gpio16, has_pullup_pulldown),
-        Gpio17: (17, 17, pin17, func17_out_sel_cfg, func17_in_sel_cfg, gpio17, has_pullup_pulldown),
-        Gpio18: (18, 18, pin18, func18_out_sel_cfg, func18_in_sel_cfg, gpio18, has_pullup_pulldown),
-        Gpio19: (19, 19, pin19, func19_out_sel_cfg, func19_in_sel_cfg, gpio19, has_pullup_pulldown),
-        Gpio20: (20, 20, pin20, func20_out_sel_cfg, func20_in_sel_cfg, gpio20, has_pullup_pulldown),
-        Gpio21: (21, 21, pin21, func21_out_sel_cfg, func21_in_sel_cfg, gpio21, has_pullup_pulldown),
-        Gpio22: (22, 22, pin22, func22_out_sel_cfg, func22_in_sel_cfg, gpio22, has_pullup_pulldown),
-        Gpio23: (23, 23, pin23, func23_out_sel_cfg, func23_in_sel_cfg, gpio23, has_pullup_pulldown),
-        Gpio25: (25, 25, pin25, func25_out_sel_cfg, func25_in_sel_cfg, gpio25, has_pullup_pulldown),
-        Gpio26: (26, 26, pin26, func26_out_sel_cfg, func26_in_sel_cfg, gpio26, has_pullup_pulldown),
-        Gpio27: (27, 27, pin27, func27_out_sel_cfg, func27_in_sel_cfg, gpio27, has_pullup_pulldown),
+        Gpio0: (0, 0, gpio0, has_pullup_pulldown),
+        Gpio1: (1, 1, u0txd, has_pullup_pulldown),
+        Gpio2: (2, 2, gpio2, has_pullup_pulldown),
+        Gpio3: (3, 3, u0rxd, has_pullup_pulldown),
+        Gpio4: (4, 4, gpio4, has_pullup_pulldown),
+        Gpio5: (5, 5, gpio5, has_pullup_pulldown),
+        Gpio6: (6, 6, sd_clk, has_pullup_pulldown),
+        Gpio7: (7, 7, sd_data0, has_pullup_pulldown),
+        Gpio8: (8, 8, sd_data1, has_pullup_pulldown),
+        Gpio9: (9, 9, sd_data2, has_pullup_pulldown),
+        Gpio10: (10, 10, sd_data3, has_pullup_pulldown),
+        Gpio11: (11, 11, sd_cmd, has_pullup_pulldown),
+        Gpio12: (12, 12, mtdi, has_pullup_pulldown),
+        Gpio13: (13, 13, mtck, has_pullup_pulldown),
+        Gpio14: (14, 14, mtms, has_pullup_pulldown),
+        Gpio15: (15, 15, mtdo, has_pullup_pulldown),
+        Gpio16: (16, 16, gpio16, has_pullup_pulldown),
+        Gpio17: (17, 17, gpio17, has_pullup_pulldown),
+        Gpio18: (18, 18, gpio18, has_pullup_pulldown),
+        Gpio19: (19, 19, gpio19, has_pullup_pulldown),
+        Gpio20: (20, 20, gpio20, has_pullup_pulldown),
+        Gpio21: (21, 21, gpio21, has_pullup_pulldown),
+        Gpio22: (22, 22, gpio22, has_pullup_pulldown),
+        Gpio23: (23, 23, gpio23, has_pullup_pulldown),
+        Gpio25: (25, 25, gpio25, has_pullup_pulldown),
+        Gpio26: (26, 26, gpio26, has_pullup_pulldown),
+        Gpio27: (27, 27, gpio27, has_pullup_pulldown),
     ]
 }
 
 impl_input! {
     enable1_w1tc, in1, in1_data [
-        Gpio32: (32, 0, pin32, func32_out_sel_cfg, func32_in_sel_cfg, gpio32, has_pullup_pulldown),
-        Gpio33: (33, 1, pin33, func33_out_sel_cfg, func33_in_sel_cfg, gpio33, has_pullup_pulldown),
-        Gpio34: (34, 2, pin34, func34_out_sel_cfg, func34_in_sel_cfg, gpio34, no_pullup_pulldown),
-        Gpio35: (35, 3, pin35, func35_out_sel_cfg, func35_in_sel_cfg, gpio35, no_pullup_pulldown),
-        Gpio36: (36, 4, pin36, func36_out_sel_cfg, func36_in_sel_cfg, gpio36, no_pullup_pulldown),
-        Gpio37: (37, 5, pin37, func37_out_sel_cfg, func37_in_sel_cfg, gpio37, no_pullup_pulldown),
-        Gpio38: (38, 6, pin38, func38_out_sel_cfg, func38_in_sel_cfg, gpio38, no_pullup_pulldown),
-        Gpio39: (39, 7, pin39, func39_out_sel_cfg, func39_in_sel_cfg, gpio39, no_pullup_pulldown),
+        Gpio32: (32, 0, gpio32, has_pullup_pulldown),
+        Gpio33: (33, 1, gpio33, has_pullup_pulldown),
+        Gpio34: (34, 2, gpio34, no_pullup_pulldown),
+        Gpio35: (35, 3, gpio35, no_pullup_pulldown),
+        Gpio36: (36, 4, gpio36, no_pullup_pulldown),
+        Gpio37: (37, 5, gpio37, no_pullup_pulldown),
+        Gpio38: (38, 6, gpio38, no_pullup_pulldown),
+        Gpio39: (39, 7, gpio39, no_pullup_pulldown),
     ]
 }
 
@@ -454,7 +528,7 @@ macro_rules! impl_no_analog {
 
 macro_rules! impl_analog {
     ([
-        $($pxi:ident: ($i:expr, $pin_reg:ident, $gpio_reg:ident, $mux_sel:ident, $fun_select:ident,
+        $($pxi:ident: ($pin_num:expr, $pin_reg:ident, $mux_sel:ident, $fun_select:ident,
           $in_enable:ident, $($rue:ident, $rde:ident)?),)+
     ]) => {
         $(
@@ -471,11 +545,11 @@ macro_rules! impl_analog {
                     });
 
                     // Configure RTC pin as normal output (instead of open drain)
-                    rtcio.$gpio_reg.modify(|_,w| w.pad_driver().clear_bit());
+                    rtcio.pin[$pin_num].modify(|_,w| w.pad_driver().clear_bit());
 
                     // Disable output
                     rtcio.enable_w1tc.modify(|_,w| {
-                        unsafe { w.enable_w1tc().bits(1u32 << $i) }
+                        unsafe { w.enable_w1tc().bits(1u32 << $pin_num) }
                     });
 
                     // Disable input
@@ -508,22 +582,22 @@ impl_no_analog! {[
 ]}
 
 impl_analog! {[
-    Gpio36: (0, sensor_pads, pin0, sense1_mux_sel, sense1_fun_sel, sense1_fun_ie,),
-    Gpio37: (1, sensor_pads, pin1, sense2_mux_sel, sense2_fun_sel, sense2_fun_ie,),
-    Gpio38: (2, sensor_pads, pin2, sense3_mux_sel, sense3_fun_sel, sense3_fun_ie,),
-    Gpio39: (3, sensor_pads, pin3, sense4_mux_sel, sense4_fun_sel, sense4_fun_ie,),
-    Gpio34: (4, adc_pad, pin4, adc1_mux_sel, adc1_fun_sel, adc1_fun_ie,),
-    Gpio35: (5, adc_pad, pin5, adc2_mux_sel, adc2_fun_sel, adc1_fun_ie,),
-    Gpio25: (6, pad_dac1, pin6, pdac1_mux_sel, pdac1_fun_sel, pdac1_fun_ie, pdac1_rue, pdac1_rde),
-    Gpio26: (7, pad_dac2, pin7, pdac2_mux_sel, pdac2_fun_sel, pdac2_fun_ie, pdac2_rue, pdac2_rde),
-    Gpio33: (8, xtal_32k_pad, pin8, x32n_mux_sel, x32n_fun_sel, x32n_fun_ie, x32n_rue, x32n_rde),
-    Gpio32: (9, xtal_32k_pad, pin9, x32p_mux_sel, x32p_fun_sel, x32p_fun_ie, x32p_rue, x32p_rde),
-    Gpio4:  (10, touch_pad0, pin10, touch_pad0_mux_sel, touch_pad0_fun_sel, touch_pad0_fun_ie, touch_pad0_rue, touch_pad0_rde),
-    Gpio0:  (11, touch_pad1, pin11, touch_pad1_mux_sel, touch_pad1_fun_sel, touch_pad1_fun_ie, touch_pad1_rue, touch_pad1_rde),
-    Gpio2:  (12, touch_pad2, pin12, touch_pad2_mux_sel, touch_pad2_fun_sel, touch_pad2_fun_ie, touch_pad2_rue, touch_pad2_rde),
-    Gpio15: (13, touch_pad3, pin13, touch_pad3_mux_sel, touch_pad3_fun_sel, touch_pad3_fun_ie, touch_pad3_rue, touch_pad3_rde),
-    Gpio13: (14, touch_pad4, pin14, touch_pad4_mux_sel, touch_pad4_fun_sel, touch_pad4_fun_ie, touch_pad4_rue, touch_pad4_rde),
-    Gpio12: (15, touch_pad5, pin15, touch_pad5_mux_sel, touch_pad5_fun_sel, touch_pad5_fun_ie, touch_pad5_rue, touch_pad5_rde),
-    Gpio14: (16, touch_pad6, pin16, touch_pad6_mux_sel, touch_pad6_fun_sel, touch_pad6_fun_ie, touch_pad6_rue, touch_pad6_rde),
-    Gpio27: (17, touch_pad7, pin17, touch_pad7_mux_sel, touch_pad7_fun_sel, touch_pad7_fun_ie, touch_pad7_rue, touch_pad7_rde),
+    Gpio36: (0, sensor_pads, sense1_mux_sel, sense1_fun_sel, sense1_fun_ie,),
+    Gpio37: (1, sensor_pads, sense2_mux_sel, sense2_fun_sel, sense2_fun_ie,),
+    Gpio38: (2, sensor_pads, sense3_mux_sel, sense3_fun_sel, sense3_fun_ie,),
+    Gpio39: (3, sensor_pads, sense4_mux_sel, sense4_fun_sel, sense4_fun_ie,),
+    Gpio34: (4, adc_pad, adc1_mux_sel, adc1_fun_sel, adc1_fun_ie,),
+    Gpio35: (5, adc_pad, adc2_mux_sel, adc2_fun_sel, adc1_fun_ie,),
+    Gpio25: (6, pad_dac1, pdac1_mux_sel, pdac1_fun_sel, pdac1_fun_ie, pdac1_rue, pdac1_rde),
+    Gpio26: (7, pad_dac2, pdac2_mux_sel, pdac2_fun_sel, pdac2_fun_ie, pdac2_rue, pdac2_rde),
+    Gpio33: (8, xtal_32k_pad, x32n_mux_sel, x32n_fun_sel, x32n_fun_ie, x32n_rue, x32n_rde),
+    Gpio32: (9, xtal_32k_pad, x32p_mux_sel, x32p_fun_sel, x32p_fun_ie, x32p_rue, x32p_rde),
+    Gpio4:  (10, touch_pad0, mux_sel, fun_sel, fun_ie, rue, rde),
+    Gpio0:  (11, touch_pad1, mux_sel, fun_sel, fun_ie, rue, rde),
+    Gpio2:  (12, touch_pad2, mux_sel, fun_sel, fun_ie, rue, rde),
+    Gpio15: (13, touch_pad3, mux_sel, fun_sel, fun_ie, rue, rde),
+    Gpio13: (14, touch_pad4, mux_sel, fun_sel, fun_ie, rue, rde),
+    Gpio12: (15, touch_pad5, mux_sel, fun_sel, fun_ie, rue, rde),
+    Gpio14: (16, touch_pad6, mux_sel, fun_sel, fun_ie, rue, rde),
+    Gpio27: (17, touch_pad7, mux_sel, fun_sel, fun_ie, rue, rde),
 ]}
