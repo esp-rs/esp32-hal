@@ -5,33 +5,36 @@ authors = ["Scott Mabin <scott@mabez.dev>", "Arjan Mels <arjan@mels.email>"]
 edition = "2018"
 
 
-# Allow overriding of memcpy, memset, etc.
+# Allow overriding of `memcpy`, `memset`, etc.
 [package.metadata.cargo-xbuild]
 memcpy = false
 
 
 [features]
-default=["mem"]
+default = ["mem", "rt"]
 
-# Place program completely in ram (needed when e.g. using only ROM bootloader, or for debugging)
-all_in_ram=[]
+# Place program completely in RAM (needed when e.g. using only ROM bootloader, or for debugging).
+all_in_ram = []
 
-# Allow use of external ram. Needs customized bootloader.
-external_ram=["esp32-hal-proc-macros/external_ram"]
+# Allow use of external RAM. (Needs customized bootloader.)
+external_ram = ["esp32-hal-proc-macros/external_ram"]
 
-# Add support for Global Allocator
-alloc=["linked_list_allocator"]
+# Add support for global allocator.
+alloc = ["linked_list_allocator"]
 
-# Define memcpy, memset etc. as replacement of standard functions
-mem=[]
+# Define `memcpy`, `memset`, etc. as replacement of standard functions.
+mem = []
+
+# Enable the `rt` feature of the `esp32` crate.
+rt = ["esp32/rt", "xtensa-lx6-rt"]
 
 
 [dependencies]
 esp32-hal-proc-macros = { path = "procmacros" }
 
-xtensa-lx6-rt = "0.2.0"
+xtensa-lx6-rt = { version = "0.2.0", optional = true }
 xtensa-lx6 = "0.1.0"
-esp32 = "0.5.0"
+esp32 = { version = "0.5.0", default-features = false }
 bare-metal = "0.2"
 nb = "0.1.2"
 spin = "0.5.2"

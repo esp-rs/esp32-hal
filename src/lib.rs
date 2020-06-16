@@ -33,6 +33,7 @@ pub mod efuse;
 #[cfg(feature = "external_ram")]
 pub mod external_ram;
 pub mod gpio;
+#[cfg(feature = "rt")]
 pub mod interrupt;
 pub mod prelude;
 pub mod serial;
@@ -54,6 +55,7 @@ pub mod mem;
 /// ENTRY point is defined in memory.x
 /// *Note: the pre_init function is called in the original reset handler
 /// after the initializations done in this function*
+#[cfg(feature = "rt")]
 #[doc(hidden)]
 #[no_mangle]
 pub unsafe extern "C" fn ESP32Reset() -> ! {

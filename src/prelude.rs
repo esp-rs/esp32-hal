@@ -6,8 +6,8 @@
 //!
 //! This can be imported as use `esp32_hal::prelude::*`.
 
-pub use xtensa_lx6_rt::entry;
-pub use xtensa_lx6_rt::exception;
+#[cfg(feature = "rt")]
+pub use xtensa_lx6_rt::{entry, exception};
 
 pub use crate::analog::SensExt;
 pub use crate::gpio::GpioExt;
