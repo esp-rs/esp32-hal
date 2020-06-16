@@ -4,6 +4,9 @@ use {
     embedded_hal::digital::v2::{InputPin, OutputPin, StatefulOutputPin, ToggleableOutputPin},
 };
 
+mod mux;
+pub use mux::*;
+
 /// Extension trait to split a GPIO peripheral in independent pins and registers
 pub trait GpioExt {
     /// The to split the GPIO into
