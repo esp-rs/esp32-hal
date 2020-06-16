@@ -203,6 +203,9 @@ fn cpu_interrupt_to_level(cpu_interrupt: CPUInterrupt) -> InterruptLevel {
     InterruptLevel(CPU_INTERRUPT_TO_LEVEL[cpu_interrupt.0 as usize])
 }
 
+/// 75 Peripheral interrupts on the esp32, hence we use u128 (128 bits) to signal what interrupts
+/// are enabled at each level. I.e setting the 75th bit inside `INTERRUPT_LEVELS[1]`would indicate the 75th interrupt defined in the `esp32`
+/// crate is enabled with a priority of 1.
 #[ram]
 static mut INTERRUPT_LEVELS: [u128; 8] = [0u128; 8];
 
@@ -267,6 +270,7 @@ unsafe fn handle_interrupts(level: u32) {
     let cpu_interrupt_mask =
         interrupt::get() & interrupt::get_mask() & CPU_INTERRUPT_LEVELS[level as usize];
 
+    // first check if the pending interrupt is a CPU interrupt
     if cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL != 0 {
         let cpu_interrupt_mask = cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL;
         let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
@@ -282,6 +286,7 @@ unsafe fn handle_interrupts(level: u32) {
     } else {
         let cpu_interrupt_mask = cpu_interrupt_mask & !CPU_INTERRUPT_INTERNAL;
 
+        // then check if the pending interrupt is an edge triggered interrupt
         if (cpu_interrupt_mask & CPU_INTERRUPT_EDGE) != 0 {
             let cpu_interrupt_mask = cpu_interrupt_mask & CPU_INTERRUPT_EDGE;
             let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
@@ -300,6 +305,8 @@ unsafe fn handle_interrupts(level: u32) {
                 interrupt_mask &= !(1u128 << interrupt_nr);
             }
         } else {
+            // finally, if it is not a CPU or edge interrupt is must a be peripheral interrupt
+            // bitwise and the dport interrupt status bits with the enabled interrupts for that level
             let interrupt_mask =
                 get_interrupt_status(crate::get_core()) & INTERRUPT_LEVELS[level as usize];
             let interrupt_nr = interrupt_mask.trailing_zeros();
@@ -499,4 +506,40 @@ pub fn clear_software_interrupt(interrupt: Interrupt) -> Result<(), Error> {
         }
     };
     Ok(())
+}
+
+
+use xtensa_lx6::interrupt::InterruptMatrix;
+
+// pub struct Nvic {
+//     interrupt_levels: [u128; 8]
+// }
+
+pub struct Nvic;
+
+impl InterruptMatrix for Nvic {
+    type CpuInterruptStorage = u8;
+    type PriorityStorage = usize;
+
+    /// Mask an enabled interrupt
+    fn mask<I: bare_metal::Nr>(_interrupt: I) {}
+
+    /// Unmask an enabled interrupt
+    fn unmask<I: bare_metal::Nr>(_interrupt: I) {}
+
+    /// Enable an interrupt and assign to a CPU interrupt with a priority
+    fn enable<I: bare_metal::Nr>(interrupt: I , _cpu_intr: Self::CpuInterruptStorage, prio: Self::PriorityStorage) {
+        enable_with_priority(crate::get_core(), target::Interrupt::try_from(interrupt.nr()).unwrap(), InterruptLevel(prio)).unwrap();
+    }
+
+    /// Disable an interrupt
+    fn disable<I: bare_metal::Nr>(interrupt: I) {
+        disable(target::Interrupt::try_from(interrupt.nr()).unwrap()).unwrap();
+    }
+
+    /// Pend an interrupt
+    fn pend<I: bare_metal::Nr>(_interrupt: I) {}
+
+    /// Unpend an interrupt
+    fn unpend<I: bare_metal::Nr>(_interrupt: I) {}
 }
