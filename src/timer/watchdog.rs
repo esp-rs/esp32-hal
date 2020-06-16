@@ -182,7 +182,7 @@ impl<TIMG: TimerGroup> Watchdog<TIMG> {
             timg.wdtconfig4.write(|w| unsafe { w.bits(per3) });
             timg.wdtconfig5.write(|w| unsafe { w.bits(per4) });
 
-            interrupt::free(|_| {
+            xtensa_lx6::interrupt::free(|_| {
                 super::TIMER_MUTEX.lock();
                 timg.int_ena_timers.modify(|_, w| w.wdt_int_ena().set_bit());
             });

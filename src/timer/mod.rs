@@ -170,7 +170,7 @@ macro_rules! timer {
                     Event::TimeOutEdge => self.enable_edge_interrupt(true),
                 };
                 unsafe {
-                    interrupt::free(|_| {
+                    xtensa_lx6::interrupt::free(|_| {
                         TIMER_MUTEX.lock();
                         (*(self.timg))
                             .int_ena_timers
