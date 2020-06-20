@@ -146,8 +146,396 @@ pub fn connect_high_to_peripheral(signal: InputSignal) {
     });
 }
 
+macro_rules! impl_output {
+    ($pxi:ident:($pin_num:expr, $bit:expr, $iomux:ident,
+        $out_en_set:ident, $out_en_clear:ident, $outs:ident, $outc:ident)) => {
+        impl<MODE> embedded_hal::digital::v2::OutputPin for $pxi<Output<MODE>> {
+            type Error = Infallible;
+
+            fn set_high(&mut self) -> Result<(), Self::Error> {
+                // NOTE(unsafe) atomic write to a stateless register
+                unsafe { (*GPIO::ptr()).$outs.write(|w| w.bits(1 << $bit)) };
+                Ok(())
+            }
+
+            fn set_low(&mut self) -> Result<(), Self::Error> {
+                // NOTE(unsafe) atomic write to a stateless register
+                unsafe { (*GPIO::ptr()).$outc.write(|w| w.bits(1 << $bit)) };
+                Ok(())
+            }
+        }
+
+        impl<MODE> embedded_hal::digital::v2::StatefulOutputPin for $pxi<Output<MODE>> {
+            fn is_set_high(&self) -> Result<bool, Self::Error> {
+                // NOTE(unsafe) atomic read to a stateless register
+                unsafe { Ok((*GPIO::ptr()).$outs.read().bits() & (1 << $bit) != 0) }
+            }
+
+            fn is_set_low(&self) -> Result<bool, Self::Error> {
+                Ok(!self.is_set_high()?)
+            }
+        }
+
+        impl<MODE> embedded_hal::digital::v2::ToggleableOutputPin for $pxi<Output<MODE>> {
+            type Error = Infallible;
+
+            fn toggle(&mut self) -> Result<(), Self::Error> {
+                if self.is_set_high()? {
+                    Ok(self.set_low()?)
+                } else {
+                    Ok(self.set_high()?)
+                }
+            }
+        }
+
+        impl<MODE> $pxi<MODE> {
+            pub fn into_pull_up_input(self) -> $pxi<Input<PullUp>> {
+                self.init_input(false, false);
+                $pxi { _mode: PhantomData }
+            }
+
+            pub fn into_pull_down_input(self) -> $pxi<Input<PullDown>> {
+                self.init_input(true, false);
+                $pxi { _mode: PhantomData }
+            }
+
+            fn init_output(&self, alternate: AlternateFunction, open_drain: bool) {
+                let gpio = unsafe { &*GPIO::ptr() };
+                let iomux = unsafe { &*IO_MUX::ptr() };
+
+                self.disable_analog();
+
+                // NOTE(unsafe) atomic read to a stateless register
+                gpio.$out_en_set.write(|w| unsafe { w.bits(1 << $bit) });
+                gpio.pin[$pin_num].modify(|_, w| w.pad_driver().bit(open_drain));
+                gpio.func_out_sel_cfg[$pin_num]
+                    .modify(|_, w| unsafe { w.out_sel().bits(OutputSignal::GPIO as u16) });
+
+                iomux.$iomux.modify(|_, w| unsafe {
+                    w.mcu_sel()
+                        .bits(alternate as u8)
+                        .fun_ie()
+                        .clear_bit()
+                        .fun_wpd()
+                        .clear_bit()
+                        .fun_wpu()
+                        .clear_bit()
+                        .fun_drv()
+                        .bits(DriveStrength::I20mA as u8)
+                        .slp_sel()
+                        .clear_bit()
+                });
+            }
+
+            pub fn into_push_pull_output(self) -> $pxi<Output<PushPull>> {
+                self.init_output(AlternateFunction::Function3, false);
+                $pxi { _mode: PhantomData }
+            }
+
+            pub fn into_open_drain_output(self) -> $pxi<Output<OpenDrain>> {
+                self.init_output(AlternateFunction::Function3, true);
+                $pxi { _mode: PhantomData }
+            }
+
+            pub fn into_alternate_1(self) -> $pxi<Alternate<AF1>> {
+                self.init_output(AlternateFunction::Function1, false);
+                $pxi { _mode: PhantomData }
+            }
+
+            pub fn into_alternate_2(self) -> $pxi<Alternate<AF2>> {
+                self.init_output(AlternateFunction::Function2, false);
+                $pxi { _mode: PhantomData }
+            }
+
+            pub fn into_alternate_4(self) -> $pxi<Alternate<AF4>> {
+                self.init_output(AlternateFunction::Function4, false);
+                $pxi { _mode: PhantomData }
+            }
+
+            pub fn into_alternate_5(self) -> $pxi<Alternate<AF5>> {
+                self.init_output(AlternateFunction::Function5, false);
+                $pxi { _mode: PhantomData }
+            }
+
+            pub fn into_alternate_6(self) -> $pxi<Alternate<AF6>> {
+                self.init_output(AlternateFunction::Function6, false);
+                $pxi { _mode: PhantomData }
+            }
+        }
+
+        impl<MODE> OutputPin for $pxi<MODE> {
+            /// Set pad to open drain output
+            ///
+            /// Disables input, pull up/down resistors and sleep mode.
+            /// Sets function to GPIO and drive strength to default (20mA).
+            ///  Does not change sleep mode settings.
+            fn set_to_open_drain_output(&mut self) -> &mut Self {
+                self.init_output(AlternateFunction::Function3, true);
+                self
+            }
+
+            /// Set pad to push/pull output
+            ///
+            /// Disables input, pull up/down resistors and sleep mode.
+            /// Sets function to GPIO and drive strength to default (20mA).
+            ///  Does not change sleep mode settings.
+            fn set_to_push_pull_output(&mut self) -> &mut Self {
+                self.init_output(AlternateFunction::Function3, false);
+                self
+            }
+
+            /// Enable the output
+            fn enable_output(&mut self, on: bool) -> &mut Self {
+                // NOTE(unsafe) atomic read to a stateless register
+                if on {
+                    unsafe { &*GPIO::ptr() }
+                        .$out_en_set
+                        .write(|w| unsafe { w.bits(1 << $bit) });
+                } else {
+                    unsafe { &*GPIO::ptr() }
+                        .$out_en_clear
+                        .write(|w| unsafe { w.bits(1 << $bit) });
+                }
+                self
+            }
+
+            /// Enable the output
+            fn set_output_high(&mut self, high: bool) -> &mut Self {
+                // NOTE(unsafe) atomic read to a stateless register
+                if high {
+                    unsafe { (*GPIO::ptr()).$outs.write(|w| w.bits(1 << $bit)) };
+                } else {
+                    unsafe { (*GPIO::ptr()).$outc.write(|w| w.bits(1 << $bit)) };
+                }
+                self
+            }
+
+            /// Set the alternate function
+            fn set_alternate_function(&mut self, alternate: AlternateFunction) -> &mut Self {
+                // NOTE(unsafe) atomic read to a stateless register
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| unsafe { w.mcu_sel().bits(alternate as u8) });
+                self
+            }
+
+            /// Set drive strength
+            fn set_drive_strength(&mut self, strength: DriveStrength) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| unsafe { w.fun_drv().bits(strength as u8) });
+                self
+            }
+
+            /// Enable/Disable open drain
+            fn enable_open_drain(&mut self, on: bool) -> &mut Self {
+                unsafe { &*GPIO::ptr() }.pin[$pin_num].modify(|_, w| w.pad_driver().bit(on));
+                self
+            }
+
+            /// Enable/Disable internal pull up resistor
+            fn internal_pull_up(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.fun_wpu().bit(on));
+                self
+            }
+
+            /// Enable/Disable internal pull down resistor
+            fn internal_pull_down(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.fun_wpd().bit(on));
+                self
+            }
+
+            /// Set drive strength
+            fn set_drive_strength_in_sleep_mode(&mut self, strength: DriveStrength) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| unsafe { w.mcu_drv().bits(strength as u8) });
+                self
+            }
+
+            /// Enable/Disable internal pull up resistor while in sleep mode
+            fn internal_pull_up_in_sleep_mode(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.mcu_wpu().bit(on));
+                self
+            }
+
+            /// Enable/Disable internal pull down resistor while in sleep mode
+            fn internal_pull_down_in_sleep_mode(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.mcu_wpd().bit(on));
+                self
+            }
+
+            /// Enable/Disable internal pull down resistor while in sleep mode
+            fn output_in_sleep_mode(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.mcu_oe().bit(on));
+                self
+            }
+
+            /// Connect peripheral to output
+            fn connect_peripheral_to_output(
+                &mut self,
+                signal: OutputSignal,
+                invert: bool,
+                enable_from_gpio: bool,
+                invert_enable: bool,
+            ) -> &mut Self {
+                unsafe { &*GPIO::ptr() }.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
+                    w.out_sel()
+                        .bits(signal as u16)
+                        .out_inv_sel()
+                        .bit(invert)
+                        .oen_sel()
+                        .bit(enable_from_gpio)
+                        .oen_inv_sel()
+                        .bit(invert_enable)
+                });
+                self
+            }
+        }
+    };
+}
+
+macro_rules! impl_input {
+    ($pxi:ident: ($pin_num:expr, $bit:expr, $iomux:ident,
+        $out_en_clear:ident, $reg:ident, $reader:ident)) => {
+        impl<MODE> embedded_hal::digital::v2::InputPin for $pxi<Input<MODE>> {
+            type Error = Infallible;
+
+            fn is_high(&self) -> Result<bool, Self::Error> {
+                Ok(unsafe { &*GPIO::ptr() }.$reg.read().$reader().bits() & (1 << $bit) != 0)
+            }
+
+            fn is_low(&self) -> Result<bool, Self::Error> {
+                Ok(!self.is_high()?)
+            }
+        }
+
+        impl<MODE> $pxi<MODE> {
+            fn init_input(&self, pull_down: bool, pull_up: bool) {
+                let gpio = unsafe { &*GPIO::ptr() };
+                let iomux = unsafe { &*IO_MUX::ptr() };
+                self.disable_analog();
+
+                // NOTE(unsafe) atomic read to a stateless register
+                gpio.$out_en_clear
+                    .modify(|_, w| unsafe { w.bits(1 << $bit) });
+
+                gpio.func_out_sel_cfg[$pin_num]
+                    .modify(|_, w| unsafe { w.out_sel().bits(OutputSignal::GPIO as u16) });
+
+                iomux.$iomux.modify(|_, w| unsafe {
+                    w.mcu_sel()
+                        .bits(2)
+                        .fun_ie()
+                        .set_bit()
+                        .fun_wpd()
+                        .bit(pull_down)
+                        .fun_wpu()
+                        .bit(pull_up)
+                        .slp_sel()
+                        .clear_bit()
+                });
+            }
+
+            pub fn into_floating_input(self) -> $pxi<Input<Floating>> {
+                self.init_input(false, false);
+                $pxi { _mode: PhantomData }
+            }
+        }
+
+        impl<MODE> InputPin for $pxi<MODE> {
+            /// Set pad as input
+            ///
+            /// Disables output, pull up/down resistors and sleep mode.
+            /// Sets function to GPIO. Does not change sleep mode settings
+            fn set_to_input(&mut self) -> &mut Self {
+                self.init_input(false, false);
+                self
+            }
+
+            /// Enable/Disable input circuitry
+            fn enable_input(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.fun_ie().bit(on));
+                self
+            }
+            /// Enable/Disable input circuitry while in sleep mode
+            fn input_in_sleep_mode(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.mcu_ie().bit(on));
+                self
+            }
+
+            /// Connect input to peripheral
+            fn connect_input_to_peripheral(
+                &mut self,
+                signal: InputSignal,
+                invert: bool,
+            ) -> &mut Self {
+                unsafe { &*GPIO::ptr() }.func_in_sel_cfg[signal as usize].modify(|_, w| unsafe {
+                    w.sel()
+                        .set_bit()
+                        .in_inv_sel()
+                        .bit(invert)
+                        .in_sel()
+                        .bits($pin_num)
+                });
+                self
+            }
+        }
+
+        impl<MODE> Pin for $pxi<MODE> {
+            /// Enable/Disable the sleep mode of the pad
+            fn sleep_mode(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.slp_sel().bit(on));
+                self
+            }
+        }
+    };
+}
+
+macro_rules! impl_input_wrap {
+    ($pxi:ident, $pin_num:expr, Bank0, $iomux:ident, $TYPE:ident) => {
+        impl_input!($pxi: ($pin_num, $pin_num % 32, $iomux, enable_w1tc, in_, in_data));
+    };
+    ($pxi:ident, $pin_num:expr, Bank1, $iomux:ident, $TYPE:ident) => {
+        impl_input!($pxi: ($pin_num, $pin_num % 32, $iomux, enable1_w1tc, in1, in1_data));
+    };
+}
+
+macro_rules! impl_output_wrap {
+    ($pxi:ident, $pin_num:expr, Bank0, $iomux:ident, IO) => {
+        impl_output!($pxi:
+            ($pin_num, $pin_num % 32, $iomux,  enable_w1ts, enable_w1tc, out_w1ts, out_w1tc)
+        );
+    };
+    ($pxi:ident, $pin_num:expr, Bank1, $iomux:ident, IO) => {
+        impl_output!($pxi:
+            ($pin_num, $pin_num % 32, $iomux, enable1_w1ts, enable1_w1tc, out1_w1ts, out1_w1tc)
+        );
+    };
+    ($pxi:ident, $pin_num:expr, $bank:ident, $iomux:ident, $TYPE:ident) => {
+        // Output not implemented for this pin
+    };
+}
+
 macro_rules! gpio {
-    ( $($pxi:ident: ($pname:ident, $MODE:ty),)+ ) => {
+    ( $($pxi:ident: ($pname:ident, $bank:ident, $pin_num:literal, $iomux:ident,
+            $type:ident, $default_mode:ty),)+ ) => {
 
         impl GpioExt for GPIO {
             type Parts = Parts;
@@ -164,7 +552,7 @@ macro_rules! gpio {
         pub struct Parts {
             $(
                 /// Pin
-                pub $pname: $pxi<$MODE>,
+                pub $pname: $pxi<$default_mode>,
             )+
         }
 
@@ -175,470 +563,53 @@ macro_rules! gpio {
             pub struct $pxi<MODE> {
                 _mode: PhantomData<MODE>,
             }
+
+            impl_input_wrap!($pxi, $pin_num, $bank, $iomux, $type);
+            impl_output_wrap!($pxi, $pin_num, $bank, $iomux, $type);
         )+
     };
 }
 
 // All info on reset state pulled from 4.10 IO_MUX Pad List in the reference manual
+// TODO these pins have a reset mode of 0 (apart from Gpio27),
+// input disable, does that mean they are actually in output mode on reset?
 gpio! {
-       Gpio0: (gpio0, Input<PullUp>),
-       Gpio1: (gpio1, Input<PullUp>),
-       Gpio2: (gpio2, Input<PullDown>),
-       Gpio3: (gpio3, Input<PullUp>),
-       Gpio4: (gpio4, Input<PullDown>),
-       Gpio5: (gpio5, Input<PullUp>),
-       Gpio6: (gpio6, Input<PullUp>),
-       Gpio7: (gpio7, Input<PullUp>),
-       Gpio8: (gpio8, Input<PullUp>),
-       Gpio9: (gpio9, Input<PullUp>),
-       Gpio10: (gpio10, Input<PullUp>),
-       Gpio11: (gpio11, Input<PullUp>),
-       Gpio12: (gpio12, Input<PullDown>),
-       Gpio13: (gpio13, Input<Floating>),
-       Gpio14: (gpio14, Input<Floating>),
-       Gpio15: (gpio15, Input<PullUp>),
-       Gpio16: (gpio16, Input<Floating>),
-       Gpio17: (gpio17, Input<Floating>),
-       Gpio18: (gpio18, Input<Floating>),
-       Gpio19: (gpio19, Input<Floating>),
-       Gpio20: (gpio20, Input<Floating>),
-       Gpio21: (gpio21, Input<Floating>),
-       Gpio22: (gpio22, Input<Floating>),
-       Gpio23: (gpio23, Input<Floating>),
-       // TODO these pins have a reset mode of 0 (apart from Gpio27),
-       // input disable, does that mean they are actually in output mode on reset?
-       Gpio25: (gpio25, Input<Floating>),
-       Gpio26: (gpio26, Input<Floating>),
-       Gpio27: (gpio27, Input<Floating>),
-       Gpio32: (gpio32, Input<Floating>),
-       Gpio33: (gpio33, Input<Floating>),
-       Gpio34: (gpio34, Input<Floating>),
-       Gpio35: (gpio35, Input<Floating>),
-       Gpio36: (gpio36, Input<Floating>),
-       Gpio37: (gpio37, Input<Floating>),
-       Gpio38: (gpio38, Input<Floating>),
-       Gpio39: (gpio39, Input<Floating>),
-}
+    Gpio0:  (gpio0,  Bank0, 0,  gpio0, IO, Input<PullUp>),
+    Gpio1:  (gpio1,  Bank0, 1,  u0txd, IO, Input<PullUp>),
+    Gpio2:  (gpio2,  Bank0, 2,  gpio2, IO, Input<PullDown>),
+    Gpio3:  (gpio3,  Bank0, 3,  u0rxd, IO, Input<PullUp>),
+    Gpio4:  (gpio4,  Bank0, 4,  gpio4, IO, Input<PullDown>),
+    Gpio5:  (gpio5,  Bank0, 5,  gpio5, IO, Input<PullUp>),
+    Gpio6:  (gpio6,  Bank0, 6,  sd_clk, IO, Input<PullUp>),
+    Gpio7:  (gpio7,  Bank0, 7,  sd_data0, IO, Input<PullUp>),
+    Gpio8:  (gpio8,  Bank0, 8,  sd_data1, IO, Input<PullUp>),
+    Gpio9:  (gpio9,  Bank0, 9,  sd_data2, IO, Input<PullUp>),
+    Gpio10: (gpio10, Bank0, 10, sd_data3, IO, Input<PullUp>),
+    Gpio11: (gpio11, Bank0, 11, sd_cmd, IO, Input<PullUp>),
+    Gpio12: (gpio12, Bank0, 12, mtdi, IO, Input<PullDown>),
+    Gpio13: (gpio13, Bank0, 13, mtck, IO, Input<Floating>),
+    Gpio14: (gpio14, Bank0, 14, mtms, IO, Input<Floating>),
+    Gpio15: (gpio15, Bank0, 15, mtdo, IO, Input<PullUp>),
+    Gpio16: (gpio16, Bank0, 16, gpio16, IO, Input<Floating>),
+    Gpio17: (gpio17, Bank0, 17, gpio17, IO, Input<Floating>),
+    Gpio18: (gpio18, Bank0, 18, gpio18, IO, Input<Floating>),
+    Gpio19: (gpio19, Bank0, 19, gpio19, IO, Input<Floating>),
+    Gpio20: (gpio20, Bank0, 20, gpio20, IO, Input<Floating>), // pin logic present, but no external pad
+    Gpio21: (gpio21, Bank0, 21, gpio21, IO, Input<Floating>),
+    Gpio22: (gpio22, Bank0, 22, gpio22, IO, Input<Floating>),
+    Gpio23: (gpio23, Bank0, 23, gpio23, IO, Input<Floating>),
+    Gpio25: (gpio25, Bank0, 25, gpio25, IO, Input<Floating>),
+    Gpio26: (gpio26, Bank0, 26, gpio26, IO, Input<Floating>),
+    Gpio27: (gpio27, Bank0, 27, gpio27, IO, Input<Floating>),
 
-macro_rules! impl_output {
-    ($out_en_set:ident, $out_en_clear:ident, $outs:ident, $outc:ident, [
-        // index, gpio pin name, funcX name, iomux pin name
-        $($pxi:ident: ($pin_num:expr, $bit:expr, $iomux:ident),)+
-    ]) => {
-        $(
-            impl<MODE> embedded_hal::digital::v2::OutputPin for $pxi<Output<MODE>> {
-                type Error = Infallible;
-
-                fn set_high(&mut self) -> Result<(), Self::Error> {
-                    // NOTE(unsafe) atomic write to a stateless register
-                    unsafe { (*GPIO::ptr()).$outs.write(|w| w.bits(1 << $bit)) };
-                    Ok(())
-                }
-
-                fn set_low(&mut self) -> Result<(), Self::Error> {
-                    // NOTE(unsafe) atomic write to a stateless register
-                    unsafe { (*GPIO::ptr()).$outc.write(|w| w.bits(1 << $bit)) };
-                    Ok(())
-                }
-            }
-
-            impl<MODE> embedded_hal::digital::v2::StatefulOutputPin for $pxi<Output<MODE>> {
-                fn is_set_high(&self) -> Result<bool, Self::Error> {
-                     // NOTE(unsafe) atomic read to a stateless register
-                    unsafe { Ok((*GPIO::ptr()).$outs.read().bits() & (1 << $bit) != 0) }
-                }
-
-                fn is_set_low(&self) -> Result<bool, Self::Error> {
-                    Ok(!self.is_set_high()?)
-                }
-            }
-
-            impl<MODE> embedded_hal::digital::v2::ToggleableOutputPin for $pxi<Output<MODE>> {
-                type Error = Infallible;
-
-                fn toggle(&mut self) -> Result<(), Self::Error> {
-                    if self.is_set_high()? {
-                        Ok(self.set_low()?)
-                    } else {
-                        Ok(self.set_high()?)
-                    }
-                }
-            }
-
-            impl<MODE> $pxi<MODE> {
-
-                pub fn into_pull_up_input(self) -> $pxi<Input<PullUp>> {
-                    self.init_input(false, false);
-                    $pxi { _mode: PhantomData }
-                }
-
-                pub fn into_pull_down_input(self) -> $pxi<Input<PullDown>> {
-                    self.init_input(true, false);
-                    $pxi { _mode: PhantomData }
-                }
-
-
-                fn init_output(&self, alternate: AlternateFunction, open_drain: bool) {
-                    let gpio = unsafe{ &*GPIO::ptr() };
-                    let iomux = unsafe{ &*IO_MUX::ptr() };
-
-                    self.disable_analog();
-
-                    // NOTE(unsafe) atomic read to a stateless register
-                    gpio.$out_en_set.write(|w| unsafe  { w.bits(1 << $bit) });
-                    gpio.pin[$pin_num].modify(|_,w| w.pad_driver().bit(open_drain));
-                    gpio.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
-                        w.out_sel().bits(OutputSignal::GPIO as u16)
-                    });
-
-                    iomux.$iomux.modify(|_, w| unsafe {
-                        w
-                            .mcu_sel().bits(alternate as u8)
-                            .fun_ie().clear_bit()
-                            .fun_wpd().clear_bit()
-                            .fun_wpu().clear_bit()
-                            .fun_drv().bits(DriveStrength::I20mA as u8)
-                            .slp_sel().clear_bit()
-                    });
-                }
-
-                pub fn into_push_pull_output(self) -> $pxi<Output<PushPull>> {
-                    self.init_output(AlternateFunction::Function3, false);
-                    $pxi { _mode: PhantomData }
-                }
-
-                pub fn into_open_drain_output(self) -> $pxi<Output<OpenDrain>> {
-                    self.init_output(AlternateFunction::Function3, true);
-                    $pxi { _mode: PhantomData }
-                }
-
-                pub fn into_alternate_1(self) -> $pxi<Alternate<AF1>> {
-                    self.init_output(AlternateFunction::Function1, false);
-                    $pxi { _mode: PhantomData }
-                }
-
-                pub fn into_alternate_2(self) -> $pxi<Alternate<AF2>> {
-                    self.init_output(AlternateFunction::Function2, false);
-                    $pxi { _mode: PhantomData }
-                }
-
-                pub fn into_alternate_4(self) -> $pxi<Alternate<AF4>> {
-                    self.init_output(AlternateFunction::Function4, false);
-                    $pxi { _mode: PhantomData }
-                }
-
-                pub fn into_alternate_5(self) -> $pxi<Alternate<AF5>> {
-                    self.init_output(AlternateFunction::Function5, false);
-                    $pxi { _mode: PhantomData }
-                }
-
-                pub fn into_alternate_6(self) -> $pxi<Alternate<AF6>> {
-                    self.init_output(AlternateFunction::Function6, false);
-                    $pxi { _mode: PhantomData }
-                }
-            }
-
-
-            impl<MODE> OutputPin for $pxi<MODE> {
-
-                /// Set pad to open drain output
-                ///
-                /// Disables input, pull up/down resistors and sleep mode.
-                /// Sets function to GPIO and drive strength to default (20mA).
-                ///  Does not change sleep mode settings.
-                fn set_to_open_drain_output(&mut self) -> &mut Self {
-                    self.init_output(AlternateFunction::Function3, true);
-                    self
-                }
-
-                /// Set pad to push/pull output
-                ///
-                /// Disables input, pull up/down resistors and sleep mode.
-                /// Sets function to GPIO and drive strength to default (20mA).
-                ///  Does not change sleep mode settings.
-                fn set_to_push_pull_output(&mut self) -> &mut Self {
-                    self.init_output(AlternateFunction::Function3, false);
-                    self
-                }
-
-                /// Enable the output
-                fn enable_output(&mut self, on: bool) -> &mut Self {
-                    // NOTE(unsafe) atomic read to a stateless register
-                    if on {
-                        unsafe{ &*GPIO::ptr() }.$out_en_set.write(|w| unsafe  { w.bits(1 << $bit) });
-                    }
-                    else {
-                        unsafe{ &*GPIO::ptr() }.$out_en_clear.write(|w| unsafe  { w.bits(1 << $bit) });
-                    }
-                    self
-                }
-
-                /// Enable the output
-                fn set_output_high(&mut self, high: bool) -> &mut Self {
-                    // NOTE(unsafe) atomic read to a stateless register
-                    if high {
-                        unsafe { (*GPIO::ptr()).$outs.write(|w| w.bits(1 << $bit)) };
-                    }
-                    else {
-                        unsafe { (*GPIO::ptr()).$outc.write(|w| w.bits(1 << $bit)) };
-                    }
-                    self
-                }
-
-                /// Set the alternate function
-                fn set_alternate_function(&mut self, alternate: AlternateFunction) -> &mut Self {
-                    // NOTE(unsafe) atomic read to a stateless register
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| unsafe {
-                        w.mcu_sel().bits(alternate as u8)});
-                    self
-                }
-
-                /// Set drive strength
-                fn set_drive_strength(&mut self, strength: DriveStrength) -> &mut Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| unsafe {
-                        w.fun_drv().bits(strength as u8)
-                    });
-                    self
-                }
-
-                /// Enable/Disable open drain
-                fn enable_open_drain(&mut self, on: bool) -> &mut Self {
-                    unsafe{ &*GPIO::ptr() }.pin[$pin_num].modify(|_, w| w.pad_driver().bit(on));
-                    self
-                }
-
-                /// Enable/Disable internal pull up resistor
-                fn internal_pull_up(&mut self, on: bool) ->&mut  Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_wpu().bit(on));
-                    self
-                }
-
-                /// Enable/Disable internal pull down resistor
-                fn internal_pull_down(&mut self, on: bool) -> &mut Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_wpd().bit(on));
-                    self
-                }
-
-                /// Set drive strength
-                fn set_drive_strength_in_sleep_mode(&mut self, strength: DriveStrength) -> &mut Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| unsafe {
-                        w.mcu_drv().bits(strength as u8)
-                    });
-                    self
-                }
-
-                /// Enable/Disable internal pull up resistor while in sleep mode
-                fn internal_pull_up_in_sleep_mode(&mut self, on: bool) -> &mut Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_wpu().bit(on));
-                    self
-                }
-
-                /// Enable/Disable internal pull down resistor while in sleep mode
-                fn internal_pull_down_in_sleep_mode(&mut self, on: bool) -> &mut Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_wpd().bit(on));
-                    self
-                }
-
-                /// Enable/Disable internal pull down resistor while in sleep mode
-                fn output_in_sleep_mode(&mut self, on: bool) -> &mut Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_oe().bit(on));
-                    self
-                }
-
-                /// Connect peripheral to output
-                fn connect_peripheral_to_output(&mut self, signal: OutputSignal, invert: bool,
-                    enable_from_gpio: bool, invert_enable: bool) -> &mut Self {
-                    unsafe{ &*GPIO::ptr() }.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
-                        w
-                        .out_sel().bits(signal as u16)
-                        .out_inv_sel().bit(invert)
-                        .oen_sel().bit(enable_from_gpio)
-                        .oen_inv_sel().bit(invert_enable)
-                    });
-                    self
-                }
-            }
-        )+
-    };
-}
-
-impl_output! {
-    enable_w1ts, enable_w1tc, out_w1ts, out_w1tc, [
-        Gpio0: (0, 0, gpio0),
-        Gpio1: (1, 1, u0txd),
-        Gpio2: (2, 2, gpio2),
-        Gpio3: (3, 3, u0rxd),
-        Gpio4: (4, 4, gpio4),
-        Gpio5: (5, 5, gpio5),
-        Gpio6: (6, 6, sd_clk),
-        Gpio7: (7, 7, sd_data0),
-        Gpio8: (8, 8, sd_data1),
-        Gpio9: (9, 9, sd_data2),
-        Gpio10: (10, 10, sd_data3),
-        Gpio11: (11, 11, sd_cmd),
-        Gpio12: (12, 12, mtdi),
-        Gpio13: (13, 13, mtck),
-        Gpio14: (14, 14, mtms),
-        Gpio15: (15, 15, mtdo),
-        Gpio16: (16, 16, gpio16),
-        Gpio17: (17, 17, gpio17),
-        Gpio18: (18, 18, gpio18),
-        Gpio19: (19, 19, gpio19),
-        Gpio20: (20, 20, gpio20),
-        Gpio21: (21, 21, gpio21),
-        Gpio22: (22, 22, gpio22),
-        Gpio23: (23, 23, gpio23),
-        Gpio25: (25, 25, gpio25),
-        Gpio26: (26, 26, gpio26),
-        Gpio27: (27, 27, gpio27),
-    ]
-}
-
-impl_output! {
-    enable1_w1ts, enable1_w1tc, out1_w1ts, out1_w1tc, [
-        Gpio32: (32, 0, gpio32),
-        Gpio33: (33, 1, gpio33),
-        /* Deliberately omitting 34-39 as these can *only* be inputs */
-    ]
-}
-
-macro_rules! impl_input {
-    ($out_en_clear:ident, $reg:ident, $reader:ident [
-        // index, gpio pin name, funcX name, iomux pin name, has pullup/down resistors
-        $($pxi:ident: ($pin_num:expr, $bit:expr, $iomux:ident),)+
-    ]) => {
-        $(
-            impl<MODE> embedded_hal::digital::v2::InputPin for $pxi<Input<MODE>> {
-                type Error = Infallible;
-
-                fn is_high(&self) -> Result<bool, Self::Error> {
-                    Ok(unsafe {& *GPIO::ptr() }.$reg.read().$reader().bits() & (1 << $bit) != 0)
-                }
-
-                fn is_low(&self) -> Result<bool, Self::Error> {
-                    Ok(!self.is_high()?)
-                }
-            }
-
-            impl<MODE> $pxi<MODE> {
-                fn init_input(&self, pull_down: bool, pull_up: bool) {
-                    let gpio = unsafe { &*GPIO::ptr() };
-                    let iomux = unsafe { &*IO_MUX::ptr() };
-                    self.disable_analog();
-
-                    // NOTE(unsafe) atomic read to a stateless register
-                    gpio.$out_en_clear.modify(|_, w| unsafe { w.bits(1 << $bit) });
-
-                    gpio.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
-                        w.out_sel().bits(OutputSignal::GPIO as u16)
-                    });
-
-                    iomux.$iomux.modify(|_, w| unsafe {
-                        w
-                            .mcu_sel().bits(2)
-                            .fun_ie().set_bit()
-                            .fun_wpd().bit(pull_down)
-                            .fun_wpu().bit(pull_up)
-                            .slp_sel().clear_bit()
-                    });
-                }
-
-                pub fn into_floating_input(self) -> $pxi<Input<Floating>> {
-                    self.init_input(false, false);
-                    $pxi { _mode: PhantomData }
-                }
-            }
-
-
-            impl<MODE> InputPin for $pxi<MODE> {
-                /// Set pad as input
-                ///
-                /// Disables output, pull up/down resistors and sleep mode.
-                /// Sets function to GPIO. Does not change sleep mode settings
-                fn set_to_input(&mut self) -> &mut Self {
-                    self.init_input(false,false);
-                    self
-                }
-
-                /// Enable/Disable input circuitry
-                fn enable_input(&mut self, on: bool) -> &mut Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.fun_ie().bit(on));
-                    self
-                }
-               /// Enable/Disable input circuitry while in sleep mode
-               fn input_in_sleep_mode(&mut self, on: bool) -> &mut Self {
-                unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.mcu_ie().bit(on));
-                self
-                }
-
-                /// Connect input to peripheral
-                fn connect_input_to_peripheral(&mut self, signal: InputSignal,
-                    invert: bool) -> &mut Self {
-                    unsafe{ &*GPIO::ptr() }.func_in_sel_cfg[signal as usize].modify(|_, w| unsafe {
-                        w
-                        .sel().set_bit()
-                        .in_inv_sel().bit(invert)
-                        .in_sel().bits($pin_num)
-                    });
-                    self
-                }
-            }
-
-            impl<MODE> Pin for $pxi<MODE> {
-                /// Enable/Disable the sleep mode of the pad
-                fn sleep_mode(&mut self, on: bool) -> &mut Self {
-                    unsafe{ &*IO_MUX::ptr() }.$iomux.modify(|_, w| w.slp_sel().bit(on));
-                    self
-                }
-            }
-
-        )+
-    };
-}
-
-impl_input! {
-    enable_w1tc, in_, in_data [
-        Gpio0: (0, 0, gpio0),
-        Gpio1: (1, 1, u0txd),
-        Gpio2: (2, 2, gpio2),
-        Gpio3: (3, 3, u0rxd),
-        Gpio4: (4, 4, gpio4),
-        Gpio5: (5, 5, gpio5),
-        Gpio6: (6, 6, sd_clk),
-        Gpio7: (7, 7, sd_data0),
-        Gpio8: (8, 8, sd_data1),
-        Gpio9: (9, 9, sd_data2),
-        Gpio10: (10, 10, sd_data3),
-        Gpio11: (11, 11, sd_cmd),
-        Gpio12: (12, 12, mtdi),
-        Gpio13: (13, 13, mtck),
-        Gpio14: (14, 14, mtms),
-        Gpio15: (15, 15, mtdo),
-        Gpio16: (16, 16, gpio16),
-        Gpio17: (17, 17, gpio17),
-        Gpio18: (18, 18, gpio18),
-        Gpio19: (19, 19, gpio19),
-        Gpio20: (20, 20, gpio20),
-        Gpio21: (21, 21, gpio21),
-        Gpio22: (22, 22, gpio22),
-        Gpio23: (23, 23, gpio23),
-        Gpio25: (25, 25, gpio25),
-        Gpio26: (26, 26, gpio26),
-        Gpio27: (27, 27, gpio27),
-    ]
-}
-
-impl_input! {
-    enable1_w1tc, in1, in1_data [
-        Gpio32: (32, 0, gpio32),
-        Gpio33: (33, 1, gpio33),
-        Gpio34: (34, 2, gpio34),
-        Gpio35: (35, 3, gpio35),
-        Gpio36: (36, 4, gpio36),
-        Gpio37: (37, 5, gpio37),
-        Gpio38: (38, 6, gpio38),
-        Gpio39: (39, 7, gpio39),
-    ]
+    Gpio32: (gpio32, Bank1, 32, gpio32, IO, Input<Floating>),
+    Gpio33: (gpio33, Bank1, 33, gpio33, IO, Input<Floating>),
+    Gpio34: (gpio34, Bank1, 34, gpio34, Input, Input<Floating>),
+    Gpio35: (gpio35, Bank1, 35, gpio35, Input, Input<Floating>),
+    Gpio36: (gpio36, Bank1, 36, gpio36, Input, Input<Floating>),
+    Gpio37: (gpio37, Bank1, 37, gpio37, Input, Input<Floating>),
+    Gpio38: (gpio38, Bank1, 38, gpio38, Input, Input<Floating>),
+    Gpio39: (gpio39, Bank1, 39, gpio39, Input, Input<Floating>),
 }
 
 macro_rules! impl_no_analog {
