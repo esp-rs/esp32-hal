@@ -9,7 +9,7 @@ use esp32_hal::prelude::*;
 
 use esp32_hal::clock_control::sleep;
 use esp32_hal::dport::Split;
-use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::serial::{config::Config, Pins, Serial};
 use esp32_hal::target;
 
 const BLINK_HZ: Hertz = Hertz(2);
@@ -39,12 +39,17 @@ fn main() -> ! {
     let (clkcntrl_config, mut watchdog) = clkcntrl.freeze().unwrap();
     watchdog.disable();
 
-    let gpios = dp.GPIO.split();
-    let mut blinky = gpios.gpio13.into_push_pull_output();
+    let pins = dp.GPIO.split();
+    let mut blinky = pins.gpio13.into_push_pull_output();
 
-    let serial = Serial::uart0(
+    let serial: Serial<_, _, _> = Serial::uart0(
         dp.UART0,
-        (NoTx, NoRx),
+        Pins {
+            tx: pins.gpio1,
+            rx: pins.gpio3,
+            cts: None,
+            rts: None,
+        },
         Config::default(), // default configuration is 19200 baud, 8 data bits, 1 stop bit & no parity (8N1)
         clkcntrl_config,
         &mut dport,

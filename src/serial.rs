@@ -19,6 +19,8 @@ use crate::target;
 use crate::target::{UART0, UART1, UART2};
 use crate::units::*;
 
+use crate::gpio::{InputPin, OutputPin};
+
 const UART_FIFO_SIZE: u8 = 128;
 
 /// Serial error
@@ -128,34 +130,32 @@ pub mod config {
     }
 }
 
-pub trait Pins<UART> {}
-pub trait PinTx<UART> {}
-pub trait PinRx<UART> {}
-
-impl<UART, TX, RX> Pins<UART> for (TX, RX)
-where
-    TX: PinTx<UART>,
-    RX: PinRx<UART>,
-{
+/// Pins used by the UART interface
+///
+/// Note that any two pins may be used
+pub struct Pins<
+    TX: OutputPin,
+    RX: InputPin,
+    CTS: InputPin = crate::gpio::Gpio19<crate::gpio::Input<crate::gpio::Floating>>,
+    RTS: OutputPin = crate::gpio::Gpio22<crate::gpio::Output<crate::gpio::PushPull>>,
+> {
+    pub tx: TX,
+    pub rx: RX,
+    pub cts: Option<CTS>,
+    pub rts: Option<RTS>,
 }
-
-/// A filler type for when the Tx pin is unnecessary
-pub struct NoTx;
-/// A filler type for when the Rx pin is unnecessary
-pub struct NoRx;
-
-impl PinTx<UART0> for NoTx {}
-impl PinRx<UART0> for NoRx {}
-impl PinTx<UART1> for NoTx {}
-impl PinRx<UART1> for NoRx {}
-impl PinTx<UART2> for NoTx {}
-impl PinRx<UART2> for NoRx {}
 
 /// Serial abstraction
 ///
-pub struct Serial<UART, PINS> {
+pub struct Serial<
+    UART,
+    TX: OutputPin,
+    RX: InputPin,
+    CTS: InputPin = crate::gpio::Gpio19<crate::gpio::Input<crate::gpio::Floating>>,
+    RTS: OutputPin = crate::gpio::Gpio22<crate::gpio::Output<crate::gpio::PushPull>>,
+> {
     uart: UART,
-    pins: PINS,
+    pins: Pins<TX, RX, CTS, RTS>,
     clock_control: crate::clock_control::ClockControlConfig,
     apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
@@ -177,16 +177,14 @@ macro_rules! halUart {
         $UARTX:ident: ($uartX:ident),
     )+) => {
         $(
-            impl<'a, PINS> Serial<$UARTX, PINS> {
+            impl<'a,TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin> Serial<$UARTX,TX, RX, CTS, RTS> {
                 pub fn $uartX(
                     uart: $UARTX,
-                    pins: PINS,
+                    pins: Pins<TX,RX,CTS,RTS>,
                     config: config::Config,
                     clock_control:  crate::clock_control::ClockControlConfig,
                     dport: &mut target::DPORT
                 ) -> Result<Self, Error>
-                where
-                    PINS: Pins<$UARTX>,
                 {
                         let mut serial=Serial { uart, pins, clock_control, apb_lock:None };
                         serial
@@ -401,13 +399,13 @@ macro_rules! halUart {
                     )
                 }
 
-                pub fn release(self) -> ($UARTX, PINS) {
+                pub fn release(self) -> ($UARTX, Pins<TX,RX,CTS,RTS>) {
                     (self.uart, self.pins)
                 }
 
             }
 
-            impl<'a, PINS> serial::Read<u8> for Serial<$UARTX, PINS> {
+            impl<'a, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin> serial::Read<u8> for Serial<$UARTX,TX, RX, CTS, RTS> {
                 type Error = Infallible;
 
                 fn read(&mut self) -> nb::Result<u8, Self::Error> {
@@ -461,7 +459,7 @@ macro_rules! halUart {
                 }
             }
 
-            impl<'a, PINS> serial::Write<u8> for Serial<$UARTX, PINS> {
+            impl<'a, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin> serial::Write<u8> for Serial<$UARTX, TX ,RX, CTS, RTS> {
                 type Error = Infallible;
 
                 fn flush(&mut self) -> nb::Result<(), Self::Error> {
@@ -503,7 +501,7 @@ macro_rules! halUart {
                 }
             }
 
-            impl<PINS> core::fmt::Write for Serial<$UARTX, PINS>
+            impl<TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin> core::fmt::Write for Serial<$UARTX, TX ,RX, CTS, RTS>
             {
                 fn write_str(&mut self, s: &str) -> core::fmt::Result {
                     use embedded_hal::serial::Write;
