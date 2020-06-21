@@ -42,7 +42,7 @@ fn main() -> ! {
     let pins = dp.GPIO.split();
     let mut blinky = pins.gpio13.into_push_pull_output();
 
-    let serial: Serial<_, _, _> = Serial::uart0(
+    let serial: Serial<_, _, _> = Serial::new(
         dp.UART0,
         Pins {
             tx: pins.gpio1,
