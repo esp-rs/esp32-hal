@@ -1,4 +1,6 @@
+/// Peripheral input signals for the GPIO mux
 #[allow(non_camel_case_types)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum InputSignal {
     SPICLK = 0,
     SPIQ = 1,
@@ -181,9 +183,47 @@ pub enum InputSignal {
     PCMFSYNC = 204,
     PCMCLK = 205,
     PCMDIN = 206,
+    SIGNAL_224 = 224,
+    SIGNAL_225 = 225,
+    SIGNAL_226 = 226,
+    SIGNAL_227 = 227,
+    SIGNAL_228 = 228,
+
+    SD_DATA0 = 512,
+    SD_DATA1,
+    SD_DATA2,
+    SD_DATA3,
+    HS1_DATA0,
+    HS1_DATA1,
+    HS1_DATA2,
+    HS1_DATA3,
+    HS1_DATA4,
+    HS1_DATA5,
+    HS1_DATA6,
+    HS1_DATA7,
+    HS2_DATA0,
+    HS2_DATA1,
+    HS2_DATA2,
+    HS2_DATA3,
+
+    EMAC_TX_CLK,
+    EMAC_RXD2,
+    EMAC_TX_ER,
+    EMAC_RX_CLK,
+    EMAC_RX_ER,
+    EMAC_RXD3,
+    EMAC_RXD0,
+    EMAC_RXD1,
+    EMAC_RX_DV,
+
+    MTDI,
+    MTCK,
+    MTMS,
 }
 
+/// Peripheral output signals for the GPIO mux
 #[allow(non_camel_case_types)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum OutputSignal {
     SPICLK = 0,
     SPIQ = 1,
@@ -409,4 +449,44 @@ pub enum OutputSignal {
     SIG_IN_FUNC227 = 227,
     SIG_IN_FUNC228 = 228,
     GPIO = 256,
+
+    CLK_OUT1 = 512,
+    CLK_OUT2,
+    CLK_OUT3,
+    SD_CLK,
+    SD_CMD,
+    SD_DATA0,
+    SD_DATA1,
+    SD_DATA2,
+    SD_DATA3,
+    HS1_CLK,
+    HS1_CMD,
+    HS1_DATA0,
+    HS1_DATA1,
+    HS1_DATA2,
+    HS1_DATA3,
+    HS1_DATA4,
+    HS1_DATA5,
+    HS1_DATA6,
+    HS1_DATA7,
+    HS1_STROBE,
+    HS2_CLK,
+    HS2_CMD,
+    HS2_DATA0,
+    HS2_DATA1,
+    HS2_DATA2,
+    HS2_DATA3,
+
+    EMAC_TX_CLK,
+    EMAC_TX_ER,
+    EMAC_TXD3,
+    EMAC_RX_ER,
+    EMAC_TXD2,
+    EMAC_CLK_OUT,
+    EMAC_CLK_180,
+    EMAC_TXD0,
+    EMAC_TX_EN,
+    EMAC_TXD1,
+
+    MTDO,
 }
