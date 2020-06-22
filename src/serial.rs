@@ -14,11 +14,11 @@ use core::convert::Infallible;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
-use embedded_hal::serial;
-
 use crate::target;
 use crate::target::{uart, UART0, UART1, UART2};
-use crate::units::*;
+
+use crate::prelude::*;
+use embedded_hal::serial;
 
 use crate::gpio::{InputPin, OutputPin};
 
@@ -51,9 +51,11 @@ pub enum Event {
     Idle,
 }
 
+/// UART configuration
 pub mod config {
     use crate::units::*;
 
+    /// Number of data bits
     #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub enum DataBits {
         DataBits5,
@@ -62,6 +64,7 @@ pub mod config {
         DataBits8,
     }
 
+    /// Parity check
     #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub enum Parity {
         ParityNone,
@@ -69,6 +72,7 @@ pub mod config {
         ParityOdd,
     }
 
+    /// Number of stop bits
     #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub enum StopBits {
         /// 1 stop bit
@@ -79,6 +83,7 @@ pub mod config {
         STOP2,
     }
 
+    /// UART configuration
     #[derive(Debug, Copy, Clone)]
     pub struct Config {
         pub baudrate: Hertz,
@@ -173,43 +178,6 @@ pub struct Tx<UART: Instance> {
     _apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
 
-trait PeripheralControl {
-    fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self;
-    fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self;
-    fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self;
-}
-
-// TODO: implement seperate version for all 3 uart
-impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin> PeripheralControl
-    for Serial<UART, TX, RX, CTS, RTS>
-{
-    fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self {
-        dport.perip_rst_en.modify(|_, w| w.uart0().set_bit());
-        dport.perip_rst_en.modify(|_, w| w.uart0().clear_bit());
-        self
-    }
-
-    fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self {
-        dport.perip_clk_en.modify(|_, w| w.uart_mem().set_bit());
-        dport.perip_clk_en.modify(|_, w| w.uart0().set_bit());
-        dport.perip_rst_en.modify(|_, w| w.uart0().clear_bit());
-        self
-    }
-
-    fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self {
-        dport.perip_clk_en.modify(|_, w| w.uart0().clear_bit());
-        dport.perip_rst_en.modify(|_, w| w.uart0().set_bit());
-
-        if dport.perip_clk_en.read().uart0().bit_is_clear()
-            && dport.perip_clk_en.read().uart1().bit_is_clear()
-            && dport.perip_clk_en.read().uart2().bit_is_clear()
-        {
-            dport.perip_clk_en.modify(|_, w| w.uart_mem().clear_bit());
-        }
-        self
-    }
-}
-
 impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
     Serial<UART, TX, RX, CTS, RTS>
 {
@@ -226,9 +194,8 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
             clock_control,
             apb_lock: None,
         };
+        serial.uart.reset(dport).enable(dport);
         serial
-            .reset(dport)
-            .enable(dport)
             .change_stop_bits(config.stop_bits)
             .change_data_bits(config.data_bits)
             .change_parity(config.parity)
@@ -571,11 +538,59 @@ where
 }
 
 pub trait Instance: Deref<Target = uart::RegisterBlock> {
-    fn ptr() -> *const uart::RegisterBlock {
-        Self::ptr()
+    fn ptr() -> *const uart::RegisterBlock;
+    fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+    fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+    fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self;
+}
+
+static UART_MEM_LOCK: CriticalSectionSpinLockMutex<()> = CriticalSectionSpinLockMutex::new(());
+
+macro_rules! halUart {
+    ($(
+        $UARTX:ident: ($uartX:ident),
+    )+) => {
+        $(
+            impl Instance for $UARTX {
+                fn ptr() -> *const uart::RegisterBlock {
+                    $UARTX::ptr()
+                }
+
+                fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self {
+                    dport.perip_rst_en.modify(|_, w| w.$uartX().set_bit());
+                    dport.perip_rst_en.modify(|_, w| w.$uartX().clear_bit());
+                    self
+                }
+
+                fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self {
+                    dport.perip_clk_en.modify(|_, w| w.uart_mem().set_bit());
+                    dport.perip_clk_en.modify(|_, w| w.$uartX().set_bit());
+                    dport.perip_rst_en.modify(|_, w| w.$uartX().clear_bit());
+                    self
+                }
+
+                fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self {
+                    dport.perip_clk_en.modify(|_, w| w.$uartX().clear_bit());
+                    dport.perip_rst_en.modify(|_, w| w.$uartX().set_bit());
+
+                    (&UART_MEM_LOCK).lock(|_| {
+                        if dport.perip_clk_en.read().uart0().bit_is_clear()
+                            && dport.perip_clk_en.read().uart1().bit_is_clear()
+                            && dport.perip_clk_en.read().uart2().bit_is_clear()
+                        {
+                            dport.perip_clk_en.modify(|_, w| w.uart_mem().clear_bit());
+                        }
+                    });
+                    self
+
+                }
+            }
+        )+
     }
 }
 
-impl Instance for UART0 {}
-impl Instance for UART1 {}
-impl Instance for UART2 {}
+halUart! {
+    UART0: (uart0),
+    UART1: (uart1),
+    UART2: (uart2),
+}
