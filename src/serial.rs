@@ -14,6 +14,7 @@ use core::convert::Infallible;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
+use crate::gpio::{InputSignal, OutputSignal};
 use crate::target;
 use crate::target::{uart, UART0, UART1, UART2};
 
@@ -163,24 +164,26 @@ pub struct Serial<
     uart: UART,
     pins: Pins<TX, RX, CTS, RTS>,
     clock_control: crate::clock_control::ClockControlConfig,
-    apb_lock: Option<crate::clock_control::dfs::LockAPB>,
+    rx: Rx<UART>,
+    tx: Tx<UART>,
 }
 
 /// Serial receiver
 pub struct Rx<UART: Instance> {
     _uart: PhantomData<UART>,
-    _apb_lock: Option<crate::clock_control::dfs::LockAPB>,
+    apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
 
 /// Serial transmitter
 pub struct Tx<UART: Instance> {
     _uart: PhantomData<UART>,
-    _apb_lock: Option<crate::clock_control::dfs::LockAPB>,
+    apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
 
 impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
     Serial<UART, TX, RX, CTS, RTS>
 {
+    /// Create a new serial driver
     pub fn new(
         uart: UART,
         pins: Pins<TX, RX, CTS, RTS>,
@@ -192,8 +195,17 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
             uart,
             pins,
             clock_control,
-            apb_lock: None,
+            rx: Rx {
+                _uart: PhantomData,
+                apb_lock: None,
+            },
+            tx: Tx {
+                _uart: PhantomData,
+                apb_lock: None,
+            },
         };
+
+        serial.uart.init_pins(&mut serial.pins);
         serial.uart.reset(dport).enable(dport);
         serial
             .change_stop_bits(config.stop_bits)
@@ -203,6 +215,7 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
         Ok(serial)
     }
 
+    /// Change the number of stop bits
     pub fn change_stop_bits(&mut self, stop_bits: config::StopBits) -> &mut Self {
         //workaround for hardware issue, when UART stop bit set as 2-bit mode.
         self.uart
@@ -219,6 +232,7 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
         self
     }
 
+    /// Change the number of data bits
     pub fn change_data_bits(&mut self, data_bits: config::DataBits) -> &mut Self {
         self.uart.conf0.modify(|_, w| match data_bits {
             config::DataBits::DataBits5 => w.bit_num().data_bits_5(),
@@ -230,6 +244,7 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
         self
     }
 
+    /// Change the type of parity checking
     pub fn change_parity(&mut self, parity: config::Parity) -> &mut Self {
         self.uart.conf0.modify(|_, w| match parity {
             config::Parity::ParityNone => w.parity_en().clear_bit(),
@@ -242,10 +257,10 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
 
     /// Change the baudrate.
     ///
-    /// Will automatically select the clock source. WHen possible the reference clock (1MHz) will be used,
-    /// because this is constant when the clock source/frequency changes.
-    /// However if one of the clock frequencies is below 10MHz
-    /// or if the baudrate is above the reference clock or if the baudrate cannot be set within 1.5%
+    /// Will automatically select the clock source. When possible the reference clock (1MHz) will
+    /// be used, because this is constant when the clock source/frequency changes.
+    /// However if one of the clock frequencies is below 10MHz or if the baudrate is above
+    /// the reference clock or if the baudrate cannot be set within 1.5%
     /// then use the APB clock.
     pub fn change_baudrate<T: Into<Hertz> + Copy>(
         &mut self,
@@ -287,13 +302,15 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
         baudrate: T,
         use_apb_frequency: bool,
     ) -> Result<&mut Self, Error> {
-        if let None = self.apb_lock {
+        if let None = self.rx.apb_lock {
             if use_apb_frequency {
-                self.apb_lock = Some(self.clock_control.lock_apb_frequency());
+                self.rx.apb_lock = Some(self.clock_control.lock_apb_frequency());
+                self.tx.apb_lock = Some(self.clock_control.lock_apb_frequency());
             }
         } else {
             if !use_apb_frequency {
-                self.apb_lock = None;
+                self.rx.apb_lock = None;
+                self.tx.apb_lock = None;
             }
         }
 
@@ -330,10 +347,12 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
         Ok(self)
     }
 
+    /// Returns if the reference or APB clock is used
     pub fn is_clock_apb(&self) -> bool {
         self.uart.conf0.read().tick_ref_always_on().bit_is_set()
     }
 
+    /// Returns the current baudrate
     pub fn baudrate(&self) -> Hertz {
         let use_apb_frequency = self.uart.conf0.read().tick_ref_always_on().bit_is_set();
         let sclk_freq = if use_apb_frequency {
@@ -368,70 +387,14 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
         self.uart.status.read().st_utx_out().is_tx_idle()
     }
 
+    /// Split the serial driver in separate TX and RX drivers
     pub fn split(self) -> (Tx<UART>, Rx<UART>) {
-        (
-            Tx {
-                _uart: PhantomData,
-                _apb_lock: if let None = self.apb_lock {
-                    None
-                } else {
-                    Some(self.clock_control.lock_apb_frequency())
-                },
-            },
-            Rx {
-                _uart: PhantomData,
-                _apb_lock: if let None = self.apb_lock {
-                    None
-                } else {
-                    Some(self.clock_control.lock_apb_frequency())
-                },
-            },
-        )
+        (self.tx, self.rx)
     }
 
+    /// Release the UART and GPIO resources
     pub fn release(self) -> (UART, Pins<TX, RX, CTS, RTS>) {
         (self.uart, self.pins)
-    }
-
-    fn rx_count(&self) -> u8 {
-        unsafe { self.uart.status.read().rxfifo_cnt().bits() }
-    }
-
-    fn rx_is_idle(&self) -> bool {
-        unsafe { self.uart.status.read().st_urx_out().is_rx_idle() }
-    }
-
-    fn read(&mut self) -> nb::Result<u8, Infallible> {
-        if self.rx_count() == 0 {
-            Err(nb::Error::WouldBlock)
-        } else {
-            Ok(unsafe { self.uart.rx_fifo.read().bits() })
-        }
-    }
-
-    fn tx_count(&self) -> u8 {
-        unsafe { self.uart.status.read().txfifo_cnt().bits() }
-    }
-
-    fn tx_is_idle(&self) -> bool {
-        unsafe { self.uart.status.read().st_utx_out().is_tx_idle() }
-    }
-
-    fn flush(&mut self) -> nb::Result<(), Infallible> {
-        if self.tx_is_idle() {
-            Ok(())
-        } else {
-            Err(nb::Error::WouldBlock)
-        }
-    }
-
-    fn write(&mut self, byte: u8) -> nb::Result<(), Infallible> {
-        if self.tx_count() < UART_FIFO_SIZE {
-            unsafe { self.uart.tx_fifo.write_with_zero(|w| w.bits(byte)) }
-            Ok(())
-        } else {
-            Err(nb::Error::WouldBlock)
-        }
     }
 }
 
@@ -441,7 +404,7 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
     type Error = Infallible;
 
     fn read(&mut self) -> nb::Result<u8, Self::Error> {
-        self.read()
+        self.rx.read()
     }
 }
 
@@ -451,11 +414,11 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
     type Error = Infallible;
 
     fn flush(&mut self) -> nb::Result<(), Self::Error> {
-        self.flush()
+        self.tx.flush()
     }
 
     fn write(&mut self, byte: u8) -> nb::Result<(), Self::Error> {
-        self.write(byte)
+        self.tx.write(byte)
     }
 }
 
@@ -472,10 +435,12 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
 }
 
 impl<UART: Instance> Rx<UART> {
+    /// Get count of bytes in the receive FIFO
     pub fn count(&self) -> u8 {
         unsafe { (*UART::ptr()).status.read().rxfifo_cnt().bits() }
     }
 
+    /// Check if the receivers is idle
     pub fn is_idle(&self) -> bool {
         unsafe { (*UART::ptr()).status.read().st_urx_out().is_rx_idle() }
     }
@@ -494,10 +459,12 @@ impl<UART: Instance> serial::Read<u8> for Rx<UART> {
 }
 
 impl<UART: Instance> Tx<UART> {
+    /// Get count of bytes in the transmitter FIFO
     pub fn count(&self) -> u8 {
         unsafe { (*UART::ptr()).status.read().txfifo_cnt().bits() }
     }
 
+    /// Check if the transmitter is idle
     pub fn is_idle(&self) -> bool {
         unsafe { (*UART::ptr()).status.read().st_utx_out().is_tx_idle() }
     }
@@ -539,16 +506,25 @@ where
 
 pub trait Instance: Deref<Target = uart::RegisterBlock> {
     fn ptr() -> *const uart::RegisterBlock;
+    /// Enable peripheral
     fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+    /// Disable peripheral
     fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+    /// Reset peripheral
     fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self;
+
+    /// Initialize pins
+    fn init_pins<TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>(
+        &mut self,
+        pins: &mut Pins<TX, RX, CTS, RTS>,
+    ) -> &mut Self;
 }
 
 static UART_MEM_LOCK: CriticalSectionSpinLockMutex<()> = CriticalSectionSpinLockMutex::new(());
 
 macro_rules! halUart {
     ($(
-        $UARTX:ident: ($uartX:ident),
+        $UARTX:ident: ($uartX:ident, $txd:ident, $rxd:ident, $cts:ident, $rts:ident),
     )+) => {
         $(
             impl Instance for $UARTX {
@@ -584,13 +560,40 @@ macro_rules! halUart {
                     self
 
                 }
+
+                fn init_pins<TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>(
+                    &mut self, pins: &mut Pins<TX,RX,CTS,RTS>
+                ) -> &mut Self {
+                    pins
+                        .tx
+                        .set_to_push_pull_output()
+                        .connect_peripheral_to_output(OutputSignal::$txd);
+
+                    pins
+                        .rx
+                        .set_to_input()
+                        .connect_input_to_peripheral(InputSignal::$rxd);
+
+                    if let Some(cts) = pins.cts.as_mut() {
+                        cts
+                        .set_to_input()
+                        .connect_input_to_peripheral(InputSignal::$cts);
+                    }
+
+                    if let Some(rts) = pins.rts.as_mut() {
+                        rts
+                        .set_to_push_pull_output()
+                        .connect_peripheral_to_output(OutputSignal::$rts);
+                    }
+                    self
+                }
             }
         )+
     }
 }
 
 halUart! {
-    UART0: (uart0),
-    UART1: (uart1),
-    UART2: (uart2),
+    UART0: (uart0, U0TXD, U0RXD, U0CTS, U0RTS),
+    UART1: (uart1, U1TXD, U1RXD, U1CTS, U1RTS),
+    UART2: (uart2, U2TXD, U2RXD, U2CTS, U2RTS),
 }
