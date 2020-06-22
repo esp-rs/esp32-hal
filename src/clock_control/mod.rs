@@ -190,17 +190,19 @@ enum CalibrateRTCSource {
 
 // static ClockControl to allow DFS, etc.
 static mut CLOCK_CONTROL: Option<ClockControl> = None;
+// mutex to allow safe multi-threaded access
+static CLOCK_CONTROL_MUTEX: spin::Mutex<()> = spin::Mutex::new(());
 
 /// Clock configuration & locking for Dynamic Frequency Switching.
 /// It allows thread and interrupt safe way to switch between default,
 /// high CPU and APB frequency configuration.
-
-// All the single word reads of frequencies and sources are thread and interrupt safe
-// as these are atomic.
 #[derive(Copy, Clone)]
 pub struct ClockControlConfig {}
 
 impl<'a> ClockControlConfig {
+    // All the single word reads of frequencies and sources are thread and interrupt safe
+    // as these are atomic.
+
     /// The current CPU frequency
     pub fn cpu_frequency(&self) -> Hertz {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency }
@@ -306,6 +308,9 @@ impl<'a> ClockControlConfig {
         unsafe { CLOCK_CONTROL.as_ref().unwrap().fast_rtc_source }
     }
 
+    // The lock and unlock calls are thread and interrupt safe because this is handled inside
+    // the DFS routines
+
     /// Obtain a RAII lock to use the high CPU frequency
     pub fn lock_cpu_frequency(&self) -> dfs::LockCPU {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().lock_cpu_frequency() }
@@ -343,16 +348,52 @@ impl<'a> ClockControlConfig {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().get_lock_count() }
     }
 
+    // The following routines are made thread and interrupt safe here
+
+    /// Halt the designated core
     pub unsafe fn park_core(&mut self, core: crate::Core) {
-        CLOCK_CONTROL.as_mut().unwrap().park_core(core)
+        interrupt::free(|_| {
+            CLOCK_CONTROL_MUTEX.lock();
+            CLOCK_CONTROL.as_mut().unwrap().park_core(core);
+        })
     }
 
+    /// Start the APP (second) core
+    ///
+    /// The second core will start running with the function `entry`.
     pub fn unpark_core(&mut self, core: crate::Core) {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) }
+        interrupt::free(|_| {
+            CLOCK_CONTROL_MUTEX.lock();
+            unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) }
+        })
     }
 
-    pub fn start_core(&mut self, core: crate::Core, f: fn() -> !) -> Result<(), Error> {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().start_core(core, f) }
+    /// Start the APP (second) core
+    ///
+    /// The second core will start running with the function `entry`.
+    pub fn start_app_core(&mut self, entry: fn() -> !) -> Result<(), Error> {
+        interrupt::free(|_| {
+            CLOCK_CONTROL_MUTEX.lock();
+            unsafe { CLOCK_CONTROL.as_mut().unwrap().start_app_core(entry) }
+        })
+    }
+
+    // The following routines handle thread and interrupt safety themselves
+
+    /// Get RTC tick count since boot
+    ///
+    /// *Note: this function takes up to one slow RTC clock cycle (can be up to 300us) and
+    /// interrupts are blocked during this time.*
+    pub fn rtc_tick_count(&self) -> TicksU64 {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().rtc_tick_count() }
+    }
+
+    /// Get nanoseconds since boot based on RTC tick count
+    ///
+    /// *Note: this function takes up to one slow RTC clock cycle (can be up to 300us) and
+    /// interrupts are blocked during this time.*
+    pub fn rtc_nanoseconds(&self) -> NanoSecondsU64 {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().rtc_nanoseconds() }
     }
 }
 
@@ -1461,5 +1502,66 @@ impl ClockControl {
             CPUSource::RTC8M => self.rtc8m_frequency_measured,
             CPUSource::APLL => unimplemented!(),
         }
+    }
+
+    /// Get RTC tick count since boot
+    ///
+    /// This function can usually take up to one RTC clock cycles (~300us).
+    ///
+    /// In exceptional circumstances it could take up to two RTC clock cycles. This can happen
+    /// when an interrupt routine or the other core calls this function exactly in between
+    /// the loop checking for the valid bit and entering the critical section.
+    ///
+    /// Interrupts are only blocked during the actual reading of the clock register,
+    /// not during the wait for valid data.
+    pub fn rtc_tick_count(&self) -> TicksU64 {
+        self.rtc_control
+            .time_update
+            .modify(|_, w| w.time_update().set_bit());
+
+        loop {
+            // do this check outside the critical section, to prevent blocking interrupts and
+            // the other core for a long time
+            while self
+                .rtc_control
+                .time_update
+                .read()
+                .time_valid()
+                .bit_is_clear()
+            {}
+
+            if let Some(ticks) = interrupt::free(|_| {
+                CLOCK_CONTROL_MUTEX.lock();
+
+                // there is a small chance that this function is interrupted or called from
+                // the other core between detecting the valid and entering the interrupt free
+                // and mutex protection reading check again inside the critical section
+
+                if self
+                    .rtc_control
+                    .time_update
+                    .read()
+                    .time_valid()
+                    .bit_is_set()
+                {
+                    // this needs to be interrupt and thread safe, because if the time value
+                    // changes in between reading the upper and lower part this results in an
+                    // invalid value.
+                    let hi = self.rtc_control.time1.read().time_hi().bits() as u64;
+                    let lo = self.rtc_control.time0.read().bits() as u64;
+                    let ticks: TicksU64 = TicksU64::from((hi << 32) | lo);
+                    Some(ticks)
+                } else {
+                    None
+                }
+            }) {
+                return ticks;
+            }
+        }
+    }
+
+    /// Get nanoseconds since boot based on RTC tick count
+    pub fn rtc_nanoseconds(&self) -> NanoSecondsU64 {
+        self.rtc_tick_count() / self.slow_rtc_frequency
     }
 }
