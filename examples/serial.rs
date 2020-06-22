@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(asm)]
 
 use core::{fmt::Write, panic::PanicInfo};
 
@@ -83,8 +82,8 @@ fn main() -> ! {
     }
 }
 
-/// Basic panic handler - just loops
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    dprintln!("\n\n*** {:?}", info);
     loop {}
 }

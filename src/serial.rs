@@ -143,6 +143,7 @@ pub mod config {
 pub struct Pins<
     TX: OutputPin,
     RX: InputPin,
+    // default pins to allow type inference
     CTS: InputPin = crate::gpio::Gpio19<crate::gpio::Input<crate::gpio::Floating>>,
     RTS: OutputPin = crate::gpio::Gpio22<crate::gpio::Output<crate::gpio::PushPull>>,
 > {
@@ -158,6 +159,7 @@ pub struct Serial<
     UART: Instance,
     TX: OutputPin,
     RX: InputPin,
+    // default pins to allow type inference
     CTS: InputPin = crate::gpio::Gpio19<crate::gpio::Input<crate::gpio::Floating>>,
     RTS: OutputPin = crate::gpio::Gpio22<crate::gpio::Output<crate::gpio::PushPull>>,
 > {
