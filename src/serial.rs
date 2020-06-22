@@ -1,12 +1,29 @@
 //! UART peripheral control
 //!
-//! Controls the 3 uart peripherals (UART0, UART1, UART2)
+//! Controls the 3 uart peripherals (UART0, UART1, UART2).
 //!
-//! **It currently depends on GPIO pins and clock to be configured with default settings.**
-//! (Tested for UART 0)
+//! # Example
+//!
+//! Creation of the serial peripheral and writing formatted info.
+//! ```
+//! let serial: Serial<_, _, _> = Serial::new(
+//!     dp.UART0,
+//!     esp32_hal::serial::Pins {
+//!         tx: gpios.gpio1,
+//!         rx: gpios.gpio3,
+//!         cts: None,
+//!         rts: None,
+//!     },
+//!     config,
+//!     clkcntrl_config,
+//!     &mut dport,
+//!     )
+//!     .unwrap();
+//!
+//! writeln!(serial, "Serial output").unwrap();
+//! ```
 //!
 //! # TODO
-//! - Automatic GPIO configuration
 //! - Add all extra features esp32 supports (eg rs485, etc. etc.)
 //! - Free APB lock when TX is idle (and no RX used)
 
