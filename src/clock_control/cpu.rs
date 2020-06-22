@@ -4,52 +4,61 @@
 use super::Error;
 use crate::target;
 use crate::Core::{self, APP, PRO};
+use xtensa_lx6::interrupt;
 use xtensa_lx6::set_stack_pointer;
 
 static mut START_CORE1_FUNCTION: Option<fn() -> !> = None;
 
+static CPU_MUTEX: spin::Mutex<()> = spin::Mutex::new(());
+
 impl super::ClockControl {
     pub unsafe fn park_core(&mut self, core: Core) {
-        match core {
-            PRO => {
-                self.rtc_control
-                    .sw_cpu_stall
-                    .modify(|_, w| w.sw_stall_procpu_c1().bits(0x21));
-                self.rtc_control
-                    .options0
-                    .modify(|_, w| w.sw_stall_procpu_c0().bits(0x02));
-            }
-            APP => {
-                self.rtc_control
-                    .sw_cpu_stall
-                    .modify(|_, w| w.sw_stall_appcpu_c1().bits(0x21));
-                self.rtc_control
-                    .options0
-                    .modify(|_, w| w.sw_stall_appcpu_c0().bits(0x02));
-            }
-        };
+        interrupt::free(|_| {
+            let _lock = CPU_MUTEX.lock();
+
+            match core {
+                PRO => {
+                    self.rtc_control
+                        .sw_cpu_stall
+                        .modify(|_, w| w.sw_stall_procpu_c1().bits(0x21));
+                    self.rtc_control
+                        .options0
+                        .modify(|_, w| w.sw_stall_procpu_c0().bits(0x02));
+                }
+                APP => {
+                    self.rtc_control
+                        .sw_cpu_stall
+                        .modify(|_, w| w.sw_stall_appcpu_c1().bits(0x21));
+                    self.rtc_control
+                        .options0
+                        .modify(|_, w| w.sw_stall_appcpu_c0().bits(0x02));
+                }
+            };
+        });
     }
 
     pub fn unpark_core(&mut self, core: Core) {
-        match core {
-            //TODO: check if necessary to set to 0 like in cpu_start.c?
-            PRO => {
-                self.rtc_control
-                    .sw_cpu_stall
-                    .modify(|_, w| unsafe { w.sw_stall_procpu_c1().bits(0) });
-                self.rtc_control
-                    .options0
-                    .modify(|_, w| unsafe { w.sw_stall_procpu_c0().bits(0) });
-            }
-            APP => {
-                self.rtc_control
-                    .sw_cpu_stall
-                    .modify(|_, w| unsafe { w.sw_stall_appcpu_c1().bits(0) });
-                self.rtc_control
-                    .options0
-                    .modify(|_, w| unsafe { w.sw_stall_appcpu_c0().bits(0) });
-            }
-        };
+        interrupt::free(|_| {
+            let _lock = CPU_MUTEX.lock();
+            match core {
+                PRO => {
+                    self.rtc_control
+                        .sw_cpu_stall
+                        .modify(|_, w| unsafe { w.sw_stall_procpu_c1().bits(0) });
+                    self.rtc_control
+                        .options0
+                        .modify(|_, w| unsafe { w.sw_stall_procpu_c0().bits(0) });
+                }
+                APP => {
+                    self.rtc_control
+                        .sw_cpu_stall
+                        .modify(|_, w| unsafe { w.sw_stall_appcpu_c1().bits(0) });
+                    self.rtc_control
+                        .options0
+                        .modify(|_, w| unsafe { w.sw_stall_appcpu_c0().bits(0) });
+                }
+            };
+        });
     }
 
     fn flush_cache(&mut self, core: Core) {
@@ -128,7 +137,10 @@ impl super::ClockControl {
     pub fn start_core(&mut self, core: Core, f: fn() -> !) -> Result<(), Error> {
         match core {
             PRO => return Err(Error::CoreAlreadyRunning),
-            APP => {
+            APP => interrupt::free(|_| {
+                // no mutex lock needed here:
+                // only starts if other core not running yet
+
                 if self
                     .dport_control
                     .appcpu_ctrl_b()
@@ -165,9 +177,9 @@ impl super::ClockControl {
                     .modify(|_, w| w.appcpu_resetting().clear_bit());
 
                 self.unpark_core(core);
-            }
-        }
 
-        Ok(())
+                Ok(())
+            }),
+        }
     }
 }
