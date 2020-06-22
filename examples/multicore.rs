@@ -9,7 +9,7 @@ use esp32_hal::prelude::*;
 use esp32_hal::clock_control::{CPUSource, ClockControl, ClockControlConfig};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
-use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::serial::{config::Config, Serial};
 use esp32_hal::target;
 
 use xtensa_lx6::{get_stack_pointer, timer::get_cycle_count};
@@ -59,10 +59,16 @@ fn main() -> ! {
 
     watchdog.start(3.s());
 
+    let gpios = dp.GPIO.split();
     // setup serial controller
-    let mut uart0 = Serial::uart0(
+    let mut uart0: Serial<_, _, _> = Serial::new(
         dp.UART0,
-        (NoTx, NoRx),
+        esp32_hal::serial::Pins {
+            tx: gpios.gpio1,
+            rx: gpios.gpio3,
+            cts: None,
+            rts: None,
+        },
         Config::default(),
         clock_control_config,
         &mut dport,

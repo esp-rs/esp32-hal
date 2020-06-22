@@ -9,7 +9,7 @@ use esp32_hal::{
     dprintln,
     interrupt::{Interrupt, InterruptLevel},
     prelude::*,
-    serial::{config::Config, NoRx, NoTx, Serial},
+    serial::{config::Config, Serial},
     target,
     timer::{
         watchdog::{self, WatchDogResetDuration, WatchdogAction, WatchdogConfig},
@@ -81,8 +81,21 @@ fn main() -> ! {
         ..Default::default()
     };
 
-    let serial =
-        Serial::uart0(dp.UART0, (NoTx, NoRx), config, clkcntrl_config, &mut dport).unwrap();
+    let gpios = dp.GPIO.split();
+    // setup serial controller
+    let serial: Serial<_, _, _> = Serial::new(
+        dp.UART0,
+        esp32_hal::serial::Pins {
+            tx: gpios.gpio1,
+            rx: gpios.gpio3,
+            cts: None,
+            rts: None,
+        },
+        config,
+        clkcntrl_config,
+        &mut dport,
+    )
+    .unwrap();
 
     let (mut tx, _) = serial.split();
 
