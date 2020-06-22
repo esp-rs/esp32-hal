@@ -2,55 +2,60 @@
 #![no_main]
 #![feature(asm)]
 
-use core::fmt::Write;
-use core::panic::PanicInfo;
+use core::{fmt::Write, panic::PanicInfo};
 
-use esp32_hal::prelude::*;
-
-use esp32_hal::clock_control::sleep;
-use esp32_hal::dport::Split;
-use esp32_hal::serial::{config::Config, Pins, Serial};
-use esp32_hal::target;
+use esp32_hal::{
+    clock_control::{sleep, ClockControl, XTAL_FREQUENCY_AUTO},
+    dport::Split,
+    dprintln,
+    prelude::*,
+    serial::{config::Config, Pins, Serial},
+    target,
+    timer::Timer,
+};
 
 const BLINK_HZ: Hertz = Hertz(2);
 
-#[no_mangle]
+#[entry]
 fn main() -> ! {
     let dp = target::Peripherals::take().expect("Failed to obtain Peripherals");
 
-    let mut timg0 = dp.TIMG0;
-    let mut timg1 = dp.TIMG1;
-
     let (mut dport, dport_clock_control) = dp.DPORT.split();
 
-    // (https://github.com/espressif/openocd-esp32/blob/97ba3a6bb9eaa898d91df923bbedddfeaaaf28c9/src/target/esp32.c#L431)
-    // openocd disables the watchdog timer on halt
-    // we will do it manually on startup
-    disable_timg_wdts(&mut timg0, &mut timg1);
-
-    let clkcntrl = esp32_hal::clock_control::ClockControl::new(
+    let clkcntrl = ClockControl::new(
         dp.RTCCNTL,
         dp.APB_CTRL,
         dport_clock_control,
-        esp32_hal::clock_control::XTAL_FREQUENCY_AUTO,
+        XTAL_FREQUENCY_AUTO,
     )
     .unwrap();
 
     let (clkcntrl_config, mut watchdog) = clkcntrl.freeze().unwrap();
     watchdog.disable();
 
-    let pins = dp.GPIO.split();
-    let mut blinky = pins.gpio13.into_push_pull_output();
+    let (_, _, _, mut watchdog0) = Timer::new(dp.TIMG0, clkcntrl_config);
+    let (_, _, _, mut watchdog1) = Timer::new(dp.TIMG1, clkcntrl_config);
+    watchdog0.disable();
+    watchdog1.disable();
 
+    let pins = dp.GPIO.split();
+
+    let mut blinky = pins.gpio0.into_push_pull_output();
+
+    // Use UART1 as example: will cause dprintln statements not to be printed
     let serial: Serial<_, _, _> = Serial::new(
-        dp.UART0,
+        dp.UART1,
         Pins {
             tx: pins.gpio1,
             rx: pins.gpio3,
             cts: None,
             rts: None,
         },
-        Config::default(), // default configuration is 19200 baud, 8 data bits, 1 stop bit & no parity (8N1)
+        Config {
+            // default configuration is 19200 baud, 8 data bits, 1 stop bit & no parity (8N1)
+            baudrate: 115200.Hz(),
+            ..Config::default()
+        },
         clkcntrl_config,
         &mut dport,
     )
@@ -59,6 +64,9 @@ fn main() -> ! {
     let (mut tx, mut rx) = serial.split();
 
     writeln!(tx, "\n\nESP32 Started\n\n").unwrap();
+
+    // line will not be printed as using UART1
+    dprintln!("UART0\n");
 
     loop {
         writeln!(tx, "Characters received:  {:?}", rx.count()).unwrap();
@@ -73,20 +81,6 @@ fn main() -> ! {
         blinky.set_low().unwrap();
         sleep((Hertz(1_000_000) / BLINK_HZ).us());
     }
-}
-
-const WDT_WKEY_VALUE: u32 = 0x50D83AA1;
-
-fn disable_timg_wdts(timg0: &mut target::TIMG0, timg1: &mut target::TIMG1) {
-    timg0
-        .wdtwprotect
-        .write(|w| unsafe { w.bits(WDT_WKEY_VALUE) });
-    timg1
-        .wdtwprotect
-        .write(|w| unsafe { w.bits(WDT_WKEY_VALUE) });
-
-    timg0.wdtconfig0.write(|w| unsafe { w.bits(0x0) });
-    timg1.wdtconfig0.write(|w| unsafe { w.bits(0x0) });
 }
 
 /// Basic panic handler - just loops
