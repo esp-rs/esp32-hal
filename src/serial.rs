@@ -10,18 +10,13 @@
 //! - Add all extra features esp32 supports (eg rs485, etc. etc.)
 //! - Free APB lock when TX is idle (and no RX used)
 
-use core::convert::Infallible;
-use core::marker::PhantomData;
-use core::ops::Deref;
-
-use crate::gpio::{InputSignal, OutputSignal};
-use crate::target;
-use crate::target::{uart, UART0, UART1, UART2};
-
-use crate::prelude::*;
-use embedded_hal::serial;
+use core::{convert::Infallible, marker::PhantomData};
 
 use crate::gpio::{InputPin, OutputPin};
+use crate::prelude::*;
+use crate::target;
+
+use embedded_hal::serial;
 
 const UART_FIFO_SIZE: u8 = 128;
 
@@ -152,6 +147,8 @@ pub struct Pins<
     pub cts: Option<CTS>,
     pub rts: Option<RTS>,
 }
+
+use private::Instance;
 
 /// Serial abstraction
 ///
@@ -506,96 +503,105 @@ where
     }
 }
 
-pub trait Instance: Deref<Target = uart::RegisterBlock> {
-    fn ptr() -> *const uart::RegisterBlock;
-    /// Enable peripheral
-    fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self;
-    /// Disable peripheral
-    fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self;
-    /// Reset peripheral
-    fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self;
+mod private {
 
-    /// Initialize pins
-    fn init_pins<TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>(
-        &mut self,
-        pins: &mut Pins<TX, RX, CTS, RTS>,
-    ) -> &mut Self;
-}
+    use super::Pins;
+    use crate::gpio::{InputPin, InputSignal, OutputPin, OutputSignal};
+    use crate::prelude::*;
+    use crate::target::{self, uart, UART0, UART1, UART2};
+    use core::ops::Deref;
 
-static UART_MEM_LOCK: CriticalSectionSpinLockMutex<()> = CriticalSectionSpinLockMutex::new(());
+    pub trait Instance: Deref<Target = uart::RegisterBlock> {
+        fn ptr() -> *const uart::RegisterBlock;
+        /// Enable peripheral
+        fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+        /// Disable peripheral
+        fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+        /// Reset peripheral
+        fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self;
 
-macro_rules! halUart {
-    ($(
-        $UARTX:ident: ($uartX:ident, $txd:ident, $rxd:ident, $cts:ident, $rts:ident),
-    )+) => {
-        $(
-            impl Instance for $UARTX {
-                fn ptr() -> *const uart::RegisterBlock {
-                    $UARTX::ptr()
-                }
-
-                fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self {
-                    dport.perip_rst_en.modify(|_, w| w.$uartX().set_bit());
-                    dport.perip_rst_en.modify(|_, w| w.$uartX().clear_bit());
-                    self
-                }
-
-                fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self {
-                    dport.perip_clk_en.modify(|_, w| w.uart_mem().set_bit());
-                    dport.perip_clk_en.modify(|_, w| w.$uartX().set_bit());
-                    dport.perip_rst_en.modify(|_, w| w.$uartX().clear_bit());
-                    self
-                }
-
-                fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self {
-                    dport.perip_clk_en.modify(|_, w| w.$uartX().clear_bit());
-                    dport.perip_rst_en.modify(|_, w| w.$uartX().set_bit());
-
-                    (&UART_MEM_LOCK).lock(|_| {
-                        if dport.perip_clk_en.read().uart0().bit_is_clear()
-                            && dport.perip_clk_en.read().uart1().bit_is_clear()
-                            && dport.perip_clk_en.read().uart2().bit_is_clear()
-                        {
-                            dport.perip_clk_en.modify(|_, w| w.uart_mem().clear_bit());
-                        }
-                    });
-                    self
-
-                }
-
-                fn init_pins<TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>(
-                    &mut self, pins: &mut Pins<TX,RX,CTS,RTS>
-                ) -> &mut Self {
-                    pins
-                        .tx
-                        .set_to_push_pull_output()
-                        .connect_peripheral_to_output(OutputSignal::$txd);
-
-                    pins
-                        .rx
-                        .set_to_input()
-                        .connect_input_to_peripheral(InputSignal::$rxd);
-
-                    if let Some(cts) = pins.cts.as_mut() {
-                        cts
-                        .set_to_input()
-                        .connect_input_to_peripheral(InputSignal::$cts);
-                    }
-
-                    if let Some(rts) = pins.rts.as_mut() {
-                        rts
-                        .set_to_push_pull_output()
-                        .connect_peripheral_to_output(OutputSignal::$rts);
-                    }
-                    self
-                }
-            }
-        )+
+        /// Initialize pins
+        fn init_pins<TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>(
+            &mut self,
+            pins: &mut Pins<TX, RX, CTS, RTS>,
+        ) -> &mut Self;
     }
-}
 
-halUart! {
-    UART0: (uart0, U0TXD, U0RXD, U0CTS, U0RTS),
-    UART1: (uart1, U1TXD, U1RXD, U1CTS, U1RTS),
-    UART2: (uart2, U2TXD, U2RXD, U2CTS, U2RTS),
+    static UART_MEM_LOCK: CriticalSectionSpinLockMutex<()> = CriticalSectionSpinLockMutex::new(());
+
+    macro_rules! halUart {
+        ($(
+            $UARTX:ident: ($uartX:ident, $txd:ident, $rxd:ident, $cts:ident, $rts:ident),
+        )+) => {
+            $(
+                impl Instance for $UARTX {
+                    fn ptr() -> *const uart::RegisterBlock {
+                        $UARTX::ptr()
+                    }
+
+                    fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self {
+                        dport.perip_rst_en.modify(|_, w| w.$uartX().set_bit());
+                        dport.perip_rst_en.modify(|_, w| w.$uartX().clear_bit());
+                        self
+                    }
+
+                    fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self {
+                        dport.perip_clk_en.modify(|_, w| w.uart_mem().set_bit());
+                        dport.perip_clk_en.modify(|_, w| w.$uartX().set_bit());
+                        dport.perip_rst_en.modify(|_, w| w.$uartX().clear_bit());
+                        self
+                    }
+
+                    fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self {
+                        dport.perip_clk_en.modify(|_, w| w.$uartX().clear_bit());
+                        dport.perip_rst_en.modify(|_, w| w.$uartX().set_bit());
+
+                        (&UART_MEM_LOCK).lock(|_| {
+                            if dport.perip_clk_en.read().uart0().bit_is_clear()
+                                && dport.perip_clk_en.read().uart1().bit_is_clear()
+                                && dport.perip_clk_en.read().uart2().bit_is_clear()
+                            {
+                                dport.perip_clk_en.modify(|_, w| w.uart_mem().clear_bit());
+                            }
+                        });
+                        self
+
+                    }
+
+                    fn init_pins<TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>(
+                        &mut self, pins: &mut Pins<TX,RX,CTS,RTS>
+                    ) -> &mut Self {
+                        pins
+                            .tx
+                            .set_to_push_pull_output()
+                            .connect_peripheral_to_output(OutputSignal::$txd);
+
+                        pins
+                            .rx
+                            .set_to_input()
+                            .connect_input_to_peripheral(InputSignal::$rxd);
+
+                        if let Some(cts) = pins.cts.as_mut() {
+                            cts
+                            .set_to_input()
+                            .connect_input_to_peripheral(InputSignal::$cts);
+                        }
+
+                        if let Some(rts) = pins.rts.as_mut() {
+                            rts
+                            .set_to_push_pull_output()
+                            .connect_peripheral_to_output(OutputSignal::$rts);
+                        }
+                        self
+                    }
+                }
+            )+
+        }
+    }
+
+    halUart! {
+        UART0: (uart0, U0TXD, U0RXD, U0CTS, U0RTS),
+        UART1: (uart1, U1TXD, U1RXD, U1CTS, U1RTS),
+        UART2: (uart2, U2TXD, U2RXD, U2CTS, U2RTS),
+    }
 }
