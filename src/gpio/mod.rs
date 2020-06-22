@@ -133,6 +133,9 @@ pub trait OutputPin: Pin {
     ) -> &mut Self;
 }
 
+/// Unknown mode (type state)
+pub struct Unknown {}
+
 /// Input mode (type state)
 pub struct Input<MODE> {
     _mode: PhantomData<MODE>,
@@ -652,8 +655,7 @@ macro_rules! impl_output_wrap {
 }
 
 macro_rules! gpio {
-    ( $($pxi:ident: ($pname:ident, $bank:ident, $pin_num:literal, $iomux:ident,
-            $type:ident, $default_mode:ty),
+    ( $($pxi:ident: ($pname:ident, $bank:ident, $pin_num:literal, $iomux:ident, $type:ident),
         $(
             ( $( $af_input_signal:ident: $af_input:ident ),* ),
             $(
@@ -678,7 +680,7 @@ macro_rules! gpio {
         pub struct Parts {
             $(
                 /// Pin
-                pub $pname: $pxi<$default_mode>,
+                pub $pname: $pxi<Unknown>,
             )+
         }
 
@@ -702,94 +704,94 @@ macro_rules! gpio {
 // TODO these pins have a reset mode of 0 (apart from Gpio27),
 // input disable, does that mean they are actually in output mode on reset?
 gpio! {
-    Gpio0:  (gpio0,  Bank0, 0,  gpio0, IO, Input<PullUp>),
+    Gpio0:  (gpio0,  Bank0, 0,  gpio0, IO),
         (EMAC_TX_CLK: Function6),
         (CLK_OUT1: Function2),
-    Gpio1:  (gpio1,  Bank0, 1,  u0txd, IO, Input<PullUp>),
+    Gpio1:  (gpio1,  Bank0, 1,  u0txd, IO),
         (EMAC_RXD2: Function6),
         (U0TXD: Function1, CLK_OUT3: Function2),
-    Gpio2:  (gpio2,  Bank0, 2,  gpio2, IO, Input<PullDown>),
+    Gpio2:  (gpio2,  Bank0, 2,  gpio2, IO),
         (HSPIWP: Function2, HS2_DATA0: Function4, SD_DATA0: Function5),
         (HS2_DATA0: Function4, SD_DATA0: Function5),
-    Gpio3:  (gpio3,  Bank0, 3,  u0rxd, IO, Input<PullUp>),
+    Gpio3:  (gpio3,  Bank0, 3,  u0rxd, IO),
         (U0RXD: Function1),
         (CLK_OUT2: Function2),
-    Gpio4:  (gpio4,  Bank0, 4,  gpio4, IO, Input<PullDown>),
+    Gpio4:  (gpio4,  Bank0, 4,  gpio4, IO),
         (HSPIHD: Function2, HS2_DATA1: Function4, SD_DATA1: Function5, EMAC_TX_ER: Function6),
         (HS2_DATA1: Function4, SD_DATA1: Function5),
-    Gpio5:  (gpio5,  Bank0, 5,  gpio5, IO, Input<PullUp>),
+    Gpio5:  (gpio5,  Bank0, 5,  gpio5, IO),
         (VSPICS0: Function2, HS1_DATA6: Function4, EMAC_RX_CLK: Function6),
         (HS1_DATA6: Function4),
-    Gpio6:  (gpio6,  Bank0, 6,  sd_clk, IO, Input<PullUp>),
+    Gpio6:  (gpio6,  Bank0, 6,  sd_clk, IO),
         (U1CTS: Function5),
         (SD_CLK: Function1, SPICLK: Function2, HS1_CLK: Function4),
-    Gpio7:  (gpio7,  Bank0, 7,  sd_data0, IO, Input<PullUp>),
+    Gpio7:  (gpio7,  Bank0, 7,  sd_data0, IO),
         (SD_DATA0: Function1, SPIQ: Function2, HS1_DATA0: Function4),
         (SD_DATA0: Function1, SPIQ: Function2, HS1_DATA0: Function4, U2RTS: Function5),
-    Gpio8:  (gpio8,  Bank0, 8,  sd_data1, IO, Input<PullUp>),
+    Gpio8:  (gpio8,  Bank0, 8,  sd_data1, IO),
         (SD_DATA1: Function1, SPID: Function2, HS1_DATA1: Function4, U2CTS: Function5),
         (SD_DATA1: Function1, SPID: Function2, HS1_DATA1: Function4),
-    Gpio9:  (gpio9,  Bank0, 9,  sd_data2, IO, Input<PullUp>),
+    Gpio9:  (gpio9,  Bank0, 9,  sd_data2, IO),
         (SD_DATA2: Function1, SPIHD: Function2, HS1_DATA2: Function4, U1RXD: Function5),
         (SD_DATA2: Function1, SPIHD: Function2, HS1_DATA2: Function4),
-    Gpio10: (gpio10, Bank0, 10, sd_data3, IO, Input<PullUp>),
+    Gpio10: (gpio10, Bank0, 10, sd_data3, IO),
         (SD_DATA3: Function1, SPIWP: Function2, HS1_DATA3: Function4),
         (SD_DATA3: Function1, SPIWP: Function2, HS1_DATA3: Function4, U1TXD: Function5),
-    Gpio11: (gpio11, Bank0, 11, sd_cmd, IO, Input<PullUp>),
+    Gpio11: (gpio11, Bank0, 11, sd_cmd, IO),
         (SPICS0: Function2),
         (SD_CMD: Function1, SPICS0: Function2, HS1_CMD: Function4, U1RTS: Function5),
-    Gpio12: (gpio12, Bank0, 12, mtdi, IO, Input<PullDown>),
+    Gpio12: (gpio12, Bank0, 12, mtdi, IO),
         (MTDI: Function1, HSPIQ: Function2, HS2_DATA2: Function4, SD_DATA2: Function5),
         (HSPIQ: Function2, HS2_DATA2: Function4, SD_DATA2: Function5, EMAC_TXD3: Function6),
-    Gpio13: (gpio13, Bank0, 13, mtck, IO, Input<Floating>),
+    Gpio13: (gpio13, Bank0, 13, mtck, IO),
         (MTCK: Function1, HSPID: Function2, HS2_DATA3: Function4, SD_DATA3: Function5),
         (HSPID: Function2, HS2_DATA3: Function4, SD_DATA3: Function5, EMAC_RX_ER: Function6),
-    Gpio14: (gpio14, Bank0, 14, mtms, IO, Input<Floating>),
+    Gpio14: (gpio14, Bank0, 14, mtms, IO),
         (MTMS: Function1, HSPICLK: Function2),
         (HSPICLK: Function2, HS2_CLK: Function4, SD_CLK: Function5, EMAC_TXD2: Function6),
-    Gpio15: (gpio15, Bank0, 15, mtdo, IO, Input<PullUp>),
+    Gpio15: (gpio15, Bank0, 15, mtdo, IO),
         (HSPICS0: Function2, EMAC_RXD3: Function6),
         (MTDO: Function1, HSPICS0: Function2, HS2_CMD: Function4, SD_CMD: Function5),
-    Gpio16: (gpio16, Bank0, 16, gpio16, IO, Input<Floating>),
+    Gpio16: (gpio16, Bank0, 16, gpio16, IO),
         (HS1_DATA4: Function4, U2RXD: Function5),
         (HS1_DATA4: Function4, EMAC_CLK_OUT: Function6),
-    Gpio17: (gpio17, Bank0, 17, gpio17, IO, Input<Floating>),
+    Gpio17: (gpio17, Bank0, 17, gpio17, IO),
         (HS1_DATA5: Function4),
         (HS1_DATA5: Function4, U2TXD: Function5, EMAC_CLK_180: Function6),
-    Gpio18: (gpio18, Bank0, 18, gpio18, IO, Input<Floating>),
+    Gpio18: (gpio18, Bank0, 18, gpio18, IO),
         (VSPICLK: Function2, HS1_DATA7: Function4),
         (VSPICLK: Function2, HS1_DATA7: Function4),
-    Gpio19: (gpio19, Bank0, 19, gpio19, IO, Input<Floating>),
+    Gpio19: (gpio19, Bank0, 19, gpio19, IO),
         (VSPIQ: Function2, U0CTS: Function4),
         (VSPIQ: Function2, EMAC_TXD0: Function6),
-    Gpio20: (gpio20, Bank0, 20, gpio20, IO, Input<Floating>), // pin logic present, but no external pad
-    Gpio21: (gpio21, Bank0, 21, gpio21, IO, Input<Floating>),
+    Gpio20: (gpio20, Bank0, 20, gpio20, IO), // pin logic present, but no external pad
+    Gpio21: (gpio21, Bank0, 21, gpio21, IO),
         (VSPIHD: Function2),
         (VSPIHD: Function2, EMAC_TX_EN: Function6),
-    Gpio22: (gpio22, Bank0, 22, gpio22, IO, Input<Floating>),
+    Gpio22: (gpio22, Bank0, 22, gpio22, IO),
         (VSPIWP: Function2),
         (VSPIWP: Function2, U0RTS: Function4, EMAC_TXD1: Function6),
-    Gpio23: (gpio23, Bank0, 23, gpio23, IO, Input<Floating>),
+    Gpio23: (gpio23, Bank0, 23, gpio23, IO),
         (VSPID: Function2),
         (VSPID: Function2, HS1_STROBE: Function4),
-    Gpio25: (gpio25, Bank0, 25, gpio25, IO, Input<Floating>),
+    Gpio25: (gpio25, Bank0, 25, gpio25, IO),
         (EMAC_RXD0: Function6),
         (),
-    Gpio26: (gpio26, Bank0, 26, gpio26, IO, Input<Floating>),
+    Gpio26: (gpio26, Bank0, 26, gpio26, IO),
         (EMAC_RXD1: Function6),
         (),
-    Gpio27: (gpio27, Bank0, 27, gpio27, IO, Input<Floating>),
+    Gpio27: (gpio27, Bank0, 27, gpio27, IO),
         (EMAC_RX_DV: Function6),
         (),
 
-    Gpio32: (gpio32, Bank1, 32, gpio32, IO, Input<Floating>),
-    Gpio33: (gpio33, Bank1, 33, gpio33, IO, Input<Floating>),
-    Gpio34: (gpio34, Bank1, 34, gpio34, Input, Input<Floating>),
-    Gpio35: (gpio35, Bank1, 35, gpio35, Input, Input<Floating>),
-    Gpio36: (gpio36, Bank1, 36, gpio36, Input, Input<Floating>),
-    Gpio37: (gpio37, Bank1, 37, gpio37, Input, Input<Floating>),
-    Gpio38: (gpio38, Bank1, 38, gpio38, Input, Input<Floating>),
-    Gpio39: (gpio39, Bank1, 39, gpio39, Input, Input<Floating>),
+    Gpio32: (gpio32, Bank1, 32, gpio32, IO),
+    Gpio33: (gpio33, Bank1, 33, gpio33, IO),
+    Gpio34: (gpio34, Bank1, 34, gpio34, Input),
+    Gpio35: (gpio35, Bank1, 35, gpio35, Input),
+    Gpio36: (gpio36, Bank1, 36, gpio36, Input),
+    Gpio37: (gpio37, Bank1, 37, gpio37, Input),
+    Gpio38: (gpio38, Bank1, 38, gpio38, Input),
+    Gpio39: (gpio39, Bank1, 39, gpio39, Input),
 }
 
 macro_rules! impl_no_analog {
