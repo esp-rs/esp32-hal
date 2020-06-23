@@ -1270,7 +1270,7 @@ impl ClockControl {
 
     /// Get RTC tick count since boot
     ///
-    /// This function can usually take up to one RTC clock cycles (~300us).
+    /// This function can usually take up to one RTC clock cycle (~300us).
     ///
     /// In exceptional circumstances it could take up to two RTC clock cycles. This can happen
     /// when an interrupt routine or the other core calls this function exactly in between
