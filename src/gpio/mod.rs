@@ -1,5 +1,10 @@
 //! GPIO and pin configuration
 //!
+//! # TODO:
+//! - Address errata 3.6: pull up/down can only be controlled via RT_GPIO
+//! - Maybe address errata 3.14: missing edge triggered GPIO interrupts
+//! - Implement interrupt functionality
+//! - Extend RTC functionality
 
 use {
     crate::target::{GPIO, IO_MUX, RTCIO},

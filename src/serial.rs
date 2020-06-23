@@ -26,6 +26,7 @@
 //! # TODO
 //! - Add all extra features esp32 supports (eg rs485, etc. etc.)
 //! - Free APB lock when TX is idle (and no RX used)
+//! - Address errata 3.17: UART fifo_cnt is inconsistent with FIFO pointer
 
 use core::{convert::Infallible, marker::PhantomData};
 
