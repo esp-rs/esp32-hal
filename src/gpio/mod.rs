@@ -15,9 +15,9 @@ use {
 mod mux;
 pub use mux::*;
 
-/// Extension trait to split a GPIO peripheral in independent pins and registers
+/// Extension trait to split a GPIO peripheral into independent pins and registers
 pub trait GpioExt {
-    /// The to split the GPIO into
+    /// The type to split the GPIO into
     type Parts;
 
     /// Splits the GPIO block into independent pins and registers
@@ -52,7 +52,6 @@ pub trait InputPin: Pin {
     /// This is a wrapper around [connect_input_to_peripheral_with_options][
     /// InputPin::connect_input_to_peripheral_with_options], which sets
     /// all the options to false.
-
     fn connect_input_to_peripheral(&mut self, signal: InputSignal) -> &mut Self;
 
     /// Connect input to peripheral
@@ -455,11 +454,9 @@ macro_rules! impl_output {
                 force_via_gpio_mux: bool,
             ) -> &mut Self {
 
-                let af = if force_via_gpio_mux
-                {
+                let af = if force_via_gpio_mux {
                     AlternateFunction::Function3
-                }
-                else {
+                } else {
                     match signal {
                         $( $(
                             OutputSignal::$af_signal => AlternateFunction::$af,
@@ -468,13 +465,13 @@ macro_rules! impl_output {
                     }
                 };
 
-                if af== AlternateFunction::Function3 && signal as usize > 256 {
+                if af == AlternateFunction::Function3 && signal as usize > 256 {
                     panic!("Cannot connect this peripheral to GPIO");
                 }
 
                 self.set_alternate_function(af);
 
-                let clipped_signal= if (signal as usize) <= 256 {signal as u16} else {256};
+                let clipped_signal = if signal as usize <= 256 { signal as u16 } else { 256 };
 
                 unsafe { &*GPIO::ptr() }.func_out_sel_cfg[$pin_num].modify(|_, w| unsafe {
                     w
