@@ -860,7 +860,16 @@ macro_rules! impl_analog {
 
                 #[inline(always)]
                 fn disable_analog(&self) {
-                    unsafe{ &*RTCIO::ptr() }.$pin_reg.modify(|_,w| w.$mux_sel().clear_bit());
+                    let rtcio = unsafe{ &*RTCIO::ptr() };
+
+                    rtcio.$pin_reg.modify(|_,w| w.$mux_sel().clear_bit());
+
+                    $(
+                        rtcio.$pin_reg.modify(|_,w| {
+                            w.$rue().clear_bit().$rde().clear_bit()
+                        });
+                    )?
+
                 }
             }
 
