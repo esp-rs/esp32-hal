@@ -9,7 +9,7 @@ use esp32_hal::prelude::*;
 use esp32_hal::clock_control::{sleep, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
-use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::serial::{config::Config, Serial};
 use esp32_hal::target;
 
 use xtensa_lx6::get_program_counter;
@@ -41,10 +41,16 @@ fn main() -> ! {
 
     watchdog.start(15.s());
 
+    let gpios = dp.GPIO.split();
     // setup serial controller
-    let mut uart0 = Serial::uart0(
+    let mut uart0: Serial<_, _, _> = Serial::new(
         dp.UART0,
-        (NoTx, NoRx),
+        esp32_hal::serial::Pins {
+            tx: gpios.gpio1,
+            rx: gpios.gpio3,
+            cts: None,
+            rts: None,
+        },
         Config::default(),
         clock_control_config,
         &mut dport,
@@ -66,7 +72,7 @@ fn main() -> ! {
     }
 }
 
-fn attr_none_fn(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)>) {
+fn attr_none_fn(uart: &mut dyn core::fmt::Write) {
     writeln!(
         uart,
         "{:<40}: {:08x?}",
@@ -77,7 +83,7 @@ fn attr_none_fn(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)
 }
 
 #[ram]
-fn attr_ram_fn(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)>) {
+fn attr_ram_fn(uart: &mut dyn core::fmt::Write) {
     writeln!(
         uart,
         "{:<40}: {:08x?}",
@@ -88,7 +94,7 @@ fn attr_ram_fn(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)>
 }
 
 #[ram(rtc_slow)]
-fn attr_ram_fn_rtc_slow(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)>) {
+fn attr_ram_fn_rtc_slow(uart: &mut dyn core::fmt::Write) {
     writeln!(
         uart,
         "{:<40}: {:08x?}",
@@ -99,7 +105,7 @@ fn attr_ram_fn_rtc_slow(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoT
 }
 
 #[ram(rtc_fast)]
-fn attr_ram_fn_rtc_fast(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)>) {
+fn attr_ram_fn_rtc_fast(uart: &mut dyn core::fmt::Write) {
     writeln!(
         uart,
         "{:<40}: {:08x?}",
@@ -170,7 +176,7 @@ macro_rules! print_info {
     };
 }
 
-fn ram_tests(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)>) {
+fn ram_tests(uart: &mut dyn core::fmt::Write) {
     writeln!(uart).unwrap();
 
     attr_none_fn(uart);
@@ -207,10 +213,10 @@ fn ram_tests(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)>) 
 }
 
 #[cfg(not(feature = "external_ram"))]
-fn external_ram(_uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)>) {}
+fn external_ram(_uart: &mut dyn core::fmt::Write) {}
 
 #[cfg(feature = "external_ram")]
-fn external_ram(uart: &mut esp32_hal::serial::Serial<target::UART0, (NoTx, NoRx)>) {
+fn external_ram(uart: &mut core::fmt::Write) {
     unsafe {
         print_info!(uart, ATTR_RAM_STATIC_EXTERNAL);
         print_info!(uart, ATTR_RAM_STATIC_EXTERNAL_BSS);

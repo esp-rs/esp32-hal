@@ -26,9 +26,9 @@ impl DAC<DAC1> {
     fn set_power(self) -> Self {
         let rtcio = unsafe { &*RTCIO::ptr() };
 
-        rtcio.rtc_io_pad_dac1.modify(|_, w| {
-            w.rtc_io_pdac1_dac_xpd_force().set_bit();
-            w.rtc_io_pdac1_xpd_dac().set_bit()
+        rtcio.pad_dac1.modify(|_, w| {
+            w.pdac1_dac_xpd_force().set_bit();
+            w.pdac1_xpd_dac().set_bit()
         });
 
         self
@@ -42,8 +42,8 @@ impl DAC<DAC1> {
             .sar_dac_ctrl2
             .modify(|_, w| w.dac_cw_en1().clear_bit());
         rtcio
-            .rtc_io_pad_dac1
-            .modify(|_, w| unsafe { w.rtc_io_pdac1_dac().bits(value) });
+            .pad_dac1
+            .modify(|_, w| unsafe { w.pdac1_dac().bits(value) });
     }
 }
 
@@ -57,9 +57,9 @@ impl DAC<DAC2> {
     fn set_power(self) -> Self {
         let rtcio = unsafe { &*RTCIO::ptr() };
 
-        rtcio.rtc_io_pad_dac2.modify(|_, w| {
-            w.rtc_io_pdac2_dac_xpd_force().set_bit();
-            w.rtc_io_pdac2_xpd_dac().set_bit()
+        rtcio.pad_dac2.modify(|_, w| {
+            w.pdac2_dac_xpd_force().set_bit();
+            w.pdac2_xpd_dac().set_bit()
         });
 
         self
@@ -73,7 +73,7 @@ impl DAC<DAC2> {
             .sar_dac_ctrl2
             .modify(|_, w| w.dac_cw_en2().clear_bit());
         rtcio
-            .rtc_io_pad_dac2
-            .modify(|_, w| unsafe { w.rtc_io_pdac2_dac().bits(value) });
+            .pad_dac2
+            .modify(|_, w| unsafe { w.pdac2_dac().bits(value) });
     }
 }

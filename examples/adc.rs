@@ -10,7 +10,7 @@ use esp32_hal::analog::adc::ADC;
 use esp32_hal::analog::config::{Adc1Config, Adc2Config, Attenuation};
 use esp32_hal::clock_control::sleep;
 use esp32_hal::dport::Split;
-use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::serial::{config::Config, Serial};
 use esp32_hal::target;
 
 #[no_mangle]
@@ -38,10 +38,16 @@ fn main() -> ! {
     let (clkcntrl_config, mut watchdog) = clkcntrl.freeze().unwrap();
     watchdog.disable();
 
-    /* Setup serial connection */
-    let serial = Serial::uart0(
+    let gpios = dp.GPIO.split();
+
+    let serial: Serial<_, _, _> = Serial::new(
         dp.UART0,
-        (NoTx, NoRx),
+        esp32_hal::serial::Pins {
+            tx: gpios.gpio1,
+            rx: gpios.gpio3,
+            cts: None,
+            rts: None,
+        },
         Config::default(),
         clkcntrl_config,
         &mut dport,
@@ -51,7 +57,6 @@ fn main() -> ! {
     let (mut tx, _rx) = serial.split();
 
     /* Set ADC pins to analog mode */
-    let gpios = dp.GPIO.split();
     let mut pin36 = gpios.gpio36.into_analog();
     let mut pin25 = gpios.gpio25.into_analog();
 
