@@ -1,7 +1,6 @@
 //! GPIO and pin configuration
 //!
 //! # TODO:
-//! - Address errata 3.6: pull up/down can only be controlled via RT_GPIO
 //! - Maybe address errata 3.14: missing edge triggered GPIO interrupts
 //! - Implement interrupt functionality
 //! - Extend RTC functionality
@@ -67,8 +66,16 @@ pub trait InputPin: Pin {
     ) -> &mut Self;
 }
 
+pub trait Pull {
+    /// Enable/Disable internal pull up resistor
+    fn internal_pull_up(&mut self, on: bool) -> &mut Self;
+
+    /// Enable/Disable internal pull down resistor
+    fn internal_pull_down(&mut self, on: bool) -> &mut Self;
+}
+
 /// Functions available on output pins
-pub trait OutputPin: Pin {
+pub trait OutputPin: Pin + Pull {
     /// Set pad to open drain output
     ///
     /// Disables input, pull up/down resistors and sleep mode.
@@ -94,12 +101,6 @@ pub trait OutputPin: Pin {
 
     /// Enable/Disable open drain
     fn enable_open_drain(&mut self, on: bool) -> &mut Self;
-
-    /// Enable/Disable internal pull up resistor
-    fn internal_pull_up(&mut self, on: bool) -> &mut Self;
-
-    /// Enable/Disable internal pull down resistor
-    fn internal_pull_down(&mut self, on: bool) -> &mut Self;
 
     /// Enable/disable the output while in sleep mode
     fn enable_output_in_sleep_mode(&mut self, on: bool) -> &mut Self;
@@ -353,6 +354,7 @@ macro_rules! impl_output {
         }
 
         impl<MODE> OutputPin for $pxi<MODE> {
+
             fn set_to_open_drain_output(&mut self) -> &mut Self {
                 self.init_output(AlternateFunction::Function3, true);
                 self
@@ -396,20 +398,6 @@ macro_rules! impl_output {
 
             fn enable_open_drain(&mut self, on: bool) -> &mut Self {
                 unsafe { &*GPIO::ptr() }.pin[$pin_num].modify(|_, w| w.pad_driver().bit(on));
-                self
-            }
-
-            fn internal_pull_up(&mut self, on: bool) -> &mut Self {
-                unsafe { &*IO_MUX::ptr() }
-                    .$iomux
-                    .modify(|_, w| w.fun_wpu().bit(on));
-                self
-            }
-
-            fn internal_pull_down(&mut self, on: bool) -> &mut Self {
-                unsafe { &*IO_MUX::ptr() }
-                    .$iomux
-                    .modify(|_, w| w.fun_wpd().bit(on));
                 self
             }
 
@@ -651,13 +639,47 @@ macro_rules! impl_output_wrap {
             ($pin_num, $pin_num % 32, $iomux, enable1_w1ts, enable1_w1tc, out1_w1ts, out1_w1tc)
             $( ,( $( $af_output_signal: $af_output ),* ) )? );
     };
-    ($pxi:ident, $pin_num:expr, $bank:ident, $iomux:ident, $TYPE:ident) => {
+    ($pxi:ident, $pin_num:expr, $bank:ident, $iomux:ident, Input) => {
         // Output not implemented for this pin
     };
 }
 
+macro_rules! impl_rtc_wrap {
+    ($pxi:ident, $pin_num:expr, $bank:ident, $iomux:ident, IO) => {
+        impl<MODE> Pull for $pxi<MODE> {
+            fn internal_pull_up(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.fun_wpu().bit(on));
+                self
+            }
+
+            fn internal_pull_down(&mut self, on: bool) -> &mut Self {
+                unsafe { &*IO_MUX::ptr() }
+                    .$iomux
+                    .modify(|_, w| w.fun_wpd().bit(on));
+                self
+            }
+        }
+
+        impl<MODE> $pxi<MODE> {
+            #[inline(always)]
+            fn disable_analog(&self) {
+                // No analog functionality on this pin, so nothing to do, function is implemented
+                // for convenience so it can be called on any GPIO pin
+            }
+        }
+    };
+    ($pxi:ident, $pin_num:expr, $bank:ident, $iomux:ident, IO, RTC) => {
+        // Pull up/down controlled via RTC mux (to address errata 3.6)
+    };
+    ($pxi:ident, $pin_num:expr, $bank:ident, $iomux:ident, Input, RTC) => {
+        // Output not implemented for this pin, so pull up/down not available
+    };
+}
+
 macro_rules! gpio {
-    ( $($pxi:ident: ($pname:ident, $bank:ident, $pin_num:literal, $iomux:ident, $type:ident),
+    ( $($pxi:ident: ($pname:ident, $bank:ident, $pin_num:literal, $iomux:ident, $type:ident $(, $rtc:ident)? ),
         $(
             ( $( $af_input_signal:ident: $af_input:ident ),* ),
             $(
@@ -698,7 +720,8 @@ macro_rules! gpio {
                 $( ,( $( $af_input_signal: $af_input ),* ) )? );
             impl_output_wrap!($pxi, $pin_num, $bank, $iomux, $type
                 $($( ,( $( $af_output_signal: $af_output ),* ) )? )? );
-        )+
+                impl_rtc_wrap!($pxi, $pin_num, $bank, $iomux, $type $(, $rtc)?);
+            )+
     };
 }
 
@@ -706,19 +729,19 @@ macro_rules! gpio {
 // TODO these pins have a reset mode of 0 (apart from Gpio27),
 // input disable, does that mean they are actually in output mode on reset?
 gpio! {
-    Gpio0:  (gpio0,  Bank0, 0,  gpio0, IO),
+    Gpio0:  (gpio0,  Bank0, 0,  gpio0, IO, RTC),
         (EMAC_TX_CLK: Function6),
         (CLK_OUT1: Function2),
     Gpio1:  (gpio1,  Bank0, 1,  u0txd, IO),
         (EMAC_RXD2: Function6),
         (U0TXD: Function1, CLK_OUT3: Function2),
-    Gpio2:  (gpio2,  Bank0, 2,  gpio2, IO),
+    Gpio2:  (gpio2,  Bank0, 2,  gpio2, IO, RTC),
         (HSPIWP: Function2, HS2_DATA0: Function4, SD_DATA0: Function5),
         (HS2_DATA0: Function4, SD_DATA0: Function5),
     Gpio3:  (gpio3,  Bank0, 3,  u0rxd, IO),
         (U0RXD: Function1),
         (CLK_OUT2: Function2),
-    Gpio4:  (gpio4,  Bank0, 4,  gpio4, IO),
+    Gpio4:  (gpio4,  Bank0, 4,  gpio4, IO, RTC),
         (HSPIHD: Function2, HS2_DATA1: Function4, SD_DATA1: Function5, EMAC_TX_ER: Function6),
         (HS2_DATA1: Function4, SD_DATA1: Function5),
     Gpio5:  (gpio5,  Bank0, 5,  gpio5, IO),
@@ -742,16 +765,16 @@ gpio! {
     Gpio11: (gpio11, Bank0, 11, sd_cmd, IO),
         (SPICS0: Function2),
         (SD_CMD: Function1, SPICS0: Function2, HS1_CMD: Function4, U1RTS: Function5),
-    Gpio12: (gpio12, Bank0, 12, mtdi, IO),
+    Gpio12: (gpio12, Bank0, 12, mtdi, IO, RTC),
         (MTDI: Function1, HSPIQ: Function2, HS2_DATA2: Function4, SD_DATA2: Function5),
         (HSPIQ: Function2, HS2_DATA2: Function4, SD_DATA2: Function5, EMAC_TXD3: Function6),
-    Gpio13: (gpio13, Bank0, 13, mtck, IO),
+    Gpio13: (gpio13, Bank0, 13, mtck, IO, RTC),
         (MTCK: Function1, HSPID: Function2, HS2_DATA3: Function4, SD_DATA3: Function5),
         (HSPID: Function2, HS2_DATA3: Function4, SD_DATA3: Function5, EMAC_RX_ER: Function6),
-    Gpio14: (gpio14, Bank0, 14, mtms, IO),
+    Gpio14: (gpio14, Bank0, 14, mtms, IO, RTC),
         (MTMS: Function1, HSPICLK: Function2),
         (HSPICLK: Function2, HS2_CLK: Function4, SD_CLK: Function5, EMAC_TXD2: Function6),
-    Gpio15: (gpio15, Bank0, 15, mtdo, IO),
+    Gpio15: (gpio15, Bank0, 15, mtdo, IO, RTC),
         (HSPICS0: Function2, EMAC_RXD3: Function6),
         (MTDO: Function1, HSPICS0: Function2, HS2_CMD: Function4, SD_CMD: Function5),
     Gpio16: (gpio16, Bank0, 16, gpio16, IO),
@@ -776,39 +799,24 @@ gpio! {
     Gpio23: (gpio23, Bank0, 23, gpio23, IO),
         (VSPID: Function2),
         (VSPID: Function2, HS1_STROBE: Function4),
-    Gpio25: (gpio25, Bank0, 25, gpio25, IO),
+    Gpio25: (gpio25, Bank0, 25, gpio25, IO, RTC),
         (EMAC_RXD0: Function6),
         (),
-    Gpio26: (gpio26, Bank0, 26, gpio26, IO),
+    Gpio26: (gpio26, Bank0, 26, gpio26, IO, RTC),
         (EMAC_RXD1: Function6),
         (),
-    Gpio27: (gpio27, Bank0, 27, gpio27, IO),
+    Gpio27: (gpio27, Bank0, 27, gpio27, IO, RTC),
         (EMAC_RX_DV: Function6),
         (),
 
-    Gpio32: (gpio32, Bank1, 32, gpio32, IO),
-    Gpio33: (gpio33, Bank1, 33, gpio33, IO),
-    Gpio34: (gpio34, Bank1, 34, gpio34, Input),
-    Gpio35: (gpio35, Bank1, 35, gpio35, Input),
-    Gpio36: (gpio36, Bank1, 36, gpio36, Input),
-    Gpio37: (gpio37, Bank1, 37, gpio37, Input),
-    Gpio38: (gpio38, Bank1, 38, gpio38, Input),
-    Gpio39: (gpio39, Bank1, 39, gpio39, Input),
-}
-
-macro_rules! impl_no_analog {
-    ([
-        $($pxi:ident),+
-    ]) => {
-        $(
-            impl<MODE> $pxi<MODE> {
-                #[inline(always)]
-                fn disable_analog(&self) {
-                    /* No analog functionality on this pin, so nothing to do */
-                }
-            }
-        )+
-    };
+    Gpio32: (gpio32, Bank1, 32, gpio32, IO, RTC),
+    Gpio33: (gpio33, Bank1, 33, gpio33, IO, RTC),
+    Gpio34: (gpio34, Bank1, 34, gpio34, Input, RTC),
+    Gpio35: (gpio35, Bank1, 35, gpio35, Input, RTC),
+    Gpio36: (gpio36, Bank1, 36, gpio36, Input, RTC),
+    Gpio37: (gpio37, Bank1, 37, gpio37, Input, RTC),
+    Gpio38: (gpio38, Bank1, 38, gpio38, Input, RTC),
+    Gpio39: (gpio39, Bank1, 39, gpio39, Input, RTC),
 }
 
 macro_rules! impl_analog {
@@ -843,8 +851,7 @@ macro_rules! impl_analog {
                     // Disable pull-up and pull-down resistors on the pin, if it has them
                     $(
                         rtcio.$pin_reg.modify(|_,w| {
-                            w.$rue().clear_bit();
-                            w.$rde().clear_bit()
+                            w.$rue().clear_bit().$rde().clear_bit()
                         });
                     )?
 
@@ -853,18 +860,33 @@ macro_rules! impl_analog {
 
                 #[inline(always)]
                 fn disable_analog(&self) {
-                    let rtcio = unsafe{ &*RTCIO::ptr() };
-                    rtcio.$pin_reg.modify(|_,w| w.$mux_sel().clear_bit());
+                    unsafe{ &*RTCIO::ptr() }.$pin_reg.modify(|_,w| w.$mux_sel().clear_bit());
                 }
             }
+
+            $(
+                // addresses errata 3.6: pull up/down on pins with RTC can be only controlled
+                // via RTC_MUX
+                impl<MODE> Pull for $pxi<MODE> {
+                    fn internal_pull_up(&mut self, on: bool) -> &mut Self {
+                        unsafe{ &*RTCIO::ptr() }.$pin_reg.modify(|_,w| {
+                            w.$rue().bit(on)
+                        });
+                        self
+                    }
+
+                    fn internal_pull_down(&mut self, on: bool) -> &mut Self {
+                        unsafe{ &*RTCIO::ptr() }.$pin_reg.modify(|_,w| {
+                            w.$rde().bit(on)
+                        });
+                        self
+                    }
+                }
+            )?
+
         )+
     }
 }
-
-impl_no_analog! {[
-    Gpio1, Gpio3, Gpio5, Gpio6, Gpio7, Gpio8, Gpio9, Gpio10, Gpio11,
-    Gpio16, Gpio17, Gpio18, Gpio19, Gpio20, Gpio21, Gpio22, Gpio23
-]}
 
 impl_analog! {[
     Gpio36: (0, sensor_pads, sense1_mux_sel, sense1_fun_sel, sense1_fun_ie,),
