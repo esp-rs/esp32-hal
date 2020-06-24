@@ -27,12 +27,11 @@ impl super::ClockControl {
                     .options0
                     .modify(|_, w| w.sw_stall_appcpu_c0().bits(0x02));
             }
-        };
+        }
     }
 
     pub fn unpark_core(&mut self, core: Core) {
         match core {
-            //TODO: check if necessary to set to 0 like in cpu_start.c?
             PRO => {
                 self.rtc_control
                     .sw_cpu_stall
@@ -49,7 +48,7 @@ impl super::ClockControl {
                     .options0
                     .modify(|_, w| unsafe { w.sw_stall_appcpu_c0().bits(0) });
             }
-        };
+        }
     }
 
     fn flush_cache(&mut self, core: Core) {
@@ -119,54 +118,60 @@ impl super::ClockControl {
             static mut _stack_end_cpu1: u32;
         }
 
+        // disables interrupts
+        xtensa_lx6::interrupt::set_mask(0);
+
+        // reset cycle compare registers
+        xtensa_lx6::timer::set_ccompare0(0);
+        xtensa_lx6::timer::set_ccompare1(0);
+        xtensa_lx6::timer::set_ccompare2(0);
+
         // set stack pointer to end of memory: no need to retain stack up to this point
         set_stack_pointer(&mut _stack_end_cpu1);
 
         START_CORE1_FUNCTION.unwrap()();
     }
 
-    pub fn start_core(&mut self, core: Core, f: fn() -> !) -> Result<(), Error> {
-        match core {
-            PRO => return Err(Error::CoreAlreadyRunning),
-            APP => {
-                if self
-                    .dport_control
-                    .appcpu_ctrl_b()
-                    .read()
-                    .appcpu_clkgate_en()
-                    .bit_is_set()
-                {
-                    return Err(Error::CoreAlreadyRunning);
-                }
-
-                self.flush_cache(core);
-                self.enable_cache(core);
-
-                unsafe {
-                    START_CORE1_FUNCTION = Some(f);
-                }
-
-                self.dport_control.appcpu_ctrl_d().write(|w| unsafe {
-                    w.appcpu_boot_addr()
-                        .bits(Self::start_core1_init as *const u32 as u32)
-                });
-
-                self.dport_control
-                    .appcpu_ctrl_b()
-                    .modify(|_, w| w.appcpu_clkgate_en().set_bit());
-                self.dport_control
-                    .appcpu_ctrl_c()
-                    .modify(|_, w| w.appcpu_runstall().clear_bit());
-                self.dport_control
-                    .appcpu_ctrl_a()
-                    .modify(|_, w| w.appcpu_resetting().set_bit());
-                self.dport_control
-                    .appcpu_ctrl_a()
-                    .modify(|_, w| w.appcpu_resetting().clear_bit());
-
-                self.unpark_core(core);
-            }
+    /// Start the APP (second) core
+    ///
+    /// The second core will start running with the function `entry`.
+    pub fn start_app_core(&mut self, entry: fn() -> !) -> Result<(), Error> {
+        if self
+            .dport_control
+            .appcpu_ctrl_b()
+            .read()
+            .appcpu_clkgate_en()
+            .bit_is_set()
+        {
+            return Err(Error::CoreAlreadyRunning);
         }
+
+        self.flush_cache(Core::APP);
+        self.enable_cache(Core::APP);
+
+        unsafe {
+            START_CORE1_FUNCTION = Some(entry);
+        }
+
+        self.dport_control.appcpu_ctrl_d().write(|w| unsafe {
+            w.appcpu_boot_addr()
+                .bits(Self::start_core1_init as *const u32 as u32)
+        });
+
+        self.dport_control
+            .appcpu_ctrl_b()
+            .modify(|_, w| w.appcpu_clkgate_en().set_bit());
+        self.dport_control
+            .appcpu_ctrl_c()
+            .modify(|_, w| w.appcpu_runstall().clear_bit());
+        self.dport_control
+            .appcpu_ctrl_a()
+            .modify(|_, w| w.appcpu_resetting().set_bit());
+        self.dport_control
+            .appcpu_ctrl_a()
+            .modify(|_, w| w.appcpu_resetting().clear_bit());
+
+        self.unpark_core(Core::APP);
 
         Ok(())
     }

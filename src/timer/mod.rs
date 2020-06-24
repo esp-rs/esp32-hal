@@ -148,7 +148,7 @@ impl<INST: TimerInst> Timer<TIMG1, INST> {
     }
 }
 
-static TIMER_MUTEX: spin::Mutex<()> = spin::Mutex::new(());
+static TIMER_MUTEX: CriticalSectionSpinLockMutex<()> = CriticalSectionSpinLockMutex::new(());
 
 macro_rules! timer {
     ($TIMX:ident, $INT_ENA:ident, $CONFIG:ident, $HI:ident, $LO: ident,
@@ -170,8 +170,7 @@ macro_rules! timer {
                     Event::TimeOutEdge => self.enable_edge_interrupt(true),
                 };
                 unsafe {
-                    xtensa_lx6::interrupt::free(|_| {
-                        TIMER_MUTEX.lock();
+                    (&TIMER_MUTEX).lock(|_| {
                         (*(self.timg))
                             .int_ena_timers
                             .modify(|_, w| w.$INT_ENA().set_bit());

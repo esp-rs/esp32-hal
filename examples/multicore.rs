@@ -12,12 +12,13 @@ use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
 use esp32_hal::target;
 
-use xtensa_lx6::{get_cycle_count, get_stack_pointer};
+use xtensa_lx6::{get_stack_pointer, timer::get_cycle_count};
 
 const BLINK_HZ: Hertz = Hertz(1);
 
 static GLOBAL_COUNT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-static TX: spin::Mutex<Option<esp32_hal::serial::Tx<target::UART0>>> = spin::Mutex::new(None);
+static TX: CriticalSectionSpinLockMutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> =
+    CriticalSectionSpinLockMutex::new(None);
 
 #[no_mangle]
 fn main() -> ! {
@@ -100,14 +101,12 @@ fn main() -> ! {
     // panic!("panic test");
 
     let (tx, _) = uart0.split();
-    *TX.lock() = Some(tx);
+    (&TX).lock(|locked_tx| *locked_tx = Some(tx));
 
     let _lock = clock_control_config.lock_cpu_frequency();
 
     // start core 1 (APP_CPU)
-    clock_control_config
-        .start_core(esp32_hal::Core::APP, cpu1_start)
-        .unwrap();
+    clock_control_config.start_app_core(cpu1_start).unwrap();
 
     // main loop, which in turn lock and unlocks apb and cpu locks
     let mut x: u32 = 0;
@@ -156,12 +155,14 @@ fn cpu1_start() -> ! {
     let mut x: u32 = 0;
     let mut prev_ccount = 0;
 
-    writeln!(
-        TX.lock().as_mut().unwrap(),
-        "Stack Pointer Core 1: {:08x?}",
-        get_stack_pointer()
-    )
-    .unwrap();
+    (&TX).lock(|tx| {
+        writeln!(
+            tx.as_mut().unwrap(),
+            "Stack Pointer Core 1: {:08x?}",
+            get_stack_pointer()
+        )
+        .unwrap()
+    });
 
     loop {
         let cycles = ClockControlConfig {}.cpu_frequency() / BLINK_HZ;
@@ -182,8 +183,9 @@ fn print_info(loop_count: u32, spin_loop_count: u32, prev_ccount: &mut u32) {
 
     let total = GLOBAL_COUNT.fetch_add(ccount_diff, core::sync::atomic::Ordering::Relaxed);
 
-    writeln!(
-        TX.lock().as_mut().unwrap(),
+    (&TX).lock(|tx| {
+
+    writeln!(tx.as_mut().unwrap(),
         "Core: {:?}, Loop: {}, Spin loops:{}, cycles: {}, cycles since previous {}, Total cycles: {}",
         esp32_hal::get_core(),
         loop_count,
@@ -193,6 +195,7 @@ fn print_info(loop_count: u32, spin_loop_count: u32, prev_ccount: &mut u32) {
         total
     )
     .unwrap();
+    });
 
     *prev_ccount = ccount;
 }

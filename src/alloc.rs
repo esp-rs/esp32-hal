@@ -20,13 +20,11 @@
 //! # TODO:
 //! - Improve underlying heap allocator: support for realloc, speed etc.
 //!
+use crate::prelude::*;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::NonNull;
 
 use linked_list_allocator::Heap;
-
-use spin::{Mutex, MutexGuard};
-use xtensa_lx6::interrupt;
 
 const DEFAULT_EXTERNAL_THRESHOLD: usize = 32 * 1024;
 const DEFAULT_USE_IRAM: bool = true;
@@ -290,7 +288,7 @@ unsafe impl GlobalAlloc for GeneralAllocator {
 }
 
 struct LockedHeap<'a> {
-    heap: Mutex<Option<Heap>>,
+    heap: CriticalSectionSpinLockMutex<Option<Heap>>,
     start_addr: &'a dyn Fn() -> *const u8,
     end_addr: &'a dyn Fn() -> *const u8,
 }
@@ -312,62 +310,54 @@ impl<'a> LockedHeap<'a> {
         end_addr: &'a dyn Fn() -> *const u8,
     ) -> Self {
         Self {
-            heap: Mutex::new(None),
+            heap: CriticalSectionSpinLockMutex::new(None),
             start_addr,
             end_addr,
         }
     }
 
-    fn is_in_range(&self, ptr: *const u8) -> bool {
-        let lock = self.heap.lock();
-        let heap = lock.as_ref().unwrap();
-        (ptr as usize) >= heap.bottom() && (ptr as usize) < heap.top()
+    fn with_locked_heap<R>(&self, f: impl FnOnce(&mut Heap) -> R) -> R {
+        (&self.heap).lock(|heap| match heap {
+            None => {
+                let start = (self.start_addr)() as usize;
+                let size = (self.end_addr)() as usize - (self.start_addr)() as usize;
+                let mut temp_heap = unsafe { Heap::new(start, size) };
+                let res = f(&mut temp_heap);
+                *heap = Some(temp_heap);
+                res
+            }
+            Some(heap) => f(heap),
+        })
     }
 
-    fn get_locked_heap(&self) -> MutexGuard<Option<Heap>> {
-        let mut heap = self.heap.lock();
-        if heap.is_none() {
-            let start = (self.start_addr)() as usize;
-            let size = (self.end_addr)() as usize - (self.start_addr)() as usize;
-            *heap = Some(unsafe { Heap::new(start, size) });
-        }
-
-        heap
+    fn is_in_range(&self, ptr: *const u8) -> bool {
+        self.with_locked_heap(|heap| (ptr as usize) >= heap.bottom() && (ptr as usize) < heap.top())
     }
 }
 
 impl AllocatorSize for LockedHeap<'_> {
     fn size(&self) -> usize {
-        self.get_locked_heap().as_ref().map_or(0, |v| v.size())
+        self.with_locked_heap(|heap| heap.size())
     }
 
     fn used(&self) -> usize {
-        self.get_locked_heap().as_ref().map_or(0, |v| v.used())
+        self.with_locked_heap(|heap| heap.used())
     }
 
     fn free(&self) -> usize {
-        self.get_locked_heap().as_ref().map_or(0, |v| v.free())
+        self.with_locked_heap(|heap| heap.free())
     }
 }
 
 unsafe impl GlobalAlloc for LockedHeap<'_> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        interrupt::free(|_| {
-            self.get_locked_heap()
-                .as_mut()
-                .map_or(0 as *mut u8, |heap| {
-                    heap.allocate_first_fit(layout)
-                        .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
-                })
+        self.with_locked_heap(|heap| {
+            heap.allocate_first_fit(layout)
+                .map_or(0 as *mut u8, |allocation| allocation.as_ptr())
         })
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        interrupt::free(|_| {
-            self.get_locked_heap()
-                .as_mut()
-                .unwrap()
-                .deallocate(NonNull::new_unchecked(ptr), layout)
-        });
+        self.with_locked_heap(|heap| heap.deallocate(NonNull::new_unchecked(ptr), layout));
     }
 }

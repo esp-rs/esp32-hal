@@ -13,7 +13,6 @@
 //! - Implement light sleep
 //! - 32kHz Xtal support
 //! - Allow 8.5MHz clock to be tuned
-//! - Global RTC clock reading
 //! - Automatic enabling/disabling of 8MHz source (when not in use for rtc_fast_clk or cpu frequency)
 
 use crate::prelude::*;
@@ -24,8 +23,9 @@ use crate::target::rtccntl::clk_conf::*;
 use crate::target::rtccntl::cntl::*;
 use crate::target::{APB_CTRL, RTCCNTL, TIMG0};
 use core::fmt;
-use xtensa_lx6::get_cycle_count;
+use xtensa_lx6::timer::{delay, get_cycle_count};
 
+pub mod config;
 pub mod cpu;
 pub mod dfs;
 mod pll;
@@ -190,207 +190,15 @@ enum CalibrateRTCSource {
 
 // static ClockControl to allow DFS, etc.
 static mut CLOCK_CONTROL: Option<ClockControl> = None;
+// mutex to allow safe multi-threaded access
+static CLOCK_CONTROL_MUTEX: CriticalSectionSpinLockMutex<()> =
+    CriticalSectionSpinLockMutex::new(());
 
 /// Clock configuration & locking for Dynamic Frequency Switching.
 /// It allows thread and interrupt safe way to switch between default,
 /// high CPU and APB frequency configuration.
 #[derive(Copy, Clone)]
 pub struct ClockControlConfig {}
-
-impl<'a> ClockControlConfig {
-    /// The current CPU frequency
-    pub fn cpu_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency }
-    }
-
-    /// The current APB frequency
-    pub fn apb_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().apb_frequency }
-    }
-
-    /// The CPU frequency in the default state
-    pub fn cpu_frequency_default(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency_default }
-    }
-
-    /// The CPU frequency in the CPU lock state
-    pub fn cpu_frequency_locked(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency_locked }
-    }
-
-    /// The CPU frequency in the APB lock state
-    pub fn cpu_frequency_apb_locked(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_frequency_apb_locked }
-    }
-
-    /// The APB frequency in the APB lock state
-    pub fn apb_frequency_apb_locked(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().apb_frequency_apb_locked }
-    }
-
-    /// Is the reference clock 1MHz under all clock conditions
-    pub fn is_ref_clock_stable(&self) -> bool {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().ref_clock_stable }
-    }
-
-    /// The current reference frequency
-    pub fn ref_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().ref_frequency }
-    }
-
-    /// The current slow RTC frequency
-    pub fn slow_rtc_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().slow_rtc_frequency }
-    }
-
-    /// The current fast RTC frequency
-    pub fn fast_rtc_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().fast_rtc_frequency }
-    }
-
-    /// The current APLL frequency
-    pub fn apll_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().apll_frequency }
-    }
-
-    /// The current PLL/2 frequency
-    pub fn pll_d2_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().pll_d2_frequency }
-    }
-
-    /// The Xtal frequency
-    pub fn xtal_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().xtal_frequency }
-    }
-
-    /// The 32kHz Xtal frequency
-    pub fn xtal32k_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().xtal32k_frequency }
-    }
-
-    /// The current PLL frequency
-    pub fn pll_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().pll_frequency }
-    }
-
-    /// The current 8MHz oscillator frequency
-    pub fn rtc8m_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().rtc8m_frequency }
-    }
-
-    /// The current 8MHz oscillator frequency / 256
-    pub fn rtc8md256_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().rtc8md256_frequency }
-    }
-
-    /// The current 150kHz oscillator frequency
-    pub fn rtc_frequency(&self) -> Hertz {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().rtc_frequency }
-    }
-
-    /// The current source for the CPU and APB frequencies
-    pub fn cpu_source(&self) -> CPUSource {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().cpu_source }
-    }
-
-    /// The current source for the slow RTC frequency
-    pub fn slow_rtc_source(&self) -> SlowRTCSource {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().slow_rtc_source }
-    }
-
-    /// The current source for the fast RTC frequency
-    pub fn fast_rtc_source(&self) -> FastRTCSource {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().fast_rtc_source }
-    }
-
-    /// Obtain a RAII lock to use the high CPU frequency
-    pub fn lock_cpu_frequency(&self) -> dfs::LockCPU {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().lock_cpu_frequency() }
-    }
-
-    /// Obtain a RAII lock to use the APB CPU frequency
-    pub fn lock_apb_frequency(&self) -> dfs::LockAPB {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().lock_apb_frequency() }
-    }
-
-    /// Obtain a RAII lock to keep the CPU from sleeping
-    pub fn lock_awake(&self) -> dfs::LockAwake {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().lock_awake() }
-    }
-
-    /// Obtain a RAII lock to keep the PLL/2 from being turned off
-    pub fn lock_plld2(&self) -> dfs::LockPllD2 {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().lock_plld2() }
-    }
-
-    /// Add callback which will be called when clock speeds are changed.
-    ///
-    /// NOTE: these callbacks are called in an interrupt free environment,
-    /// so should be as short as possible
-    // TODO: at the moment only static lifetime callbacks are allow
-    pub fn add_callback<F>(&self, f: &'static F) -> Result<(), Error>
-    where
-        F: Fn(),
-    {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().add_callback(f) }
-    }
-
-    /// Get the current count of the PCU, APB, Awake and PLL/2 locks
-    pub fn get_lock_count(&self) -> dfs::Locks {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().get_lock_count() }
-    }
-
-    pub unsafe fn park_core(&mut self, core: crate::Core) {
-        CLOCK_CONTROL.as_mut().unwrap().park_core(core)
-    }
-
-    pub fn unpark_core(&mut self, core: crate::Core) {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) }
-    }
-
-    pub fn start_core(&mut self, core: crate::Core, f: fn() -> !) -> Result<(), Error> {
-        unsafe { CLOCK_CONTROL.as_mut().unwrap().start_core(core, f) }
-    }
-}
-
-impl fmt::Debug for ClockControlConfig {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe { CLOCK_CONTROL.as_ref().unwrap().fmt(f) }
-    }
-}
-
-/// cycle accurate delay using the cycle counter register
-pub fn delay_cycles(clocks: u32) {
-    let start = get_cycle_count();
-    loop {
-        if get_cycle_count().wrapping_sub(start) >= clocks {
-            break;
-        }
-    }
-}
-
-impl fmt::Debug for ClockControl {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("ClockControl")
-            .field("cpu_frequency", &self.cpu_frequency)
-            .field("apb_frequency", &self.apb_frequency)
-            .field("ref_frequency", &self.ref_frequency)
-            .field("apll_frequency", &self.apll_frequency)
-            .field("pll_d2_frequency", &self.pll_d2_frequency)
-            .field("slow_rtc_frequency", &self.slow_rtc_frequency)
-            .field("fast_rtc_frequency", &self.fast_rtc_frequency)
-            .field("xtal_frequency", &self.xtal_frequency)
-            .field("xtal32k_frequency", &self.xtal32k_frequency)
-            .field("rtc8m_frequency", &self.rtc8m_frequency)
-            .field("rtc8md256_frequency", &self.rtc8md256_frequency)
-            .field("rtc_frequency", &self.rtc_frequency)
-            .field("pll_frequency", &self.pll_frequency)
-            .field("cpu_source", &self.cpu_source)
-            .field("slow_rtc_source", &self.slow_rtc_source)
-            .field("fast_rtc_source", &self.fast_rtc_source)
-            .finish()
-    }
-}
 
 /// Clock Control for initialization. Once initialization is done, call the freeze function to lock
 /// the clock configuration. This will return a [ClockControlConfig](ClockControlConfig), which can
@@ -784,7 +592,7 @@ impl ClockControl {
 
     /// delay a certain time by spinning
     fn delay<T: Into<NanoSeconds>>(&self, time: T) {
-        delay_cycles(self.time_to_cpu_cycles(time));
+        delay(self.time_to_cpu_cycles(time));
     }
 
     /// Check if a value from RTC_XTAL_FREQ_REG or RTC_APB_FREQ_REG are valid clocks
@@ -1458,5 +1266,88 @@ impl ClockControl {
             CPUSource::RTC8M => self.rtc8m_frequency_measured,
             CPUSource::APLL => unimplemented!(),
         }
+    }
+
+    /// Get RTC tick count since boot
+    ///
+    /// This function can usually take up to one RTC clock cycles (~300us).
+    ///
+    /// In exceptional circumstances it could take up to two RTC clock cycles. This can happen
+    /// when an interrupt routine or the other core calls this function exactly in between
+    /// the loop checking for the valid bit and entering the critical section.
+    ///
+    /// Interrupts are only blocked during the actual reading of the clock register,
+    /// not during the wait for valid data.
+    pub fn rtc_tick_count(&self) -> TicksU64 {
+        self.rtc_control
+            .time_update
+            .modify(|_, w| w.time_update().set_bit());
+
+        loop {
+            // do this check outside the critical section, to prevent blocking interrupts and
+            // the other core for a long time
+            while self
+                .rtc_control
+                .time_update
+                .read()
+                .time_valid()
+                .bit_is_clear()
+            {}
+
+            if let Some(ticks) = (&CLOCK_CONTROL_MUTEX).lock(|_| {
+                // there is a small chance that this function is interrupted or called from
+                // the other core between detecting the valid and entering the interrupt free
+                // and mutex protection reading check again inside the critical section
+
+                if self
+                    .rtc_control
+                    .time_update
+                    .read()
+                    .time_valid()
+                    .bit_is_set()
+                {
+                    // this needs to be interrupt and thread safe, because if the time value
+                    // changes in between reading the upper and lower part this results in an
+                    // invalid value.
+                    let hi = self.rtc_control.time1.read().time_hi().bits() as u64;
+                    let lo = self.rtc_control.time0.read().bits() as u64;
+                    let ticks: TicksU64 = TicksU64::from((hi << 32) | lo);
+                    Some(ticks)
+                } else {
+                    None
+                }
+            }) {
+                return ticks;
+            }
+        }
+    }
+
+    /// Get nanoseconds since boot based on RTC tick count
+    pub fn rtc_nanoseconds(&self) -> NanoSecondsU64 {
+        self.rtc_tick_count() / self.slow_rtc_frequency
+    }
+}
+
+/// Custom debug formatter
+impl fmt::Debug for ClockControl {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ClockControl")
+            .field("cpu_frequency", &self.cpu_frequency)
+            .field("apb_frequency", &self.apb_frequency)
+            .field("ref_frequency", &self.ref_frequency)
+            .field("apll_frequency", &self.apll_frequency)
+            .field("pll_d2_frequency", &self.pll_d2_frequency)
+            .field("slow_rtc_frequency", &self.slow_rtc_frequency)
+            .field("fast_rtc_frequency", &self.fast_rtc_frequency)
+            .field("xtal_frequency", &self.xtal_frequency)
+            .field("xtal32k_frequency", &self.xtal32k_frequency)
+            .field("rtc8m_frequency", &self.rtc8m_frequency)
+            .field("rtc8md256_frequency", &self.rtc8md256_frequency)
+            .field("rtc_frequency", &self.rtc_frequency)
+            .field("pll_frequency", &self.pll_frequency)
+            .field("cpu_source", &self.cpu_source)
+            .field("slow_rtc_source", &self.slow_rtc_source)
+            .field("fast_rtc_source", &self.fast_rtc_source)
+            .finish()
     }
 }
