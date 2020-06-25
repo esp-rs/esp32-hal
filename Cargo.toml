@@ -43,6 +43,8 @@ void = { version = "1.0.2", default-features = false }
 
 [dev-dependencies]
 panic-halt = "0.2.0"
+ssd1306 = "0.3.1"
+embedded-graphics = "0.6.2"
 
 [[example]]
 name = "alloc"
