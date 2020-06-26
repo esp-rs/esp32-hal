@@ -7,6 +7,7 @@
 
 use {
     crate::target::{GPIO, IO_MUX, RTCIO},
+    crate::{get_core, Core},
     core::{convert::Infallible, marker::PhantomData},
     embedded_hal::digital::v2::{OutputPin as _, StatefulOutputPin as _},
 };
@@ -30,6 +31,64 @@ pub trait Pin {
 
     /// Set the alternate function
     fn set_alternate_function(&mut self, alternate: AlternateFunction) -> &mut Self;
+
+    /// Start listening to pin interrupt event
+    ///
+    /// The event sets the type of edge or level triggering.
+    ///
+    /// This is a wrapper around [listen_with_options][
+    /// Pin::listen_with_options], which enables the interrupt for the current core and disables
+    /// all other options.
+    ///
+    /// *Note: ESP32 has a bug (3.14), which prevents correct triggering of interrupts when
+    /// multiple GPIOs are configured for edge triggering in a group (GPIO0-31 is one group,
+    /// GPIO32-39 is the other group). This can be worked around by using level triggering on the
+    /// GPIO with edge triggering on the CPU.*
+    fn listen(&mut self, event: Event) {
+        match crate::get_core() {
+            crate::Core::PRO => self.listen_with_options(event, true, false, false, false, false),
+            crate::Core::APP => self.listen_with_options(event, false, true, false, false, false),
+        }
+    }
+
+    /// Start listening to pin interrupt event
+    ///
+    /// The event sets the type of edge or level triggering.
+    /// Interrupts can be individually enabled for the app and pro cores and either a regular
+    /// interrupt can be fired or a non-maskable interrupt (NMI). Also wake-up from light sleep
+    /// can be enabled
+    ///
+    /// This function overwrites any previous settings, so if any of the boolean are set to false
+    /// the interrupt of that type and to that core are disabled.
+    ///
+    /// *Note: Even though the interrupt is called NMI it can be routed to any level via the
+    /// [interrupt::enable_with_priority][crate::interrupt::enable_with_priority] function.*
+    ///
+    /// *Note: ESP32 has a bug (3.14), which prevents correct triggering of interrupts when
+    /// multiple GPIOs are configured for edge triggering in a group (GPIO0-31 is one group,
+    /// GPIO32-39 is the other group). This can be worked around by using level triggering on the
+    /// GPIO with edge triggering on the CPU.*
+    fn listen_with_options(
+        &mut self,
+        event: Event,
+        pro_int: bool,
+        app_int: bool,
+        pro_nmi: bool,
+        app_nmi: bool,
+        wake_up_from_light_sleep: bool,
+    );
+
+    /// Stop listening to all pin interrupts
+    fn unlisten(&mut self);
+
+    /// Clear a pending interrupt
+    fn clear_interrupt(&mut self);
+
+    /// Check if interrupt for this pin is set for the current core
+    fn is_interrupt_set(&mut self) -> bool;
+
+    /// Check if the non maskable interrupt for this pin is set for the current core
+    fn is_non_maskable_interrupt_set(&mut self) -> bool;
 }
 
 /// Functions available on input pins
@@ -51,7 +110,9 @@ pub trait InputPin: Pin {
     /// This is a wrapper around [connect_input_to_peripheral_with_options][
     /// InputPin::connect_input_to_peripheral_with_options], which sets
     /// all the options to false.
-    fn connect_input_to_peripheral(&mut self, signal: InputSignal) -> &mut Self;
+    fn connect_input_to_peripheral(&mut self, signal: InputSignal) -> &mut Self {
+        self.connect_input_to_peripheral_with_options(signal, false, false)
+    }
 
     /// Connect input to peripheral
     ///
@@ -66,6 +127,10 @@ pub trait InputPin: Pin {
     ) -> &mut Self;
 }
 
+/// Functions available on pins with pull up/down resistors
+//
+// This is split into a separate trait from OutputPin, because for pins which also connect to
+// the RTCIO mux, the pull up/down needs to be set via the RTCIO mux.
 pub trait Pull {
     /// Enable/Disable internal pull up resistor
     fn internal_pull_up(&mut self, on: bool) -> &mut Self;
@@ -119,7 +184,9 @@ pub trait OutputPin: Pin + Pull {
     /// This is a wrapper around [connect_peripheral_to_output_with_options][
     /// OutputPin::connect_peripheral_to_output_with_options], which sets
     /// all the options to false.
-    fn connect_peripheral_to_output(&mut self, signal: OutputSignal) -> &mut Self;
+    fn connect_peripheral_to_output(&mut self, signal: OutputSignal) -> &mut Self {
+        self.connect_peripheral_to_output_with_options(signal, false, false, false, false)
+    }
 
     /// Connect peripheral to output
     ///
@@ -136,6 +203,27 @@ pub trait OutputPin: Pin + Pull {
         enable_from_gpio: bool,
         force_via_gpio_mux: bool,
     ) -> &mut Self;
+}
+
+/// Interrupt events
+///
+/// *Note: ESP32 has a bug (3.14), which prevents correct triggering of interrupts when
+/// multiple GPIO's are configured for edge triggering in a group (GPIO0-31 is one group,
+/// GPIO32-39 is the other group). This can be worked around by using level triggering on the
+/// GPIO with edge triggering on the CPU.*
+//
+// Value must correspond to values in the register
+pub enum Event {
+    /// Trigger on the rising edge
+    RisingEdge = 1,
+    /// Trigger on the falling edge
+    FallingEdge = 2,
+    /// Trigger on any edge
+    AnyEdge = 3,
+    /// Trigger while low level
+    LowLevel = 4,
+    /// Trigger while high level
+    HighLevel = 5,
 }
 
 /// Unknown mode (type state)
@@ -429,10 +517,6 @@ macro_rules! impl_output {
                 self
             }
 
-            fn connect_peripheral_to_output(&mut self, signal: OutputSignal) -> &mut Self {
-                self.connect_peripheral_to_output_with_options(signal, false, false, false, false)
-            }
-
             fn connect_peripheral_to_output_with_options(
                 &mut self,
                 signal: OutputSignal,
@@ -477,8 +561,8 @@ macro_rules! impl_output {
 
 macro_rules! impl_input {
     ($pxi:ident:
-        ($pin_num:expr, $bit:expr, $iomux:ident,
-        $out_en_clear:ident, $reg:ident, $reader:ident
+        ($pin_num:expr, $bit:expr, $iomux:ident, $out_en_clear:ident, $reg:ident, $reader:ident,
+            $status_w1tc:ident, $acpu_int:ident, $acpu_nmi:ident, $pcpu_int:ident, $pcpu_nmi:ident
         ) $( ,( $( $af_signal:ident : $af:ident ),* ))?
     ) => {
         impl<MODE> embedded_hal::digital::v2::InputPin for $pxi<Input<MODE>> {
@@ -546,10 +630,6 @@ macro_rules! impl_input {
                 self
             }
 
-            fn connect_input_to_peripheral(&mut self, signal: InputSignal) -> &mut Self {
-                self.connect_input_to_peripheral_with_options(signal, false, false)
-            }
-
             fn connect_input_to_peripheral_with_options(
                 &mut self,
                 signal: InputSignal,
@@ -599,11 +679,54 @@ macro_rules! impl_input {
             }
 
             fn set_alternate_function(&mut self, alternate: AlternateFunction) -> &mut Self {
-                // NOTE(unsafe) atomic read to a stateless register
                 unsafe { &*IO_MUX::ptr() }
                     .$iomux
                     .modify(|_, w| unsafe { w.mcu_sel().bits(alternate as u8) });
                 self
+            }
+
+            fn listen_with_options(&mut self, event: Event,
+                pro_int: bool, app_int: bool, pro_nmi: bool, app_nmi: bool,
+                wake_up_from_light_sleep: bool
+            ) {
+                unsafe {
+                    (&*GPIO::ptr()).pin[$pin_num].modify(|_, w|
+                        w
+                            .int_ena().bits(app_int as u8 | ((app_nmi as u8) << 1)
+                                | ((pro_int as u8) << 2) | ((pro_nmi as u8) << 3))
+                            .int_type().bits(event as u8)
+                            .wakeup_enable().bit(wake_up_from_light_sleep)
+                    );
+                }
+            }
+
+            fn unlisten(&mut self) {
+                unsafe { (&*GPIO::ptr()).pin[$pin_num].modify(|_, w|
+                    w.int_ena().bits(0).int_type().bits(0).int_ena().bits(0) );
+                }
+            }
+
+            fn clear_interrupt(&mut self) {
+                unsafe {&*GPIO::ptr()}.$status_w1tc.write(|w|
+                    unsafe {w.status_int_w1tc().bits(1 << $bit)})
+            }
+
+            fn is_interrupt_set(&mut self) -> bool {
+                match get_core() {
+                    Core::PRO =>
+                        (unsafe {&*GPIO::ptr()}.$pcpu_int.read().bits() & (1 << $bit)) !=0,
+                    Core::APP =>
+                        (unsafe {&*GPIO::ptr()}.$acpu_int.read().bits() & (1 << $bit)) !=0,
+                }
+            }
+
+            fn is_non_maskable_interrupt_set(&mut self) -> bool {
+                match get_core() {
+                    Core::PRO =>
+                        (unsafe {&*GPIO::ptr()}.$pcpu_nmi.read().bits() & (1 << $bit)) !=0,
+                    Core::APP =>
+                        (unsafe {&*GPIO::ptr()}.$acpu_nmi.read().bits() & (1 << $bit)) !=0,
+                }
             }
         }
     };
@@ -613,13 +736,15 @@ macro_rules! impl_input_wrap {
     ($pxi:ident, $pin_num:expr, Bank0, $iomux:ident, $TYPE:ident
         $( ,( $( $af_input_signal:ident : $af_input:ident ),* ) )?
     ) => {
-        impl_input!($pxi: ($pin_num, $pin_num % 32, $iomux, enable_w1tc, in_, in_data)
+        impl_input!($pxi: ($pin_num, $pin_num % 32, $iomux, enable_w1tc, in_, in_data,
+            status_w1tc, acpu_int, acpu_nmi_int, pcpu_int, pcpu_nmi_int)
             $( ,( $( $af_input_signal: $af_input ),* ) )? );
     };
     ($pxi:ident, $pin_num:expr, Bank1, $iomux:ident, $TYPE:ident
         $( ,( $( $af_input_signal:ident: $af_input:ident ),* ))?
     ) => {
-        impl_input!($pxi: ($pin_num, $pin_num % 32, $iomux, enable1_w1tc, in1, in1_data)
+        impl_input!($pxi: ($pin_num, $pin_num % 32, $iomux, enable1_w1tc, in1, in1_data,
+            status_w1tc, acpu_int, acpu_nmi_int, pcpu_int, pcpu_nmi_int)
             $( ,( $( $af_input_signal: $af_input ),* ) )? );
     };
 }
@@ -630,6 +755,7 @@ macro_rules! impl_output_wrap {
     ) => {
         impl_output!($pxi:
             ($pin_num, $pin_num % 32, $iomux,  enable_w1ts, enable_w1tc, out_w1ts, out_w1tc)
+
             $( ,( $( $af_output_signal: $af_output ),* ) )? );
     };
     ($pxi:ident, $pin_num:expr, Bank1, $iomux:ident, IO
