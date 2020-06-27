@@ -708,7 +708,7 @@ macro_rules! impl_input {
 
             fn clear_interrupt(&mut self) {
                 unsafe {&*GPIO::ptr()}.$status_w1tc.write(|w|
-                    unsafe {w.status_int_w1tc().bits(1 << $bit)})
+                    unsafe {w.bits(1 << $bit)})
             }
 
             fn is_interrupt_set(&mut self) -> bool {
@@ -744,7 +744,7 @@ macro_rules! impl_input_wrap {
         $( ,( $( $af_input_signal:ident: $af_input:ident ),* ))?
     ) => {
         impl_input!($pxi: ($pin_num, $pin_num % 32, $iomux, enable1_w1tc, in1, in1_data,
-            status_w1tc, acpu_int, acpu_nmi_int, pcpu_int, pcpu_nmi_int)
+            status1_w1tc, acpu_int1, acpu_nmi_int1, pcpu_int1, pcpu_nmi_int1)
             $( ,( $( $af_input_signal: $af_input ),* ) )? );
     };
 }
