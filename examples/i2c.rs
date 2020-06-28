@@ -10,6 +10,7 @@ use {
         pixelcolor::BinaryColor, prelude::*, primitives::Circle, primitives::Rectangle,
         style::PrimitiveStyle, style::PrimitiveStyleBuilder,
     },
+    embedded_hal::blocking::delay::{DelayMs, DelayUs},
     hal::{
         clock_control::{self, sleep, CPUSource, ClockControl, ClockControlConfig},
         dport::Split,
@@ -17,6 +18,7 @@ use {
         prelude::*,
         timer::Timer,
     },
+    mpu6050::Mpu6050,
     ssd1306::{prelude::*, Builder},
 };
 
@@ -56,24 +58,77 @@ fn main() -> ! {
 
     let pins = dp.GPIO.split();
 
-    let i2c0 = i2c::I2C::new(
-        dp.I2C0,
-        i2c::Pins {
-            sda: pins.gpio4,
-            scl: pins.gpio15,
-        },
-        400_000,
-        &mut dport,
-    );
+    // Display
+    let mut display = {
+        let i2c0 = i2c::I2C::new(
+            dp.I2C0,
+            i2c::Pins {
+                sda: pins.gpio4,
+                scl: pins.gpio15,
+            },
+            400_000,
+            &mut dport,
+        );
 
-    let mut display: GraphicsMode<_> = Builder::new().connect_i2c(i2c0).into();
+        let mut display: GraphicsMode<_> = Builder::new().connect_i2c(i2c0).into();
 
-    let mut rst = pins.gpio16.into_push_pull_output();
-    rst.set_low().unwrap();
-    sleep(10.ms());
-    rst.set_high().unwrap();
+        let mut rst = pins.gpio16.into_push_pull_output();
+        rst.set_low().unwrap();
+        sleep(10.ms());
+        rst.set_high().unwrap();
 
-    display.init().unwrap();
+        display.init().unwrap();
+        display.clear();
+        display.flush().unwrap();
+
+        display
+    };
+
+    /*// IMU
+    let mut imu = {
+        let i2c1 = i2c::I2C::new(
+            dp.I2C1,
+            i2c::Pins {
+                sda: pins.gpio22,
+                scl: pins.gpio23,
+            },
+            200_000,
+            &mut dport,
+        );
+
+        let mut imu = Mpu6050::new(i2c1, Delay);
+
+        imu.verify().unwrap();
+
+        imu.init().unwrap();
+        imu.soft_calib(mpu6050::Steps(100)).unwrap();
+        imu.calc_variance(mpu6050::Steps(50)).unwrap();
+
+        imu
+    };
+
+    let temp = imu.get_temp().unwrap();
+    let gyro = imu.get_gyro().unwrap();
+    let acc = imu.get_acc().unwrap();
+    dprintln!("temp: {}, gyro: {:?}, acc: {:?}", temp, gyro, acc);*/
+
+    let mut sensor = {
+        let i2c1 = i2c::I2C::new(
+            dp.I2C1,
+            i2c::Pins {
+                sda: pins.gpio22,
+                scl: pins.gpio23,
+            },
+            200_000,
+            &mut dport,
+        );
+
+        let mut sensor = sgp30::Sgp30::new(i2c1, 0x58, Delay);
+
+        dprintln!("serial: {:?}", sensor.serial().unwrap());
+
+        sensor
+    };
 
     loop {
         display.clear();
@@ -114,3 +169,23 @@ fn panic(info: &PanicInfo) -> ! {
     // this statement will not be reached, but is needed to make this a diverging function
     loop {}
 }
+
+impl DelayMs<u8> for Delay {
+    fn delay_ms(&mut self, ms: u8) {
+        sleep((ms as u32).ms());
+    }
+}
+
+impl DelayMs<u16> for Delay {
+    fn delay_ms(&mut self, ms: u16) {
+        sleep((ms as u32).ms());
+    }
+}
+
+impl DelayUs<u16> for Delay {
+    fn delay_us(&mut self, us: u16) {
+        sleep((us as u32).us());
+    }
+}
+
+struct Delay;

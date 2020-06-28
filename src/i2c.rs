@@ -1,5 +1,6 @@
 use {
     crate::{
+        dprintln,
         gpio::{InputPin, InputSignal, OutputPin, OutputSignal},
         target::{i2c, DPORT, I2C0, I2C1},
     },
@@ -122,18 +123,15 @@ where
 
     /// Resets the transmit and receive FIFO buffers
     fn reset_fifo(&mut self) {
-        //i2c_ll_txfifo_rst(hal->dev);
         self.0.fifo_conf.modify(|_, w| w.tx_fifo_rst().set_bit());
         self.0.fifo_conf.modify(|_, w| w.tx_fifo_rst().clear_bit());
-        //i2c_ll_rxfifo_rst(hal->dev);
+
         self.0.fifo_conf.modify(|_, w| w.rx_fifo_rst().set_bit());
         self.0.fifo_conf.modify(|_, w| w.rx_fifo_rst().clear_bit());
     }
 
     /// Sets the filter with a supplied threshold in clock cycles for which a pulse must be present to pass the filter
     fn set_filter(&mut self, sda_threshold: Option<u8>, scl_threshold: Option<u8>) {
-        // i2c_hal_set_filter(&(i2c_context[i2c_num].hal), 7);
-
         match sda_threshold {
             Some(threshold) => {
                 self.0
@@ -202,9 +200,6 @@ where
     }
 
     pub fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), Error> {
-        // TODO: Use bytes.chunk(255) to remove this limitation
-        assert!(bytes.len() < 255);
-
         // Use the correct FIFO address for the current I2C peripheral
         let fifo_addr = if is_i2c0(&self.0) {
             0x6001301c as *mut u8
@@ -216,12 +211,15 @@ where
         self.reset_fifo();
 
         // RSTART command
-        self.0.comd0.write(|w| unsafe { w.command0().bits(0) });
+        self.0.comd0.write(|w| unsafe {
+            w.command0()
+                .bits(Command::new(Opcode::RSTART, false, false, false, None).into())
+        });
 
         // Load bytes into FIFO
         unsafe {
             // Address
-            core::ptr::write_volatile(fifo_addr, addr << 1 | 0);
+            core::ptr::write_volatile(fifo_addr, addr << 1 | AddressFlag::WRITE as u8);
 
             // Data
             for byte in bytes {
@@ -231,14 +229,23 @@ where
 
         // WRITE command
         self.0.comd1.write(|w| unsafe {
-            w.command1()
-                .bits(0b00_1100_0000_0000 | (1 + bytes.len() as u8) as u16)
+            w.command1().bits(
+                Command::new(
+                    Opcode::WRITE,
+                    false,
+                    false,
+                    true,
+                    Some(1 + bytes.len() as u8),
+                )
+                .into(),
+            )
         });
 
         // STOP command
-        self.0
-            .comd2
-            .write(|w| unsafe { w.command2().bits(0b01_1000_0000_0000) });
+        self.0.comd2.write(|w| unsafe {
+            w.command2()
+                .bits(Command::new(Opcode::STOP, false, false, false, None).into())
+        });
 
         // Start transmission
         self.0.ctr.modify(|_, w| w.trans_start().set_bit());
@@ -251,15 +258,91 @@ where
         Ok(())
     }
 
-    pub fn read(&mut self, _addr: u8, _bytes: &mut [u8]) -> Result<(), Error> {
-        unimplemented!()
+    pub fn read(&mut self, addr: u8, buffer: &mut [u8]) -> Result<(), Error> {
+        dprintln!("starting I2C read");
+        assert!(buffer.len() > 1); //TODO: temporary, just simplifying the logic during implementation
+
+        // Use the correct FIFO address for the current I2C peripheral
+        let fifo_addr = if is_i2c0(&self.0) {
+            0x6001301c as *mut u8
+        } else {
+            0x6002701c as *mut u8
+        };
+
+        // Reset FIFO
+        self.reset_fifo();
+
+        // RSTART command
+        self.0.comd0.write(|w| unsafe {
+            w.command0()
+                .bits(Command::new(Opcode::RSTART, false, false, false, None).into())
+        });
+
+        // Address
+        unsafe { core::ptr::write_volatile(fifo_addr, addr << 1 | AddressFlag::READ as u8) };
+
+        // WRITE command
+        self.0.comd1.write(|w| unsafe {
+            w.command1()
+                .bits(Command::new(Opcode::WRITE, false, false, true, Some(1)).into())
+        });
+
+        // READ command for first n - 1 bytes
+        self.0.comd2.write(|w| unsafe {
+            w.command2().bits(
+                Command::new(
+                    Opcode::READ,
+                    true,
+                    false,
+                    false,
+                    Some(buffer.len() as u8 - 1),
+                )
+                .into(),
+            )
+        });
+
+        // READ command for final byte
+        self.0.comd3.write(|w| unsafe {
+            w.command3()
+                .bits(Command::new(Opcode::READ, true, false, false, Some(1)).into())
+        });
+
+        // STOP command
+        self.0.comd4.write(|w| unsafe {
+            w.command4()
+                .bits(Command::new(Opcode::STOP, false, false, false, None).into())
+        });
+
+        // Start transmission
+        self.0.ctr.modify(|_, w| w.trans_start().set_bit());
+
+        // Busy wait for all three commands to be marked as done
+        while self.0.comd0.read().command0_done().bit() != true {}
+        dprintln!("start done");
+        while self.0.comd1.read().command1_done().bit() != true {}
+        dprintln!("write done");
+        while self.0.comd2.read().command2_done().bit() != true {}
+        dprintln!("read done");
+        while self.0.comd3.read().command3_done().bit() != true {}
+        dprintln!("read done");
+        while self.0.comd4.read().command4_done().bit() != true {}
+        dprintln!("stop done");
+
+        // Read bytes from FIFO
+        dprintln!("rxfifo: {:?}", self.0.sr.read().rxfifo_cnt().bits());
+        for byte in buffer.iter_mut() {
+            *byte = unsafe { core::ptr::read_volatile(fifo_addr) };
+        }
+        dprintln!("{:?}", &buffer);
+
+        Ok(())
     }
 
     pub fn write_then_read(
         &mut self,
-        _addr: u8,
-        _bytes: &[u8],
-        _buffer: &mut [u8],
+        addr: u8,
+        bytes: &[u8],
+        buffer: &mut [u8],
     ) -> Result<(), Error> {
         unimplemented!()
     }
@@ -328,6 +411,83 @@ pub enum Error {
 /// Helper function for determining which interface corresponds to the current instance
 fn is_i2c0<T: Instance>(t: &T) -> bool {
     (t.deref() as *const i2c::RegisterBlock) as u32 == 0x3ff53000
+}
+
+/// I2C Command
+struct Command {
+    /// Opcode of the command
+    opcode: Opcode,
+    /// When receiving data, this bit is used to indicate whether the receiver will send an ACK after this byte has been received
+    ack_value: bool,
+    /// This bit is to set an expected ACK value for the transmitter
+    ack_exp: bool,
+    /// When transmitting a byte, this bit enables checking the ACK value received against the ack_exp value
+    ack_en: bool,
+    /// Length of data to be read or written, maximum length of 255, minimum of 1
+    length: Option<u8>,
+}
+
+impl Command {
+    /// Construct a new Command with the supplied parameters
+    fn new(
+        opcode: Opcode,
+        ack_value: bool,
+        ack_exp: bool,
+        ack_en: bool,
+        length: Option<u8>,
+    ) -> Self {
+        Self {
+            opcode,
+            ack_value,
+            ack_exp,
+            ack_en,
+            length,
+        }
+    }
+}
+
+impl From<Command> for u16 {
+    fn from(c: Command) -> u16 {
+        let mut cmd: u16 = match c.length {
+            Some(l) => l.into(),
+            None => 0,
+        };
+
+        if c.ack_en {
+            cmd |= 1 << 8;
+        } else {
+            cmd &= !(1 << 8);
+        }
+
+        if c.ack_exp {
+            cmd |= 1 << 9;
+        } else {
+            cmd &= !(1 << 9);
+        }
+
+        if c.ack_value {
+            cmd |= 1 << 10;
+        } else {
+            cmd &= !(1 << 10);
+        }
+
+        cmd |= (c.opcode as u16) << 11;
+
+        cmd
+    }
+}
+
+enum AddressFlag {
+    WRITE = 0,
+    READ = 1,
+}
+
+enum Opcode {
+    RSTART = 0,
+    WRITE = 1,
+    READ = 2,
+    STOP = 3,
+    END = 4,
 }
 
 pub trait Instance: Deref<Target = i2c::RegisterBlock> {}
