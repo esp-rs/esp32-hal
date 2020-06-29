@@ -264,9 +264,9 @@ where
 
         // Use the correct FIFO address for the current I2C peripheral
         let fifo_addr = if is_i2c0(&self.0) {
-            0x6001301c as *mut u8
+            (0x3ff53000 + 0x001c) as *mut u8
         } else {
-            0x6002701c as *mut u8
+            (0x3ff53000 + 0x14000 + 0x001c) as *mut u8
         };
 
         // Reset FIFO
