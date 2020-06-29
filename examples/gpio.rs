@@ -7,7 +7,7 @@ use esp32_hal::{
     clock_control::sleep,
     dport::Split,
     dprintln,
-    gpio::{Event, Floating, Pin},
+    gpio::{Event, Floating, InputPin, OutputPin, Pin, Pull, RTCInputPin, RTCOutputPin},
     interrupt::{Interrupt, InterruptLevel},
     prelude::*,
     serial::{config::Config, Serial},
@@ -26,8 +26,8 @@ static SERIAL: CriticalSectionSpinLockMutex<
     >,
 > = CriticalSectionSpinLockMutex::new(None);
 
-static GPIO0: CriticalSectionSpinLockMutex<
-    Option<esp32_hal::gpio::Gpio0<esp32_hal::gpio::Input<Floating>>>,
+static GPIO: CriticalSectionSpinLockMutex<
+    Option<esp32_hal::gpio::Gpio26<esp32_hal::gpio::RTCInput<Floating>>>,
 > = CriticalSectionSpinLockMutex::new(None);
 
 #[entry]
@@ -54,19 +54,13 @@ fn main() -> ! {
 
     let gpios = dp.GPIO.split();
 
-    let mut gpio0 = gpios.gpio0.into_floating_input();
+    let mut gpio = gpios.gpio26.into_floating_rtc_input();
+    gpio.internal_pull_up(true);
+    gpio.enable_hold(false);
+    gpio.enable_input(false);
+    gpio.rtc_enable_input(true);
 
-    gpio0.listen_with_options(Event::LowLevel, true, false, true, false, false);
-    interrupt::enable(Interrupt::GPIO_INTR).unwrap();
-
-    // Even though the interrupt is called GPIO_NMI is can be routed to any interrupt level.
-    // Using NMI level (7) is in principle a risk for deadlocks because the
-    // CriticalSectionSpinLockMutex does not disable the NMI. Therefore using level 5 instead.
-
-    // Because the level 5 interrupt clears the interrupt, the regular level 1 handler
-    // will not be called.
-    // Comment out the next line to test the level 1 handler
-    interrupt::enable_with_priority(Core::PRO, Interrupt::GPIO_NMI, InterruptLevel(5)).unwrap();
+    gpio.listen_with_options(Event::LowLevel, true, false, true, false, false);
 
     // setup serial controller
     let mut serial: Serial<_, _, _> = Serial::new(
@@ -86,15 +80,34 @@ fn main() -> ! {
     writeln!(serial, "\n\nESP32 Started\n\n").unwrap();
 
     (&SERIAL).lock(|val| *val = Some(serial));
-    (&GPIO0).lock(|val| *val = Some(gpio0));
+    (&GPIO).lock(|val| *val = Some(gpio));
+
+    interrupt::enable(Interrupt::GPIO_INTR).unwrap();
+
+    // Even though the interrupt is called GPIO_NMI is can be routed to any interrupt level.
+    // Using NMI level (7) is in principle a risk for deadlocks because the
+    // CriticalSectionSpinLockMutex does not disable the NMI. Therefore using level 5 instead.
+
+    // Because the level 5 interrupt clears the interrupt, the regular level 1 handler
+    // will not be called.
+    // Comment out the next line to test the level 1 handler
+    interrupt::enable_with_priority(Core::PRO, Interrupt::GPIO_NMI, InterruptLevel(5)).unwrap();
 
     let mut x = 0;
     loop {
         x = x + 1;
-        (&SERIAL, &GPIO0).lock(|serial, gpio0| {
+        (&SERIAL, &GPIO).lock(|serial, gpio| {
             let serial = serial.as_mut().unwrap();
-            let gpio0 = gpio0.as_mut().unwrap();
-            writeln!(serial, "Loop: {} {}", x, gpio0.is_high().unwrap()).unwrap();
+            let gpio = gpio.as_mut().unwrap();
+            writeln!(
+                serial,
+                "Loop: {} {} {} {}",
+                x,
+                gpio.is_high().unwrap(),
+                gpio.is_input_high(),
+                gpio.rtc_is_input_high()
+            )
+            .unwrap();
         });
 
         sleep(500.ms());
@@ -102,27 +115,27 @@ fn main() -> ! {
 }
 
 fn handle_gpio_interrupt() {
-    (&GPIO0, &SERIAL).lock(|gpio0, serial| {
-        let gpio0 = gpio0.as_mut().unwrap();
+    (&GPIO, &SERIAL).lock(|gpio, serial| {
+        let gpio = gpio.as_mut().unwrap();
         let serial = serial.as_mut().unwrap();
 
-        if gpio0.is_non_maskable_interrupt_set() {
+        if gpio.is_interrupt_set() || gpio.is_non_maskable_interrupt_set() {
             writeln!(
                 serial,
                 "  Interrupt level: {}, pin state: {}",
                 xtensa_lx6::interrupt::get_level(),
-                gpio0.is_high().unwrap()
+                gpio.is_high().unwrap()
             )
             .unwrap();
 
-            if gpio0.is_high().unwrap() {
-                gpio0.listen_with_options(Event::LowLevel, true, false, true, false, false);
+            if gpio.is_high().unwrap() {
+                gpio.listen_with_options(Event::LowLevel, true, false, true, false, false);
             } else {
-                gpio0.listen_with_options(Event::HighLevel, true, false, true, false, false);
+                gpio.listen_with_options(Event::HighLevel, true, false, true, false, false);
             };
             // need to change listen before clearing interrupt, otherwise will fire
             // immediately again.
-            gpio0.clear_interrupt();
+            gpio.clear_interrupt();
         }
     });
 }
