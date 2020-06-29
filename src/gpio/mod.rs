@@ -1,5 +1,14 @@
 //! GPIO and pin configuration
 //!
+//! ESP32 has very flexible pin assignment via the GPIO mux. It also has a separate RTC mux for
+//! low power and analog functions.
+//!
+//! To support this flexibility two sets of traits are supported:
+//! - The various embedded_hal properties
+//! - Dedicated [InputPin], [OutputPin], [RTCInputPin] and [RTCOutputPin]
+//!
+//! The advantage of using the dedicated traits in peripherals is that the configuration of the
+//! IO can be done inside the peripheral instead of having to be done upfront.
 
 use {
     crate::target::{GPIO, IO_MUX, RTCIO},
