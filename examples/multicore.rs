@@ -89,20 +89,6 @@ fn main() -> ! {
 
     writeln!(uart0, "Stack Pointer Core 0: {:08x?}", get_stack_pointer()).unwrap();
 
-    // register callback which is called when the clock is switched
-    clock_control_config
-        .add_callback(&|| {
-            let clock_control_config = ClockControlConfig {};
-            dprintln!(
-                "  Change Clock: CPU: {}, PLL: {}, APB: {}, REF: {}",
-                clock_control_config.cpu_frequency(),
-                clock_control_config.pll_frequency(),
-                clock_control_config.apb_frequency(),
-                clock_control_config.ref_frequency(),
-            )
-        })
-        .unwrap();
-
     // uncomment next line to test panic exit
     // panic!("panic test");
 
