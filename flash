@@ -243,7 +243,18 @@ then
         then
             printf "\n\n"
             # get gen_esp32part.py and create binary partition table
-            curl -s -S -L $GENPART_SOURCE --output target/gen_esp32part.py
+            curl -s -S -f --max-time 2 -L $GENPART_SOURCE --output target/gen_esp32part.py_new
+
+            if [ $? -ne 0 ]; then
+                if [ -f target/gen_esp32part.py ]; then
+                    printf "\n${ERROR}Failed to get gen_esp32part.py${RESET} using old one\n\n"
+                else
+                    printf "\n${ERROR}Failed to get gen_esp32part.py${RESET}\n\n"
+                    exit 1
+                fi
+            else 
+                mv target/gen_esp32part.py_new target/gen_esp32part.py
+            fi
             
             rm target/partitions.bin 2> /dev/null
             python target/gen_esp32part.py partitions.csv target/partitions.bin
@@ -254,9 +265,23 @@ then
         fi
 
 
+        printf "${STAGE}Getting bootloader... ${RESET}"
+
         # get bootloader.bin file 
         # (different variants exist, but only difference is flash settings which are overriden by esptool)
-        curl -s -S -L $BOOTLOADER_SOURCE --output target/bootloader.bin
+        curl -s -S -f --max-time 2 -L $BOOTLOADER_SOURCE --output target/bootloader.bin_new 
+
+        if [ $? -ne 0 ]; then
+            if [ -f target/bootloader.bin ]; then
+                printf "\n${ERROR}Failed to get bootloader${RESET} using old one\n\n"
+            else
+                printf "\n${ERROR}Failed to get bootloader${RESET}\n\n"
+                exit 1
+            fi
+        else 
+            mv target/bootloader.bin_new target/bootloader.bin
+            printf "succesfully downloader bootloader\n\n"
+        fi
 
         # check if bootloader.bin and paritions.bin are already correctly flashed (to prevent unnecessary writes)
         printf "${STAGE}Verify bootloader and partition table...${RESET} "
