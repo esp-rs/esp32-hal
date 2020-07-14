@@ -249,8 +249,12 @@ pub struct ClockControl {
     dfs: dfs::DFS,
 }
 
-/// Function only available once clock if frozen
-pub fn sleep<T: Into<NanoSeconds>>(time: T) {
+/// Sleep by spinning
+///
+/// *Note: Function only available once clock if frozen.embedded_hal*
+///
+/// *Note: Maximum duration is 2e32-1 ns ~ 4.29s *
+pub fn sleep<T: Into<NanoSecondsU64>>(time: T) {
     unsafe { CLOCK_CONTROL.as_ref().unwrap().delay(time) };
 }
 
@@ -440,7 +444,7 @@ impl ClockControl {
         };
 
         let estimated_time = (Hertz(1_000_000) * (slow_cycles as u32) / slow_freq).us();
-        let estimated_cycle_count = 2 * self.time_to_cpu_cycles(estimated_time);
+        let estimated_cycle_count = 2 * (self.time_to_cpu_cycles(estimated_time) as u32);
 
         let max_cycle_count = 0x01FFFFFF; // bit 7:31 = 25 bits
         if estimated_cycle_count > max_cycle_count {
@@ -527,6 +531,7 @@ impl ClockControl {
     fn init<T: Into<Hertz> + Copy>(&mut self, xtal_frequency: T) -> Result<&mut Self, Error> {
         // if auto is selected check if the frequency has already been stored during
         // a previous run in the scratch register
+
         if xtal_frequency.into() == XTAL_FREQUENCY_AUTO {
             self.xtal_frequency = match self.xtal_frequency_from_scratch() {
                 Ok(frequency) => frequency,
@@ -585,14 +590,20 @@ impl ClockControl {
     }
 
     /// calculate the number of cpu cycles from a time at the current CPU frequency
-    fn time_to_cpu_cycles<T: Into<NanoSeconds>>(&self, time: T) -> u32 {
-        (((self.cpu_frequency / Hertz(1_000_000)) as u64) * (u32::from(time.into()) as u64) / 1000)
-            as u32
+    fn time_to_cpu_cycles<T: Into<NanoSecondsU64>>(&self, time: T) -> u64 {
+        ((self.cpu_frequency / Hertz(1_000_000)) as u64) * u64::from(time.into()) / 1000
     }
 
     /// delay a certain time by spinning
-    fn delay<T: Into<NanoSeconds>>(&self, time: T) {
-        delay(self.time_to_cpu_cycles(time));
+    fn delay<T: Into<NanoSecondsU64>>(&self, time: T) {
+        let cycles = self.time_to_cpu_cycles(time);
+        let lower = cycles as u32;
+        let upper = cycles >> 32;
+
+        delay(lower);
+        for _ in 0..(upper * 2) {
+            delay(u32::MAX / 2);
+        }
     }
 
     /// Check if a value from RTC_XTAL_FREQ_REG or RTC_APB_FREQ_REG are valid clocks
@@ -626,17 +637,11 @@ impl ClockControl {
         T2: Into<Hertz> + Copy + PartialOrd,
         T3: Into<Hertz> + Copy + PartialOrd,
     {
-        match cpu_source_default {
-            CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
-            _ => {}
-        }
-        match cpu_source_locked {
-            CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
-            _ => {}
-        }
-        match cpu_source_apb_locked {
-            CPUSource::APLL => return Err(Error::UnsupportedFreqConfig),
-            _ => {}
+        if cpu_source_default == CPUSource::APLL
+            || cpu_source_locked == CPUSource::APLL
+            || cpu_source_apb_locked == CPUSource::APLL
+        {
+            return Err(Error::UnsupportedFreqConfig);
         }
 
         if cpu_frequency_default.into() < CPU_FREQ_MIN
@@ -651,6 +656,12 @@ impl ClockControl {
             || cpu_frequency_apb_locked.into() > CPU_FREQ_240M
         {
             return Err(Error::FrequencyTooHigh);
+        }
+
+        if cpu_frequency_default.into() > cpu_frequency_apb_locked.into()
+            || cpu_frequency_default.into() > cpu_frequency_locked.into()
+        {
+            return Err(Error::UnsupportedFreqConfig);
         }
 
         self.cpu_source_default = cpu_source_default;
@@ -762,6 +773,10 @@ impl ClockControl {
         frequency: T,
         keep_pll_enabled: bool,
     ) -> Result<&mut Self, Error> {
+        if source == self.cpu_source && frequency.into() == self.cpu_frequency {
+            return Ok(self);
+        }
+
         match source {
             CPUSource::Xtal => self.set_cpu_frequency_to_xtal(frequency)?,
             CPUSource::PLL => self.set_cpu_frequency_to_pll(frequency)?,
