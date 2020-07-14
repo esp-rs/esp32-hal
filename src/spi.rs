@@ -13,6 +13,12 @@
 //! APB frequency and therefore the requests are always run at the requested baudrate.
 //! The primitive [FullDuplex::read] and [FullDuplex::send] do not lock the APB frequency and
 //! therefore may run at a different frequency.
+//!
+//! # TODO
+//! - Quad SPI
+//! - Half Duplex
+//! - DMA
+//! - Multiple CS pins
 
 use {
     crate::{
