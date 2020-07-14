@@ -7,7 +7,7 @@ use esp32_hal::{
     clock_control::sleep,
     dport::Split,
     dprintln,
-    gpio::{Event, Floating, InputPin, OutputPin, Pin, Pull, RTCInputPin, RTCOutputPin},
+    gpio::{Event, Floating, InputPin, Pin, Pull, RTCInputPin},
     interrupt::{Interrupt, InterruptLevel},
     prelude::*,
     serial::{config::Config, Serial},
