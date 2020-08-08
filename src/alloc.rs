@@ -5,6 +5,10 @@
 //! The allocators can be safely used in a mixed fashion. (Including multiple GeneralAllocators
 //! with different thresholds)
 //!
+//! **NOTE: iram can only be accessed by aligned 32-bit accesses, as structures can indicate
+//! alignment >= 4 even when members are smaller, it cannot be used for general rust allocations.
+//! (Unless a load/store exception handler is used, but this will be very slow.)
+//!
 //! **NOTE: the default implementations of memcpy, memset etc. which are used behind the scenes use
 //! unaligned accesses.** This causes exceptions when used together with IRAM.
 //! The replacements in the mem module do handle alignment properly. They can be enable by
@@ -27,7 +31,7 @@ use core::ptr::NonNull;
 use linked_list_allocator::Heap;
 
 const DEFAULT_EXTERNAL_THRESHOLD: usize = 32 * 1024;
-const DEFAULT_USE_IRAM: bool = true;
+const DEFAULT_USE_IRAM: bool = false;
 
 /// Default allocator using a mix of memories.
 ///
