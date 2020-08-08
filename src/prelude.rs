@@ -10,6 +10,7 @@
 pub use xtensa_lx6_rt::{entry, exception};
 
 pub use crate::analog::SensExt;
+pub use crate::dport::{self, Peripheral};
 pub use crate::gpio::GpioExt;
 pub use crate::interrupt;
 pub use crate::proc_macros::*;

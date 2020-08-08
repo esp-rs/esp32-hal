@@ -32,7 +32,6 @@ use core::{convert::Infallible, marker::PhantomData};
 
 use crate::gpio::{InputPin, OutputPin};
 use crate::prelude::*;
-use crate::target;
 
 use embedded_hal::serial;
 
@@ -206,7 +205,6 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
         pins: Pins<TX, RX, CTS, RTS>,
         config: config::Config,
         clock_control: crate::clock_control::ClockControlConfig,
-        dport: &mut target::DPORT,
     ) -> Result<Self, Error> {
         let mut serial = Serial {
             uart,
@@ -223,7 +221,7 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
         };
 
         serial.uart.init_pins(&mut serial.pins);
-        serial.uart.reset(dport).enable(dport);
+        serial.uart.reset().enable();
         serial
             .change_stop_bits(config.stop_bits)
             .change_data_bits(config.data_bits)
@@ -526,17 +524,17 @@ mod private {
     use super::Pins;
     use crate::gpio::{InputPin, InputSignal, OutputPin, OutputSignal};
     use crate::prelude::*;
-    use crate::target::{self, uart, UART0, UART1, UART2};
+    use crate::target::{uart, UART0, UART1, UART2};
     use core::ops::Deref;
 
     pub trait Instance: Deref<Target = uart::RegisterBlock> {
         fn ptr() -> *const uart::RegisterBlock;
         /// Enable peripheral
-        fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+        fn enable(&mut self) -> &mut Self;
         /// Disable peripheral
-        fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+        fn disable(&mut self) -> &mut Self;
         /// Reset peripheral
-        fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self;
+        fn reset(&mut self) -> &mut Self;
 
         /// Initialize pins
         fn init_pins<TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>(
@@ -545,11 +543,9 @@ mod private {
         ) -> &mut Self;
     }
 
-    static UART_MEM_LOCK: CriticalSectionSpinLockMutex<()> = CriticalSectionSpinLockMutex::new(());
-
     macro_rules! halUart {
         ($(
-            $UARTX:ident: ($uartX:ident, $txd:ident, $rxd:ident, $cts:ident, $rts:ident),
+            $UARTX:ident: ($txd:ident, $rxd:ident, $cts:ident, $rts:ident),
         )+) => {
             $(
                 impl Instance for $UARTX {
@@ -557,31 +553,18 @@ mod private {
                         $UARTX::ptr()
                     }
 
-                    fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self {
-                        dport.perip_rst_en.modify(|_, w| w.$uartX().set_bit());
-                        dport.perip_rst_en.modify(|_, w| w.$uartX().clear_bit());
+                    fn reset(&mut self) -> &mut Self {
+                        dport::reset_peripheral(Peripheral::$UARTX);
                         self
                     }
 
-                    fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self {
-                        dport.perip_clk_en.modify(|_, w| w.uart_mem().set_bit());
-                        dport.perip_clk_en.modify(|_, w| w.$uartX().set_bit());
-                        dport.perip_rst_en.modify(|_, w| w.$uartX().clear_bit());
+                    fn enable(&mut self) -> &mut Self {
+                        dport::enable_peripheral(Peripheral::$UARTX);
                         self
                     }
 
-                    fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self {
-                        dport.perip_clk_en.modify(|_, w| w.$uartX().clear_bit());
-                        dport.perip_rst_en.modify(|_, w| w.$uartX().set_bit());
-
-                        (&UART_MEM_LOCK).lock(|_| {
-                            if dport.perip_clk_en.read().uart0().bit_is_clear()
-                                && dport.perip_clk_en.read().uart1().bit_is_clear()
-                                && dport.perip_clk_en.read().uart2().bit_is_clear()
-                            {
-                                dport.perip_clk_en.modify(|_, w| w.uart_mem().clear_bit());
-                            }
-                        });
+                    fn disable(&mut self) -> &mut Self {
+                        dport::disable_peripheral(Peripheral::$UARTX);
                         self
 
                     }
@@ -618,8 +601,8 @@ mod private {
     }
 
     halUart! {
-        UART0: (uart0, U0TXD, U0RXD, U0CTS, U0RTS),
-        UART1: (uart1, U1TXD, U1RXD, U1CTS, U1RTS),
-        UART2: (uart2, U2TXD, U2RXD, U2CTS, U2RTS),
+        UART0: (U0TXD, U0RXD, U0CTS, U0RTS),
+        UART1: (U1TXD, U1RXD, U1CTS, U1RTS),
+        UART2: (U2TXD, U2RXD, U2CTS, U2RTS),
     }
 }
