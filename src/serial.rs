@@ -222,6 +222,8 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
 
         serial.uart.init_pins(&mut serial.pins);
         serial.uart.reset().enable();
+        serial.reset_rx_fifo();
+        serial.reset_tx_fifo();
         serial
             .change_stop_bits(config.stop_bits)
             .change_data_bits(config.data_bits)
@@ -410,6 +412,21 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
     /// Release the UART and GPIO resources
     pub fn release(self) -> (UART, Pins<TX, RX, CTS, RTS>) {
         (self.uart, self.pins)
+    }
+
+    pub fn reset_rx_fifo(&mut self) {
+        // Hardware issue: rxfifo_rst does not work properly;
+        while self.uart.status.read().rxfifo_cnt().bits() != 0
+            || (self.uart.mem_rx_status.read().mem_rx_rd_addr().bits()
+                != self.uart.mem_rx_status.read().mem_rx_wr_addr().bits())
+        {
+            self.rx.read().unwrap();
+        }
+    }
+
+    pub fn reset_tx_fifo(&self) {
+        self.uart.conf0.write(|w| w.txfifo_rst().set_bit());
+        self.uart.conf0.write(|w| w.txfifo_rst().clear_bit());
     }
 }
 
