@@ -43,6 +43,8 @@ void = { version = "1.0.2", default-features = false }
 
 [dev-dependencies]
 panic-halt = "0.2.0"
+ili9341 = { version = "0.3.0", features = ["graphics"] }
+embedded-graphics = "0.6.2"
 
 [[example]]
 name = "alloc"

@@ -28,6 +28,7 @@ pub use proc_macros::ram;
 
 pub mod analog;
 pub mod clock_control;
+pub mod delay;
 pub mod dport;
 pub mod efuse;
 #[cfg(feature = "external_ram")]
@@ -37,6 +38,7 @@ pub mod gpio;
 pub mod interrupt;
 pub mod prelude;
 pub mod serial;
+pub mod spi;
 pub mod timer;
 pub mod units;
 
