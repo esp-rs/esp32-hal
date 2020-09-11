@@ -72,6 +72,68 @@ pub trait TimerWithInterrupt: CountDown + Periodic + Cancel {
 
     /// Clear interrupt once fired
     fn clear_interrupt(&mut self) -> &mut Self;
+
+    /// Set timer value
+    fn set_value<T: Into<TicksU64>>(&mut self, value: T) -> &mut Self;
+
+    /// Get timer value
+    fn get_value(&self) -> TicksU64;
+
+    /// Get timer value in ns
+    fn get_value_in_ns(&self) -> NanoSecondsU64;
+
+    /// Get alarm value
+    fn get_alarm(&self) -> TicksU64;
+
+    /// Get alarm value in ns
+    fn get_alarm_in_ns(&self) -> NanoSecondsU64;
+
+    /// Set alarm value
+    ///
+    /// *Note: timer is not disabled, so there is a risk for false triggering between
+    /// setting upper and lower 32 bits.*
+    fn set_alarm<T: Into<TicksU64>>(&mut self, value: T) -> &mut Self;
+
+    /// Set alarm value in ns
+    ///
+    /// *Note: timer is not disabled, so there is a risk for false triggering between
+    /// setting upper and lower 32 bits.*
+    fn set_alarm_in_ns<T: Into<NanoSecondsU64>>(&mut self, value: T) -> &mut Self;
+
+    /// Enable or disables the timer
+    fn enable(&mut self, enable: bool) -> &mut Self;
+
+    /// Enable or disables the timer
+    fn is_enabled(&mut self) -> bool;
+
+    /// Stop the timer
+    fn stop(&mut self);
+
+    /// Set to true to increase the timer value on each tick, set to false to decrease
+    /// the timer value on each tick.
+    fn increasing(&mut self, enable: bool) -> &mut Self;
+
+    /// Returns true if the timer is increasing, otherwise decreasing
+    fn is_increasing(&mut self) -> bool;
+
+    /// Set to true if the timer needs to be reloaded to initial value once the alarm
+    /// is reached.
+    fn auto_reload(&mut self, enable: bool) -> &mut Self;
+
+    /// Enable alarm triggering
+    fn enable_alarm(&mut self, enable: bool) -> &mut Self;
+
+    /// Is the alarm active
+    fn alarm_active(&mut self) -> bool;
+
+    /// Set clock divider.
+    ///
+    /// Value must be between 2 and 65536 inclusive for Timer 0 and 1 and
+    /// between 3 and 65535 for TimerLact.
+    fn set_divider(&mut self, divider: u32) -> Result<&mut Self, Error>;
+
+    /// Get the current clock divider
+    fn get_divider(&self) -> u32;
 }
 
 impl<TIMG: TimerGroup> Timer<TIMG, Timer0> {
@@ -197,11 +259,8 @@ macro_rules! timer {
                 }
                 self
             }
-        }
-
-        impl<TIMG: TimerGroup> Timer<TIMG, $TIMX> {
             /// Set timer value
-            pub fn set_value<T: Into<TicksU64>>(&mut self, value: T) -> &mut Self {
+            fn set_value<T: Into<TicksU64>>(&mut self, value: T) -> &mut Self {
                 unsafe {
                     let timg = &*(self.timg);
                     let value: u64 = value.into().into();
@@ -213,7 +272,7 @@ macro_rules! timer {
             }
 
             /// Get timer value
-            pub fn get_value(&mut self) -> TicksU64 {
+            fn get_value(&self) -> TicksU64 {
                 unsafe {
                     let timg = &*(self.timg);
                     timg.$UPDATE.write(|w| w.bits(1));
@@ -223,8 +282,13 @@ macro_rules! timer {
                 }
             }
 
+            /// Get timer value in ns
+            fn get_value_in_ns(&self) -> NanoSecondsU64 {
+                self.get_value() / (self.clock_control_config.apb_frequency() / self.get_divider())
+            }
+
             /// Get alarm value
-            pub fn get_alarm(&mut self) -> TicksU64 {
+            fn get_alarm(&self) -> TicksU64 {
                 unsafe {
                     let timg = &*(self.timg);
                     TicksU64(
@@ -234,39 +298,54 @@ macro_rules! timer {
                 }
             }
 
+            /// Get alarm value in ns
+            fn get_alarm_in_ns(&self) -> NanoSecondsU64 {
+                self.get_alarm() / (self.clock_control_config.apb_frequency() / self.get_divider())
+            }
+
             /// Set alarm value
             ///
             /// *Note: timer is not disabled, so there is a risk for false triggering between
             /// setting upper and lower 32 bits.*
-            pub fn set_alarm(&mut self, value: TicksU64) -> &mut Self {
+            fn set_alarm<T: Into<TicksU64>>(&mut self, value: T) -> &mut Self {
                 unsafe {
                     let timg = &*(self.timg);
-                    let value: u64 = value.into();
+                    let value = value.into() / TicksU64(1);
                     timg.$ALARM_HI.write(|w| w.bits((value >> 32) as u32));
                     timg.$ALARM_LO.write(|w| w.bits(value as u32));
                 }
                 self
             }
 
+            /// Set alarm value in ns
+            ///
+            /// *Note: timer is not disabled, so there is a risk for false triggering between
+            /// setting upper and lower 32 bits.*
+            fn set_alarm_in_ns<T: Into<NanoSecondsU64>>(&mut self, value: T) -> &mut Self {
+                self.set_alarm(
+                    self.clock_control_config.apb_frequency() / self.get_divider() * value.into(),
+                )
+            }
+
             /// Enable or disables the timer
-            pub fn enable(&mut self, enable: bool) -> &mut Self {
+            fn enable(&mut self, enable: bool) -> &mut Self {
                 unsafe { (*(self.timg)).$CONFIG.modify(|_, w| w.$EN().bit(enable)) }
                 self
             }
 
             /// Enable or disables the timer
-            pub fn is_enabled(&mut self) -> bool {
+            fn is_enabled(&mut self) -> bool {
                 unsafe { (*(self.timg)).$CONFIG.read().$EN().bit_is_set() }
             }
 
             /// Stop the timer
-            pub fn stop(&mut self) {
+            fn stop(&mut self) {
                 self.enable(false);
             }
 
             /// Set to true to increase the timer value on each tick, set to false to decrease
             /// the timer value on each tick.
-            pub fn increasing(&mut self, enable: bool) -> &mut Self {
+            fn increasing(&mut self, enable: bool) -> &mut Self {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
@@ -276,13 +355,13 @@ macro_rules! timer {
             }
 
             /// Returns true if the timer is increasing, otherwise decreasing
-            pub fn is_increasing(&mut self) -> bool {
+            fn is_increasing(&mut self) -> bool {
                 unsafe { (*(self.timg)).$CONFIG.read().$INCREASE().bit_is_set() }
             }
 
             /// Set to true if the timer needs to be reloaded to initial value once the alarm
             /// is reached.
-            pub fn auto_reload(&mut self, enable: bool) -> &mut Self {
+            fn auto_reload(&mut self, enable: bool) -> &mut Self {
                 unsafe {
                     (*(self.timg))
                         .$CONFIG
@@ -291,6 +370,52 @@ macro_rules! timer {
                 self
             }
 
+            /// Enable alarm triggering
+            fn enable_alarm(&mut self, enable: bool) -> &mut Self {
+                unsafe {
+                    (*(self.timg))
+                        .$CONFIG
+                        .modify(|_, w| w.$ALARM_EN().bit(enable))
+                }
+                self
+            }
+
+            /// Is the alarm active
+            fn alarm_active(&mut self) -> bool {
+                unsafe { (*(self.timg)).$CONFIG.read().$ALARM_EN().bit_is_clear() }
+            }
+
+            /// Set clock divider.
+            ///
+            /// Value must be between 2 and 65536 inclusive for Timer 0 and 1 and
+            /// between 3 and 65535 for TimerLact.
+            fn set_divider(&mut self, divider: u32) -> Result<&mut Self, Error> {
+                if divider < $MIN_DIV || divider > $MAX_DIV {
+                    return Err(Error::OutOfRange);
+                }
+
+                unsafe {
+                    (*(self.timg)).$CONFIG.modify(|_, w| {
+                        w.$DIVIDER()
+                            .bits((if divider == 65536 { 0 } else { divider }) as u16)
+                    })
+                };
+
+                Ok(self)
+            }
+
+            /// Get the current clock divider
+            fn get_divider(&self) -> u32 {
+                let divider = unsafe { (*(self.timg)).$CONFIG.read().$DIVIDER().bits() };
+                if (divider == 0) {
+                    65536
+                } else {
+                    divider as u32
+                }
+            }
+        }
+
+        impl<TIMG: TimerGroup> Timer<TIMG, $TIMX> {
             fn enable_edge_interrupt(&mut self, enable: bool) -> &mut Self {
                 unsafe {
                     (*(self.timg))
@@ -308,39 +433,8 @@ macro_rules! timer {
                 }
                 self
             }
-
-            fn enable_alarm(&mut self, enable: bool) -> &mut Self {
-                unsafe {
-                    (*(self.timg))
-                        .$CONFIG
-                        .modify(|_, w| w.$ALARM_EN().bit(enable))
-                }
-                self
-            }
-
-            fn alarm_active(&mut self) -> bool {
-                unsafe { (*(self.timg)).$CONFIG.read().$ALARM_EN().bit_is_set() }
-            }
-
-            /// Set clock divider.
-            ///
-            /// Value must be between 2 and 65536 inclusive for Timer 0 and 1 and
-            /// between 3 and 65535 for TimerLact.
-            pub fn set_divider(&mut self, divider: u32) -> Result<&mut Self, Error> {
-                if divider < $MIN_DIV || divider > $MAX_DIV {
-                    return Err(Error::OutOfRange);
-                }
-
-                unsafe {
-                    (*(self.timg)).$CONFIG.modify(|_, w| {
-                        w.$DIVIDER()
-                            .bits((if divider == 65536 { 0 } else { divider }) as u16)
-                    })
-                };
-
-                Ok(self)
-            }
         }
+
         impl<TIMG: TimerGroup> Periodic for Timer<TIMG, $TIMX> {}
 
         impl<TIMG: TimerGroup> CountDown for Timer<TIMG, $TIMX> {
@@ -364,10 +458,10 @@ macro_rules! timer {
             /// **Note: if the timeout is handled via an interrupt, this will never return.**
             fn wait(&mut self) -> nb::Result<(), void::Void> {
                 if self.alarm_active() {
-                    Err(nb::Error::WouldBlock)
-                } else {
                     self.clear_interrupt();
                     Ok(())
+                } else {
+                    Err(nb::Error::WouldBlock)
                 }
             }
         }
