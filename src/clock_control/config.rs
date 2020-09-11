@@ -146,7 +146,7 @@ impl<'a> super::ClockControlConfig {
     // TODO: at the moment only static lifetime callbacks are allow
     pub fn add_callback<F>(&self, f: &'static F) -> Result<(), Error>
     where
-        F: Fn(),
+        F: Fn(super::CPUSource, Hertz, Hertz, super::CPUSource, Hertz, Hertz),
     {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().add_callback(f) }
     }
