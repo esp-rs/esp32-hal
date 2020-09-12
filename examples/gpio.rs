@@ -34,7 +34,7 @@ static GPIO: CriticalSectionSpinLockMutex<
 fn main() -> ! {
     let dp = target::Peripherals::take().unwrap();
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
+    let (_, dport_clock_control) = dp.DPORT.split();
 
     let clkcntrl = esp32_hal::clock_control::ClockControl::new(
         dp.RTCCNTL,
@@ -73,7 +73,6 @@ fn main() -> ! {
         },
         Config::default().baudrate(115_200.Hz()),
         clkcntrl_config,
-        &mut dport,
     )
     .unwrap();
 

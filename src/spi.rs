@@ -20,12 +20,13 @@
 //! - DMA
 //! - Multiple CS pins
 
+use crate::prelude::*;
+
 use {
     crate::{
         clock_control::ClockControlConfig,
         gpio::{self, InputPin, OutputPin},
-        target::{self, SPI1, SPI2, SPI3},
-        units::*,
+        target::{SPI1, SPI2, SPI3},
     },
     core::convert::TryInto,
     embedded_hal::blocking::spi::{Transfer, Write, WriteIter},
@@ -141,9 +142,8 @@ impl<CS: OutputPin>
         >,
         config: config::Config,
         clock_control: ClockControlConfig,
-        dport: &mut target::DPORT,
     ) -> Result<Self, Error> {
-        SPI::new_internal(instance, pins, config, clock_control, dport)
+        SPI::new_internal(instance, pins, config, clock_control)
     }
 }
 
@@ -156,9 +156,8 @@ impl<SCLK: OutputPin, SDO: OutputPin, SDI: InputPin + OutputPin, CS: OutputPin>
         pins: Pins<SCLK, SDO, SDI, CS>,
         config: config::Config,
         clock_control: ClockControlConfig,
-        dport: &mut target::DPORT,
     ) -> Result<Self, Error> {
-        SPI::new_internal(instance, pins, config, clock_control, dport)
+        SPI::new_internal(instance, pins, config, clock_control)
     }
 }
 
@@ -171,9 +170,8 @@ impl<SCLK: OutputPin, SDO: OutputPin, SDI: InputPin + OutputPin, CS: OutputPin>
         pins: Pins<SCLK, SDO, SDI, CS>,
         config: config::Config,
         clock_control: ClockControlConfig,
-        dport: &mut target::DPORT,
     ) -> Result<Self, Error> {
-        SPI::new_internal(instance, pins, config, clock_control, dport)
+        SPI::new_internal(instance, pins, config, clock_control)
     }
 }
 
@@ -191,7 +189,6 @@ impl<
         pins: Pins<SCLK, SDO, SDI, CS>,
         config: config::Config,
         clock_control: ClockControlConfig,
-        dport: &mut target::DPORT,
     ) -> Result<Self, Error> {
         let mut spi = SPI {
             instance,
@@ -200,7 +197,7 @@ impl<
         };
 
         spi.instance.init_pins(&mut spi.pins);
-        spi.instance.enable(dport).reset(dport);
+        spi.instance.reset().enable();
 
         // initialize registers to defaults (this is for a large part also done by the peripheral
         // reset), however SPI0 and 1 cannot be reset independently.
@@ -718,17 +715,18 @@ mod private {
 
     use super::Pins;
     use crate::gpio::{InputPin, InputSignal, OutputPin, OutputSignal};
-    use crate::target::{self, spi, SPI1, SPI2, SPI3};
+    use crate::prelude::*;
+    use crate::target::{spi, SPI1, SPI2, SPI3};
     use core::ops::Deref;
 
     pub trait Instance: Deref<Target = spi::RegisterBlock> {
         fn ptr() -> *const spi::RegisterBlock;
         /// Enable peripheral
-        fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+        fn enable(&mut self) -> &mut Self;
         /// Disable peripheral
-        fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self;
+        fn disable(&mut self) -> &mut Self;
         /// Reset peripheral
-        fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self;
+        fn reset(&mut self) -> &mut Self;
 
         /// Initialize pins
         fn init_pins<SCLK: OutputPin, SDO: OutputPin, SDI: InputPin + OutputPin, CS: OutputPin>(
@@ -737,9 +735,58 @@ mod private {
         ) -> &mut Self;
     }
 
+    // SPI0 is reserved for accessing flash/sram
+
+    impl Instance for SPI1 {
+        fn ptr() -> *const spi::RegisterBlock {
+            SPI1::ptr()
+        }
+
+        fn reset(&mut self) -> &mut Self {
+            // SPI0 and 1 share reset, should not reset SPI0 as it is used for flash
+            // therefore only clear data registers
+
+            for i in 0..=15 {
+                unsafe { self.w[i].write(|w| w.bits(0)) };
+            }
+
+            self
+        }
+
+        fn enable(&mut self) -> &mut Self {
+            dport::enable_peripheral(Peripheral::SPI0_SPI1);
+            self
+        }
+
+        fn disable(&mut self) -> &mut Self {
+            // SPI0 and 1 share reset, should not disable SPI0 as it is used for flash
+            self
+        }
+
+        fn init_pins<SCLK: OutputPin, SDO: OutputPin, SDI: InputPin + OutputPin, CS: OutputPin>(
+            &mut self,
+            pins: &mut Pins<SCLK, SDO, SDI, CS>,
+        ) -> &mut Self {
+            // SCLK, SDO & SDI, pins are initialized and in use by SPI0, cannot change
+
+            // use CS2 signal, as CS is shared between SPI0 and SPI1 and CS0 is for flash,
+            // CS1 is for psram?
+
+            if let Some(cs) = &mut pins.cs {
+                cs.set_to_push_pull_output()
+                    .connect_peripheral_to_output(OutputSignal::SPICS2);
+            }
+
+            self.pin
+                .write(|w| unsafe { w.bits(0).cs0_dis().set_bit().cs1_dis().set_bit() });
+
+            self
+        }
+    }
+
     macro_rules! modules {
         ($(
-            $MODULE:ident: ($module:ident, $sclk:ident, $sdo:ident, $sdi:ident, $cs:ident),
+            $MODULE:ident: ($sclk:ident, $sdo:ident, $sdi:ident, $cs:ident),
         )+) => {
             $(
                 impl Instance for $MODULE {
@@ -747,21 +794,18 @@ mod private {
                         $MODULE::ptr()
                     }
 
-                    fn reset(&mut self, dport: &mut target::DPORT) -> &mut Self {
-                        dport.perip_rst_en.modify(|_, w| w.$module().set_bit());
-                        dport.perip_rst_en.modify(|_, w| w.$module().clear_bit());
+                    fn reset(&mut self) -> &mut Self {
+                        dport::reset_peripheral(dport::Peripheral::$MODULE);
                         self
                     }
 
-                    fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self {
-                        dport.perip_clk_en.modify(|_, w| w.$module().set_bit());
-                        dport.perip_rst_en.modify(|_, w| w.$module().clear_bit());
+                    fn enable(&mut self) -> &mut Self {
+                        dport::enable_peripheral(dport::Peripheral::$MODULE);
                         self
                     }
 
-                    fn disable(&mut self, dport: &mut target::DPORT) -> &mut Self {
-                        dport.perip_clk_en.modify(|_, w| w.$module().clear_bit());
-                        dport.perip_rst_en.modify(|_, w| w.$module().set_bit());
+                    fn disable(&mut self) -> &mut Self {
+                        dport::disable_peripheral(dport::Peripheral::$MODULE);
                         self
 
                     }
@@ -806,55 +850,7 @@ mod private {
     }
 
     modules! {
-    // SPI0 is reserved for accessing flash/sram
-        SPI2: (spi2, HSPICLK, HSPID, HSPIQ, HSPICS0),
-        SPI3: (spi3, VSPICLK, VSPID, VSPIQ, VSPICS0),
-    }
-
-    impl Instance for SPI1 {
-        fn ptr() -> *const spi::RegisterBlock {
-            SPI1::ptr()
-        }
-
-        fn reset(&mut self, _dport: &mut target::DPORT) -> &mut Self {
-            // SPI0 and 1 share reset, should not reset SPI0 as it is used for flash
-
-            for i in 0..=15 {
-                unsafe { self.w[i].write(|w| w.bits(0)) };
-            }
-
-            self
-        }
-
-        fn enable(&mut self, dport: &mut target::DPORT) -> &mut Self {
-            dport.perip_clk_en.modify(|_, w| w.spi0().set_bit());
-            dport.perip_rst_en.modify(|_, w| w.spi0().clear_bit());
-            self
-        }
-
-        fn disable(&mut self, _dport: &mut target::DPORT) -> &mut Self {
-            // SPI0 and 1 share reset, should not disable SPI0 as it is used for flash
-            self
-        }
-
-        fn init_pins<SCLK: OutputPin, SDO: OutputPin, SDI: InputPin + OutputPin, CS: OutputPin>(
-            &mut self,
-            pins: &mut Pins<SCLK, SDO, SDI, CS>,
-        ) -> &mut Self {
-            // SCLK, SDO & SDI, pins are initialized and in use by SPI0, cannot change
-
-            // use CS2 signal, as CS is shared between SPI0 and SPI1 and CS0 is for flash,
-            // CS1 is for psram?
-
-            if let Some(cs) = &mut pins.cs {
-                cs.set_to_push_pull_output()
-                    .connect_peripheral_to_output(OutputSignal::SPICS2);
-            }
-
-            self.pin
-                .write(|w| unsafe { w.bits(0).cs0_dis().set_bit().cs1_dis().set_bit() });
-
-            self
-        }
+        SPI2: (HSPICLK, HSPID, HSPIQ, HSPICS0),
+        SPI3: (VSPICLK, VSPID, VSPIQ, VSPICS0),
     }
 }

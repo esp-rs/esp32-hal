@@ -26,7 +26,7 @@ fn main() -> ! {
     // we will do it manually on startup
     disable_timg_wdts(&mut timg0, &mut timg1);
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
+    let (_, dport_clock_control) = dp.DPORT.split();
 
     // setup clocks & watchdog
     let clock_control = ClockControl::new(
@@ -53,7 +53,6 @@ fn main() -> ! {
         },
         Config::default(),
         clock_control_config,
-        &mut dport,
     )
     .unwrap();
 

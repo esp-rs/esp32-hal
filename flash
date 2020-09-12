@@ -243,7 +243,7 @@ then
         then
             printf "\n\n"
             # get gen_esp32part.py and create binary partition table
-            curl -s -S -f --max-time 2 -L $GENPART_SOURCE --output target/gen_esp32part.py_new
+            curl -s -S -f --max-time 5 -L $GENPART_SOURCE --output target/gen_esp32part.py_new
 
             if [ $? -ne 0 ]; then
                 if [ -f target/gen_esp32part.py ]; then
@@ -269,7 +269,7 @@ then
 
         # get bootloader.bin file 
         # (different variants exist, but only difference is flash settings which are overriden by esptool)
-        curl -s -S -f --max-time 2 -L $BOOTLOADER_SOURCE --output target/bootloader.bin_new 
+        curl -s -S -f --max-time 5 -L $BOOTLOADER_SOURCE --output target/bootloader.bin_new 
 
         if [ $? -ne 0 ]; then
             if [ -f target/bootloader.bin ]; then

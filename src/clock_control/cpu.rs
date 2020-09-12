@@ -136,12 +136,13 @@ impl super::ClockControl {
     ///
     /// The second core will start running with the function `entry`.
     pub fn start_app_core(&mut self, entry: fn() -> !) -> Result<(), Error> {
-        if self
-            .dport_control
-            .appcpu_ctrl_b()
-            .read()
-            .appcpu_clkgate_en()
-            .bit_is_set()
+        if !xtensa_lx6::is_debugger_attached()
+            && self
+                .dport_control
+                .appcpu_ctrl_b()
+                .read()
+                .appcpu_clkgate_en()
+                .bit_is_set()
         {
             return Err(Error::CoreAlreadyRunning);
         }

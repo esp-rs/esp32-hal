@@ -88,7 +88,7 @@ impl<
 fn main() -> ! {
     let dp = target::Peripherals::take().expect("Failed to obtain Peripherals");
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
+    let (_, dport_clock_control) = dp.DPORT.split();
 
     let clkcntrl = ClockControl::new(
         dp.RTCCNTL,
@@ -123,7 +123,6 @@ fn main() -> ! {
             ..serial::config::Config::default()
         },
         clkcntrl_config,
-        &mut dport,
     )
     .unwrap();
 
@@ -145,7 +144,6 @@ fn main() -> ! {
             data_mode: spi::config::MODE_0,
         },
         clkcntrl_config,
-        &mut dport,
     )
     .unwrap();
 
