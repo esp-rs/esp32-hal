@@ -1,7 +1,13 @@
 [package]
 name = "esp32-hal"
 version = "0.1.0"
+description = "A Hardware abstraction layer for Espressif's ESP32 WiFi microcontroller."
 authors = ["Scott Mabin <scott@mabez.dev>", "Arjan Mels <arjan@mels.email>"]
+categories = ["embedded", "hardware-support", "no-std"]
+keywords = ["xtensa", "esp32", "hal", "esp"]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/esp-rs/esp32-hal"
 edition = "2018"
 
 
@@ -30,7 +36,7 @@ rt = ["esp32/rt", "xtensa-lx6-rt"]
 
 
 [dependencies]
-esp32-hal-proc-macros = { path = "procmacros" }
+esp32-hal-proc-macros = { version = "=0.1.0", path = "procmacros" }
 
 xtensa-lx6-rt = { version = "0.4.0", optional = true }
 xtensa-lx6 = "0.2.0"
