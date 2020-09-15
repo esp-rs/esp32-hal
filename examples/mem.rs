@@ -14,10 +14,10 @@ use esp32_hal::clock_control::{sleep, CPUSource::PLL, ClockControl, ClockControl
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::mem::{memcmp, memcpy, memcpy_reverse, memset};
-use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::serial::{config::Config, Serial};
 use esp32_hal::target;
 
-use xtensa_lx6::get_cycle_count;
+use xtensa_lx6::timer::get_cycle_count;
 
 #[macro_use]
 extern crate alloc;
@@ -37,7 +37,7 @@ fn main() -> ! {
     // we will do it manually on startup
     disable_timg_wdts(&mut timg0, &mut timg1);
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
+    let (_, dport_clock_control) = dp.DPORT.split();
 
     // setup clocks & watchdog
     let mut clock_control = ClockControl::new(
@@ -57,13 +57,19 @@ fn main() -> ! {
 
     watchdog.start(20.s());
 
+    let gpios = dp.GPIO.split();
+
     // setup serial controller
-    let mut uart0 = Serial::uart0(
+    let mut uart0: Serial<_, _, _> = Serial::new(
         dp.UART0,
-        (NoTx, NoRx),
+        esp32_hal::serial::Pins {
+            tx: gpios.gpio1,
+            rx: gpios.gpio3,
+            cts: None,
+            rts: None,
+        },
         Config::default(),
         clock_control_config,
-        &mut dport,
     )
     .unwrap();
 

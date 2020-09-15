@@ -32,13 +32,13 @@ rt = ["esp32/rt", "xtensa-lx6-rt"]
 [dependencies]
 esp32-hal-proc-macros = { path = "procmacros" }
 
-xtensa-lx6-rt = { version = "0.3.0", optional = true }
+xtensa-lx6-rt = { version = "0.4.0", optional = true }
 xtensa-lx6 = "0.2.0"
 esp32 = { version = "0.7.0", default-features = false }
 bare-metal = "0.2"
 nb = "0.1.2"
 embedded-hal = { version = "0.2.3", features = ["unproven"] }
-linked_list_allocator = { version = "0.8.4", optional = true, default-features = false, features = ["alloc_ref"] }
+linked_list_allocator = { version = "=0.8.4", optional = true, default-features = false, features = ["alloc_ref"] }
 void = { version = "1.0.2", default-features = false }
 
 [dev-dependencies]

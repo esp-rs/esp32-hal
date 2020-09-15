@@ -59,12 +59,6 @@ INCLUDE "alias.x"
 
 /* esp32 specific regions */
 SECTIONS {
-  .rwtext :
-  {
-   . = ALIGN(4);
-    *(.rwtext.literal .rwtext .rwtext.literal.* .rwtext.*)
-  } > iram_seg AT > RODATA
-
   .rtc_fast.text : {
    . = ALIGN(4);
     *(.rtc_fast.literal .rtc_fast.text .rtc_fast.literal.* .rtc_fast.text.*)
