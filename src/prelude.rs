@@ -7,7 +7,7 @@
 //! This can be imported as use `esp32_hal::prelude::*`.
 
 #[cfg(feature = "rt")]
-pub use xtensa_lx6_rt::{entry, exception};
+pub use xtensa_lx_rt::{entry, exception};
 
 pub use crate::analog::SensExt;
 pub use crate::dport::{self, Peripheral};
@@ -23,5 +23,5 @@ pub use embedded_hal::digital::v2::ToggleableOutputPin as _;
 pub use embedded_hal::prelude::*;
 pub use embedded_hal::timer::{Cancel, CountDown, Periodic};
 
-pub use xtensa_lx6::mutex::mutex_trait::prelude::*;
-pub use xtensa_lx6::mutex::CriticalSectionSpinLockMutex;
+pub use xtensa_lx::mutex::mutex_trait::prelude::*;
+pub use xtensa_lx::mutex::CriticalSectionSpinLockMutex;

@@ -12,7 +12,7 @@ use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, Serial};
 use esp32_hal::target;
 
-use xtensa_lx6::get_program_counter;
+use xtensa_lx::get_program_counter;
 
 #[entry]
 fn main() -> ! {

@@ -17,7 +17,7 @@ use esp32_hal::mem::{memcmp, memcpy, memcpy_reverse, memset};
 use esp32_hal::serial::{config::Config, Serial};
 use esp32_hal::target;
 
-use xtensa_lx6::timer::get_cycle_count;
+use xtensa_lx::timer::get_cycle_count;
 
 #[macro_use]
 extern crate alloc;

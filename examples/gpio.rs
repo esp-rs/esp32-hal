@@ -122,7 +122,7 @@ fn handle_gpio_interrupt() {
             writeln!(
                 serial,
                 "  Interrupt level: {}, pin state: {}",
-                xtensa_lx6::interrupt::get_level(),
+                xtensa_lx::interrupt::get_level(),
                 gpio.is_high().unwrap()
             )
             .unwrap();
