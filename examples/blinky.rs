@@ -4,7 +4,6 @@
 use esp32_hal::target;
 use hal::prelude::*;
 use xtensa_lx::timer::get_cycle_count;
-use xtensa_lx_rt::entry;
 use panic_halt as _;
 use esp32_hal as hal;
 
