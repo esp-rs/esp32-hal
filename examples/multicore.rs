@@ -12,7 +12,7 @@ use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, Serial};
 use esp32_hal::target;
 
-use xtensa_lx6::{get_stack_pointer, timer::get_cycle_count};
+use xtensa_lx::{get_stack_pointer, timer::get_cycle_count};
 
 const BLINK_HZ: Hertz = Hertz(1);
 

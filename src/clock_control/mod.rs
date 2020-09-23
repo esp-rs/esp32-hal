@@ -23,7 +23,7 @@ use crate::target::rtccntl::clk_conf::*;
 use crate::target::rtccntl::cntl::*;
 use crate::target::{APB_CTRL, RTCCNTL, TIMG0};
 use core::fmt;
-use xtensa_lx6::timer::{delay, get_cycle_count};
+use xtensa_lx::timer::{delay, get_cycle_count};
 
 pub mod config;
 pub mod cpu;

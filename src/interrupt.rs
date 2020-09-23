@@ -4,7 +4,7 @@
 //! This module redirects the cpu interrupts handler to registered peripheral interrupt handlers.
 //!
 //! Interrupt handlers are defined using the [Interrupt](attr.interrupt.html) attribute.
-//! (Note that this is a distinct attribute from the one in the [xtensa_lx6_rt](xtensa_lx6_rt)
+//! (Note that this is a distinct attribute from the one in the [xtensa_lx_rt](xtensa_lx_rt)
 //! crate.)
 //!
 //! To enable the interrupt and assign to a specific interrupt level use
@@ -12,7 +12,7 @@
 //! interrupt in the respective peripherals.)
 //!
 //! To have lowest latency possible you can use the
-//! [Interrupt](../../xtensa_lx6_rt/attr.interrupt.html) attribute from the xtensa_lx6_rt crate
+//! [Interrupt](../../xtensa_lx_rt/attr.interrupt.html) attribute from the xtensa_lx_rt crate
 //! to define low level/naked interrupt handlers. (This will override the interrupt
 //! handling offered by this crate for that specific interrupt level. This should especially be
 //! considered when using Level 7 = Non Maskable Interrupt level as these will not be turned off
@@ -38,7 +38,7 @@ pub use crate::target::{
 use crate::Core::{self, APP, PRO};
 use bare_metal::Nr;
 pub use proc_macros::interrupt;
-pub use xtensa_lx6::interrupt::{self, free};
+pub use xtensa_lx::interrupt::{self, free};
 
 /// Interrupt errors
 #[derive(Debug)]
@@ -213,43 +213,43 @@ static mut INTERRUPT_LEVELS: [u128; 8] = [0u128; 8];
 static INTERRUPT_LEVELS_MUTEX: CriticalSectionSpinLockMutex<bool> =
     CriticalSectionSpinLockMutex::new(false);
 
-#[xtensa_lx6_rt::interrupt(1)]
+#[xtensa_lx_rt::interrupt(1)]
 #[ram]
 unsafe fn level_1_handler(level: u32) {
     handle_interrupts(level)
 }
 
-#[xtensa_lx6_rt::interrupt(2)]
+#[xtensa_lx_rt::interrupt(2)]
 #[ram]
 unsafe fn level_2_handler(level: u32) {
     handle_interrupts(level)
 }
 
-#[xtensa_lx6_rt::interrupt(3)]
+#[xtensa_lx_rt::interrupt(3)]
 #[ram]
 unsafe fn level_3_handler(level: u32) {
     handle_interrupts(level)
 }
 
-#[xtensa_lx6_rt::interrupt(4)]
+#[xtensa_lx_rt::interrupt(4)]
 #[ram]
 unsafe fn level_4_handler(level: u32) {
     handle_interrupts(level)
 }
 
-#[xtensa_lx6_rt::interrupt(5)]
+#[xtensa_lx_rt::interrupt(5)]
 #[ram]
 unsafe fn level_5_handler(level: u32) {
     handle_interrupts(level)
 }
 
-#[xtensa_lx6_rt::interrupt(6)]
+#[xtensa_lx_rt::interrupt(6)]
 #[ram]
 unsafe fn level_6_handler(level: u32) {
     handle_interrupts(level)
 }
 
-#[xtensa_lx6_rt::interrupt(7)]
+#[xtensa_lx_rt::interrupt(7)]
 #[ram]
 unsafe fn level_7_handler(level: u32) {
     handle_interrupts(level)

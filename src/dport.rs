@@ -4,8 +4,8 @@
 //! Registers needed in other blocks can be split off.
 //!
 use crate::target::{dport, DPORT};
-use xtensa_lx6::mutex::mutex_trait::Mutex;
-use xtensa_lx6::mutex::CriticalSectionSpinLockMutex;
+use xtensa_lx::mutex::mutex_trait::Mutex;
+use xtensa_lx::mutex::CriticalSectionSpinLockMutex;
 
 /// Cpu Period Configuration Register
 pub struct ClockControl {}

@@ -4,7 +4,7 @@
 use super::Error;
 use crate::target;
 use crate::Core::{self, APP, PRO};
-use xtensa_lx6::set_stack_pointer;
+use xtensa_lx::set_stack_pointer;
 
 static mut START_CORE1_FUNCTION: Option<fn() -> !> = None;
 
@@ -119,12 +119,12 @@ impl super::ClockControl {
         }
 
         // disables interrupts
-        xtensa_lx6::interrupt::set_mask(0);
+        xtensa_lx::interrupt::set_mask(0);
 
         // reset cycle compare registers
-        xtensa_lx6::timer::set_ccompare0(0);
-        xtensa_lx6::timer::set_ccompare1(0);
-        xtensa_lx6::timer::set_ccompare2(0);
+        xtensa_lx::timer::set_ccompare0(0);
+        xtensa_lx::timer::set_ccompare1(0);
+        xtensa_lx::timer::set_ccompare2(0);
 
         // set stack pointer to end of memory: no need to retain stack up to this point
         set_stack_pointer(&mut _stack_end_cpu1);
@@ -136,7 +136,7 @@ impl super::ClockControl {
     ///
     /// The second core will start running with the function `entry`.
     pub fn start_app_core(&mut self, entry: fn() -> !) -> Result<(), Error> {
-        if !xtensa_lx6::is_debugger_attached()
+        if !xtensa_lx::is_debugger_attached()
             && self
                 .dport_control
                 .appcpu_ctrl_b()

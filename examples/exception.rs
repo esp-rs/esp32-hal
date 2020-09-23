@@ -19,8 +19,8 @@ use esp32_hal::Core::PRO;
 // !!! Cannot use CriticalSectionSpinLockMutex here, because an NMI is fires from within a locked
 // section which leads to a deadlock in the NMI interrupt handler. This is not a problem in this
 // case as this is a single threaded example. !!!
-static TX: xtensa_lx6::mutex::CriticalSectionMutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> =
-    xtensa_lx6::mutex::CriticalSectionMutex::new(None);
+static TX: xtensa_lx::mutex::CriticalSectionMutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> =
+    xtensa_lx::mutex::CriticalSectionMutex::new(None);
 
 fn locked_print(str: &str) {
     (&TX).lock(|tx| {
@@ -30,7 +30,7 @@ fn locked_print(str: &str) {
             tx,
             "    {}, Level: {}",
             str,
-            xtensa_lx6::interrupt::get_level()
+            xtensa_lx::interrupt::get_level()
         )
         .unwrap();
     });
@@ -78,8 +78,8 @@ fn random_name() {
 #[exception]
 #[ram]
 fn other_exception(
-    cause: xtensa_lx6_rt::exception::ExceptionCause,
-    frame: xtensa_lx6_rt::exception::Context,
+    cause: xtensa_lx_rt::exception::ExceptionCause,
+    frame: xtensa_lx_rt::exception::Context,
 ) {
     (&TX).lock(|tx| {
         let tx = tx.as_mut().unwrap();
