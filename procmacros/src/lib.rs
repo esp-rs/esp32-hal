@@ -72,7 +72,7 @@ pub fn ram(args: TokenStream, input: TokenStream) -> TokenStream {
             .emit();
     }
 
-    if rtc_slow && rtc_fast {
+    if uninitialized && zeroed {
         Span::call_site()
             .error("Only one of uninitialized and zeroed")
             .emit();
