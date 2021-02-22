@@ -149,20 +149,20 @@ unsafe impl GlobalAlloc for Allocator {
 }
 
 extern crate alloc;
-use alloc::alloc::{AllocErr, AllocRef};
+use alloc::alloc::{AllocError, Allocator as AllocAllocator};
 
-unsafe impl AllocRef for Allocator {
-    fn alloc(&mut self, layout: Layout) -> Result<NonNull<[u8]>, AllocErr> {
+unsafe impl AllocAllocator for Allocator {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         if layout.size() == 0 {
             return Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0));
         }
         let ptr = unsafe { GlobalAlloc::alloc(self, layout) };
         match NonNull::new(ptr) {
             Some(ptr) => Ok(NonNull::slice_from_raw_parts(ptr, layout.size())),
-            None => Err(AllocErr)
+            None => Err(AllocError)
         }
     }
-    unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
         if layout.size() != 0 {
             GlobalAlloc::dealloc(self, ptr.as_ptr(), layout);
         }
@@ -252,14 +252,14 @@ unsafe impl GlobalAlloc for GeneralAllocator {
             && layout.size() >= core::mem::size_of::<usize>()
             && layout.align() >= core::mem::size_of::<usize>()
         {
-            let res = IRAM_ALLOCATOR.alloc(layout);
+            let res = GlobalAlloc::alloc(&IRAM_ALLOCATOR, layout);
             if res != 0 as *mut u8 {
                 return res;
             }
         }
 
         // if not external or IRAM then place in DRAM
-        let res = DRAM_ALLOCATOR.alloc(layout);
+        let res = GlobalAlloc::alloc(&DRAM_ALLOCATOR, layout);
         if res != 0 as *mut u8 {
             return res;
         }
