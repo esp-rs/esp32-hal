@@ -6,10 +6,11 @@ use esp32_hal as hal;
 use {
     core::panic::PanicInfo,
     embedded_graphics::{
-        pixelcolor::BinaryColor, prelude::*, primitives::Circle, primitives::Rectangle,
-        style::PrimitiveStyle, style::PrimitiveStyleBuilder,
+        fonts::{Font8x16, Text},
+        pixelcolor::BinaryColor,
+        prelude::*,
+        style::TextStyle,
     },
-    embedded_hal::blocking::delay::{DelayMs, DelayUs},
     hal::{
         clock_control::{self, sleep, CPUSource, ClockControl, ClockControlConfig},
         dport::Split,
@@ -132,27 +133,12 @@ fn main() -> ! {
     //     sensor
     // };
 
-    loop {
-        display.clear();
-        Rectangle::new(Point::new(16, 24), Point::new(48, 40))
-            .into_styled(
-                PrimitiveStyleBuilder::new()
-                    .fill_color(BinaryColor::On)
-                    .build(),
-            )
-            .draw(&mut display)
-            .unwrap();
-        display.flush().unwrap();
-        sleep(500.ms());
-
-        display.clear();
-        Circle::new(Point::new(96, 32), 20)
-            .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
-            .draw(&mut display)
-            .unwrap();
-        display.flush().unwrap();
-        sleep(500.ms());
-    }
+    Text::new("Hello world!", Point::new(2, 28))
+        .into_styled(TextStyle::new(Font8x16, BinaryColor::On))
+        .draw(&mut display)
+        .unwrap();
+    display.flush().unwrap();
+    loop {}
 }
 
 #[panic_handler]
@@ -171,23 +157,3 @@ fn panic(info: &PanicInfo) -> ! {
     // this statement will not be reached, but is needed to make this a diverging function
     loop {}
 }
-
-impl DelayMs<u8> for Delay {
-    fn delay_ms(&mut self, ms: u8) {
-        sleep((ms as u32).ms());
-    }
-}
-
-impl DelayMs<u16> for Delay {
-    fn delay_ms(&mut self, ms: u16) {
-        sleep((ms as u32).ms());
-    }
-}
-
-impl DelayUs<u16> for Delay {
-    fn delay_us(&mut self, us: u16) {
-        sleep((us as u32).us());
-    }
-}
-
-struct Delay;
