@@ -1,8 +1,7 @@
 #![no_std]
 #![no_main]
 
-extern crate esp32_hal as hal;
-extern crate xtensa_lx6_rt;
+use esp32_hal as hal;
 
 use {
     core::panic::PanicInfo,
@@ -18,11 +17,11 @@ use {
         prelude::*,
         timer::Timer,
     },
-    mpu6050::Mpu6050,
+    // mpu6050::Mpu6050,
     ssd1306::{prelude::*, Builder},
 };
 
-#[no_mangle]
+#[entry]
 fn main() -> ! {
     let dp = esp32::Peripherals::take().unwrap();
 
@@ -49,11 +48,14 @@ fn main() -> ! {
         )
         .unwrap();
 
+    // disable RTC watchdog
     let (clkcntrl_config, mut watchdog) = clkcntrl.freeze().unwrap();
     watchdog.disable();
-    let (_, _, _, mut watchdog0) = Timer::new(dp.TIMG0, clkcntrl_config);
+
+    // disable MST watchdogs
+    let (.., mut watchdog0) = Timer::new(dp.TIMG0, clkcntrl_config);
+    let (.., mut watchdog1) = Timer::new(dp.TIMG1, clkcntrl_config);
     watchdog0.disable();
-    let (_, _, _, mut watchdog1) = Timer::new(dp.TIMG1, clkcntrl_config);
     watchdog1.disable();
 
     let pins = dp.GPIO.split();
@@ -112,23 +114,23 @@ fn main() -> ! {
     let acc = imu.get_acc().unwrap();
     dprintln!("temp: {}, gyro: {:?}, acc: {:?}", temp, gyro, acc);*/
 
-    let mut sensor = {
-        let i2c1 = i2c::I2C::new(
-            dp.I2C1,
-            i2c::Pins {
-                sda: pins.gpio22,
-                scl: pins.gpio23,
-            },
-            200_000,
-            &mut dport,
-        );
-
-        let mut sensor = sgp30::Sgp30::new(i2c1, 0x58, Delay);
-
-        dprintln!("serial: {:?}", sensor.serial().unwrap());
-
-        sensor
-    };
+    // let mut sensor = {
+    //     let i2c1 = i2c::I2C::new(
+    //         dp.I2C1,
+    //         i2c::Pins {
+    //             sda: pins.gpio22,
+    //             scl: pins.gpio23,
+    //         },
+    //         200_000,
+    //         &mut dport,
+    //     );
+    //
+    //     let mut sensor = sgp30::Sgp30::new(i2c1, 0x58, Delay);
+    //
+    //     dprintln!("serial: {:?}", sensor.serial().unwrap());
+    //
+    //     sensor
+    // };
 
     loop {
         display.clear();
