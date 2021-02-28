@@ -5,6 +5,10 @@
 //! The allocators can be safely used in a mixed fashion. (Including multiple GeneralAllocators
 //! with different thresholds)
 //!
+//! **NOTE: iram can only be accessed by aligned 32-bit accesses, as structures can indicate
+//! alignment >= 4 even when members are smaller, it cannot be used for general rust allocations.
+//! (Unless a load/store exception handler is used, but this will be very slow.)
+//!
 //! **NOTE: the default implementations of memcpy, memset etc. which are used behind the scenes use
 //! unaligned accesses.** This causes exceptions when used together with IRAM.
 //! The replacements in the mem module do handle alignment properly. They can be enable by
@@ -27,7 +31,7 @@ use core::ptr::NonNull;
 use linked_list_allocator::Heap;
 
 const DEFAULT_EXTERNAL_THRESHOLD: usize = 32 * 1024;
-const DEFAULT_USE_IRAM: bool = true;
+const DEFAULT_USE_IRAM: bool = false;
 
 /// Default allocator using a mix of memories.
 ///
@@ -145,29 +149,20 @@ unsafe impl GlobalAlloc for Allocator {
 }
 
 extern crate alloc;
-use alloc::alloc::{AllocErr, AllocInit, AllocRef, MemoryBlock};
+use alloc::alloc::{AllocError, Allocator as AllocAllocator};
 
-unsafe impl AllocRef for Allocator {
-    fn alloc(&mut self, layout: Layout, init: AllocInit) -> Result<MemoryBlock, AllocErr> {
+unsafe impl AllocAllocator for Allocator {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         if layout.size() == 0 {
-            return Ok(MemoryBlock {
-                ptr: layout.dangling(),
-                size: 0,
-            });
+            return Ok(NonNull::slice_from_raw_parts(layout.dangling(), 0));
         }
         let ptr = unsafe { GlobalAlloc::alloc(self, layout) };
-        if ptr != 0 as *mut u8 {
-            let block = MemoryBlock {
-                ptr: NonNull::new(ptr).ok_or(AllocErr)?,
-                size: layout.size(),
-            };
-            unsafe { init.init(block) };
-            Ok(block)
-        } else {
-            Err(AllocErr)
+        match NonNull::new(ptr) {
+            Some(ptr) => Ok(NonNull::slice_from_raw_parts(ptr, layout.size())),
+            None => Err(AllocError)
         }
     }
-    unsafe fn dealloc(&mut self, ptr: NonNull<u8>, layout: Layout) {
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
         if layout.size() != 0 {
             GlobalAlloc::dealloc(self, ptr.as_ptr(), layout);
         }
@@ -257,14 +252,14 @@ unsafe impl GlobalAlloc for GeneralAllocator {
             && layout.size() >= core::mem::size_of::<usize>()
             && layout.align() >= core::mem::size_of::<usize>()
         {
-            let res = IRAM_ALLOCATOR.alloc(layout);
+            let res = GlobalAlloc::alloc(&IRAM_ALLOCATOR, layout);
             if res != 0 as *mut u8 {
                 return res;
             }
         }
 
         // if not external or IRAM then place in DRAM
-        let res = DRAM_ALLOCATOR.alloc(layout);
+        let res = GlobalAlloc::alloc(&DRAM_ALLOCATOR, layout);
         if res != 0 as *mut u8 {
             return res;
         }

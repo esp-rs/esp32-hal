@@ -59,12 +59,6 @@ INCLUDE "alias.x"
 
 /* esp32 specific regions */
 SECTIONS {
-  .rwtext :
-  {
-   . = ALIGN(4);
-    *(.rwtext.literal .rwtext .rwtext.literal.* .rwtext.*)
-  } > iram_seg AT > RODATA
-
   .rtc_fast.text : {
    . = ALIGN(4);
     *(.rtc_fast.literal .rtc_fast.text .rtc_fast.literal.* .rtc_fast.text.*)
@@ -161,7 +155,23 @@ SECTIONS {
     _external_heap_start = ABSOLUTE(.);
   } > psram_seg
 
-}
+
+  /* wifi data */
+
+  .rwtext.wifi :
+  {
+    . = ALIGN(4);
+    *( .wifi0iram  .wifi0iram.*)
+    *( .wifirxiram  .wifirxiram.*)
+    *( .iram1  .iram1.*)
+  } > RWTEXT AT > RODATA
+
+  .data.wifi :
+  {
+    . = ALIGN(4);
+    *( .dram1 .dram1.*)
+  } > RWDATA AT > RODATA
+} 
 
 _external_ram_start = ABSOLUTE(ORIGIN(psram_seg));
 _external_ram_end = ABSOLUTE(ORIGIN(psram_seg)+LENGTH(psram_seg));
@@ -176,4 +186,8 @@ _stack_start_cpu0 = _stack_end_cpu1;
 _stack_end_cpu0 = _stack_start_cpu0 + STACK_SIZE;
 
 EXTERN(DefaultHandler);
+
+EXTERN(WIFI_EVENT); /* Force inclusion of WiFi libraries */
+
 INCLUDE "device.x"
+

@@ -6,7 +6,7 @@ use core::panic::PanicInfo;
 
 use esp32_hal::prelude::*;
 
-use esp32_hal::clock_control::{sleep, CPUSource, ClockControl, ClockControlConfig};
+use esp32_hal::clock_control::{sleep, CPUSource, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, Serial};
@@ -26,7 +26,7 @@ fn main() -> ! {
     // we will do it manually on startup
     disable_timg_wdts(&mut timg0, &mut timg1);
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
+    let (_, dport_clock_control) = dp.DPORT.split();
 
     // setup clocks & watchdog
     let mut clock_control = ClockControl::new(
@@ -65,7 +65,6 @@ fn main() -> ! {
         },
         Config::default(),
         clock_control_config,
-        &mut dport,
     )
     .unwrap();
     uart0.change_baudrate(115200).unwrap();
@@ -88,15 +87,21 @@ fn main() -> ! {
 
     // register callback which is called when the clock is switched
     clock_control_config
-        .add_callback(&|| {
-            let clock_control_config = ClockControlConfig {};
+        .add_callback(&|before_source,
+                        before_freq,
+                        before_apb_freq,
+                        after_source,
+                        after_freq,
+                        after_apb_freq| {
             dprintln!(
-                "  Change Clock: CPU: {}, PLL: {}, APB: {}, REF: {}",
-                clock_control_config.cpu_frequency(),
-                clock_control_config.pll_frequency(),
-                clock_control_config.apb_frequency(),
-                clock_control_config.ref_frequency(),
-            )
+                "  Before: Source: {:?}, CPU: {}, APB: {},    After: Source: {:?}, CPU: {}, APB: {}",
+                before_source,
+                before_freq,
+                before_apb_freq,
+                after_source,
+                after_freq,
+                after_apb_freq
+            );
         })
         .unwrap();
 
@@ -123,7 +128,7 @@ fn main() -> ! {
 
                 x = x.wrapping_add(1);
 
-                let ccount = xtensa_lx6::timer::get_cycle_count();
+                let ccount = xtensa_lx::timer::get_cycle_count();
                 let ccount_diff = ccount.wrapping_sub(prev_ccount);
 
                 writeln!(

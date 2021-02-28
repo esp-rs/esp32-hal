@@ -7,7 +7,7 @@ keywords = ["esp32", "esp32-hal", "runtime", "startup"]
 license = "MIT OR Apache-2.0"
 name = "esp32-hal-proc-macros"
 repository = "https://github.com/esp-rs/xtensa-lx6-rt"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2018"
 
 [lib]

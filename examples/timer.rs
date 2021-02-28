@@ -41,7 +41,7 @@ static TX: CriticalSectionSpinLockMutex<Option<esp32_hal::serial::Tx<esp32::UART
 fn main() -> ! {
     let dp = target::Peripherals::take().unwrap();
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
+    let (_, dport_clock_control) = dp.DPORT.split();
 
     let clkcntrl = esp32_hal::clock_control::ClockControl::new(
         dp.RTCCNTL,
@@ -93,7 +93,6 @@ fn main() -> ! {
         },
         config,
         clkcntrl_config,
-        &mut dport,
     )
     .unwrap();
 
@@ -162,7 +161,7 @@ fn main() -> ! {
                 timer0.get_value(),
                 timer1.get_value(),
                 timer2.get_value(),
-                xtensa_lx6::timer::get_cycle_count()
+                xtensa_lx::timer::get_cycle_count()
             )
             .unwrap();
             if let Ok(_) = timer1.wait() {

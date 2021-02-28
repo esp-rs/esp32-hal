@@ -18,6 +18,7 @@
 #![feature(const_fn)]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
 #![cfg_attr(feature = "alloc", feature(alloc_layout_extra))]
+#![cfg_attr(feature = "alloc", feature(nonnull_slice_from_raw_parts))]
 
 pub use embedded_hal as hal;
 pub use esp32 as target;
@@ -28,6 +29,7 @@ pub use proc_macros::ram;
 
 pub mod analog;
 pub mod clock_control;
+pub mod delay;
 pub mod dport;
 pub mod efuse;
 #[cfg(feature = "external_ram")]
@@ -38,6 +40,7 @@ pub mod i2c;
 pub mod interrupt;
 pub mod prelude;
 pub mod serial;
+pub mod spi;
 pub mod timer;
 pub mod units;
 
@@ -75,17 +78,17 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
     // initialization to zero needs to be done by the application
 
     // Initialize RTC RAM
-    xtensa_lx6_rt::zero_bss(&mut _rtc_fast_bss_start, &mut _rtc_fast_bss_end);
-    xtensa_lx6_rt::zero_bss(&mut _rtc_slow_bss_start, &mut _rtc_slow_bss_end);
+    xtensa_lx_rt::zero_bss(&mut _rtc_fast_bss_start, &mut _rtc_fast_bss_end);
+    xtensa_lx_rt::zero_bss(&mut _rtc_slow_bss_start, &mut _rtc_slow_bss_end);
 
     #[cfg(feature = "external_ram")]
     external_ram::init();
 
     // set stack pointer to end of memory: no need to retain stack up to this point
-    xtensa_lx6::set_stack_pointer(&mut _stack_end_cpu0);
+    xtensa_lx::set_stack_pointer(&mut _stack_end_cpu0);
 
     // continue with default reset handler
-    xtensa_lx6_rt::Reset();
+    xtensa_lx_rt::Reset();
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -95,7 +98,7 @@ pub enum Core {
 }
 
 pub fn get_core() -> Core {
-    match ((xtensa_lx6::get_processor_id() >> 13) & 1) != 0 {
+    match ((xtensa_lx::get_processor_id() >> 13) & 1) != 0 {
         false => Core::PRO,
         true => Core::APP,
     }

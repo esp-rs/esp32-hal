@@ -19,7 +19,7 @@ const BLINK_HZ: Hertz = Hertz(2);
 fn main() -> ! {
     let dp = target::Peripherals::take().expect("Failed to obtain Peripherals");
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
+    let (_, dport_clock_control) = dp.DPORT.split();
 
     let clkcntrl = ClockControl::new(
         dp.RTCCNTL,
@@ -56,7 +56,6 @@ fn main() -> ! {
             ..Config::default()
         },
         clkcntrl_config,
-        &mut dport,
     )
     .unwrap();
 

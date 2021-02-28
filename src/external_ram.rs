@@ -38,7 +38,7 @@ pub(super) unsafe fn init() {
     if &_external_heap_start as *const u32 > (&_external_ram_start as *const u32).add(get_size()) {
         panic!("External RAM too small for data");
     }
-    xtensa_lx6_rt::zero_bss(&mut _external_bss_start, &mut _external_bss_end);
+    xtensa_lx_rt::zero_bss(&mut _external_bss_start, &mut _external_bss_end);
 }
 
 /// Calculate the size of external RAM by reading and writing at defined intervals while

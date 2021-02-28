@@ -12,7 +12,7 @@ use esp32_hal::dprintln;
 use esp32_hal::serial::{config::Config, Serial};
 use esp32_hal::target;
 
-use xtensa_lx6::get_program_counter;
+use xtensa_lx::get_program_counter;
 
 #[entry]
 fn main() -> ! {
@@ -26,7 +26,7 @@ fn main() -> ! {
     // we will do it manually on startup
     disable_timg_wdts(&mut timg0, &mut timg1);
 
-    let (mut dport, dport_clock_control) = dp.DPORT.split();
+    let (_, dport_clock_control) = dp.DPORT.split();
 
     // setup clocks & watchdog
     let clock_control = ClockControl::new(
@@ -53,7 +53,6 @@ fn main() -> ! {
         },
         Config::default(),
         clock_control_config,
-        &mut dport,
     )
     .unwrap();
 

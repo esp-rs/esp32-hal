@@ -27,14 +27,15 @@ static DFS_MUTEX: CriticalSectionSpinLockMutex<Locks> = CriticalSectionSpinLockM
 
 /// DFS structure
 pub(super) struct DFS {
-    callbacks: [&'static dyn Fn(); MAX_CALLBACKS],
+    callbacks: [&'static dyn Fn(super::CPUSource, Hertz, Hertz, super::CPUSource, Hertz, Hertz);
+        MAX_CALLBACKS],
     nr_callbacks: CriticalSectionSpinLockMutex<usize>,
 }
 
 impl DFS {
     pub(crate) fn new() -> Self {
         DFS {
-            callbacks: [&|| {}; MAX_CALLBACKS],
+            callbacks: [&|_, _, _, _, _, _| {}; MAX_CALLBACKS],
 
             nr_callbacks: CriticalSectionSpinLockMutex::new(0),
         }
@@ -105,13 +106,35 @@ impl<'a> Drop for LockPllD2 {
 
 impl<'a> super::ClockControl {
     /// call all the callbacks
-    fn do_callbacks(&self) {
+    fn do_callbacks(
+        &self,
+        cpu_source_before: super::CPUSource,
+        cpu_frequency_before: Hertz,
+        apb_frequency_before: Hertz,
+        cpu_source_after: super::CPUSource,
+        cpu_frequency_after: Hertz,
+        apb_frequency_after: Hertz,
+    ) {
+        if cpu_source_after == cpu_source_before
+            && cpu_frequency_after == cpu_frequency_before
+            && apb_frequency_after == apb_frequency_before
+        {
+            return;
+        }
+
         // copy the callbacks to prevent needing to have interrupts disabled the entire time
         // as callback cannot be deleted this is ok.
         let (nr, callbacks) = (&self.dfs.nr_callbacks).lock(|nr| (*nr, self.dfs.callbacks));
 
         for i in 0..nr {
-            callbacks[i]();
+            callbacks[i](
+                cpu_source_before,
+                cpu_frequency_before,
+                apb_frequency_before,
+                cpu_source_after,
+                cpu_frequency_after,
+                apb_frequency_after,
+            );
         }
     }
 
@@ -122,8 +145,20 @@ impl<'a> super::ClockControl {
 
             if data.cpu == 1 {
                 if data.apb == 0 || self.cpu_frequency_locked > self.cpu_frequency_apb_locked {
+                    let cpu_source_before = self.cpu_source;
+                    let cpu_frequency_before = self.cpu_frequency;
+                    let apb_frequency_before = self.apb_frequency;
+
                     self.set_cpu_frequency_locked(data.pll_d2 > 0).unwrap();
-                    self.do_callbacks()
+
+                    self.do_callbacks(
+                        cpu_source_before,
+                        cpu_frequency_before,
+                        apb_frequency_before,
+                        self.cpu_source,
+                        self.cpu_frequency,
+                        self.apb_frequency,
+                    );
                 }
             }
         });
@@ -136,12 +171,24 @@ impl<'a> super::ClockControl {
             data.cpu -= 1;
 
             if data.cpu == 0 {
+                let cpu_source_before = self.cpu_source;
+                let cpu_frequency_before = self.cpu_frequency;
+                let apb_frequency_before = self.apb_frequency;
+
                 if data.apb == 0 {
                     self.set_cpu_frequency_default(data.pll_d2 > 0).unwrap();
                 } else {
                     self.set_cpu_frequency_apb_locked(data.pll_d2 > 0).unwrap();
                 }
-                self.do_callbacks()
+
+                self.do_callbacks(
+                    cpu_source_before,
+                    cpu_frequency_before,
+                    apb_frequency_before,
+                    self.cpu_source,
+                    self.cpu_frequency,
+                    self.apb_frequency,
+                );
             }
         });
     }
@@ -153,8 +200,20 @@ impl<'a> super::ClockControl {
 
             if data.apb == 1 {
                 if data.cpu == 0 || self.cpu_frequency_apb_locked > self.cpu_frequency_locked {
+                    let cpu_source_before = self.cpu_source;
+                    let cpu_frequency_before = self.cpu_frequency;
+                    let apb_frequency_before = self.apb_frequency;
+
                     self.set_cpu_frequency_apb_locked(data.pll_d2 > 0).unwrap();
-                    self.do_callbacks();
+
+                    self.do_callbacks(
+                        cpu_source_before,
+                        cpu_frequency_before,
+                        apb_frequency_before,
+                        self.cpu_source,
+                        self.cpu_frequency,
+                        self.apb_frequency,
+                    );
                 }
             }
         });
@@ -167,12 +226,24 @@ impl<'a> super::ClockControl {
             data.apb -= 1;
 
             if data.apb == 0 {
+                let cpu_source_before = self.cpu_source;
+                let cpu_frequency_before = self.cpu_frequency;
+                let apb_frequency_before = self.apb_frequency;
+
                 if data.cpu == 0 {
                     self.set_cpu_frequency_default(data.pll_d2 > 0).unwrap();
                 } else {
                     self.set_cpu_frequency_locked(data.pll_d2 > 0).unwrap();
                 }
-                self.do_callbacks()
+
+                self.do_callbacks(
+                    cpu_source_before,
+                    cpu_frequency_before,
+                    apb_frequency_before,
+                    self.cpu_source,
+                    self.cpu_frequency,
+                    self.apb_frequency,
+                );
             }
         });
     }
@@ -202,8 +273,20 @@ impl<'a> super::ClockControl {
         (&DFS_MUTEX).lock(|data| {
             data.pll_d2 += 1;
             if data.pll_d2 == 1 && self.pll_frequency == super::FREQ_OFF {
+                let cpu_source_before = self.cpu_source;
+                let cpu_frequency_before = self.cpu_frequency;
+                let apb_frequency_before = self.apb_frequency;
+
                 self.pll_enable(false).unwrap();
-                self.do_callbacks();
+
+                self.do_callbacks(
+                    cpu_source_before,
+                    cpu_frequency_before,
+                    apb_frequency_before,
+                    self.cpu_source,
+                    self.cpu_frequency,
+                    self.apb_frequency,
+                );
             }
         });
 
@@ -216,8 +299,20 @@ impl<'a> super::ClockControl {
             data.pll_d2 -= 1;
 
             if data.pll_d2 == 0 && self.cpu_source() != super::CPUSource::PLL {
+                let cpu_source_before = self.cpu_source;
+                let cpu_frequency_before = self.cpu_frequency;
+                let apb_frequency_before = self.apb_frequency;
+
                 self.pll_disable();
-                self.do_callbacks();
+
+                self.do_callbacks(
+                    cpu_source_before,
+                    cpu_frequency_before,
+                    apb_frequency_before,
+                    self.cpu_source,
+                    self.cpu_frequency,
+                    self.apb_frequency,
+                );
             }
         });
     }
@@ -230,7 +325,7 @@ impl<'a> super::ClockControl {
     /// TODO: at the moment only static lifetime callbacks are allowed
     pub(crate) fn add_callback<F>(&mut self, f: &'static F) -> Result<(), Error>
     where
-        F: Fn(),
+        F: Fn(super::CPUSource, Hertz, Hertz, super::CPUSource, Hertz, Hertz),
     {
         // need to disable interrupts, because otherwise deadlock can arise
         // when interrupt is called after mutex is obtained and interrupt
