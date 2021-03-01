@@ -22,7 +22,7 @@ where
         let mut i2c = Self(i2c);
 
         // Configure SDA and SCL pins
-        let (sda_out, sda_in, scl_out, scl_in) = if is_i2c0(&i2c.0) {
+        let (sda_out, sda_in, scl_out, scl_in) = if i2c.is_i2c0() {
             (
                 OutputSignal::I2CEXT0_SDA,
                 InputSignal::I2CEXT0_SDA,
@@ -101,7 +101,7 @@ where
 
     /// Resets the interface
     fn reset(&mut self, dport: &mut DPORT) {
-        if is_i2c0(&self.0) {
+        if self.is_i2c0() {
             dport.perip_rst_en.modify(|_, w| w.i2c0().set_bit());
             dport.perip_rst_en.modify(|_, w| w.i2c0().clear_bit());
         } else {
@@ -112,7 +112,7 @@ where
 
     /// Enables the interface
     fn enable(&mut self, dport: &mut DPORT) {
-        if is_i2c0(&self.0) {
+        if self.is_i2c0() {
             dport.perip_clk_en.modify(|_, w| w.i2c0().set_bit());
             dport.perip_rst_en.modify(|_, w| w.i2c0().clear_bit());
         } else {
@@ -163,7 +163,7 @@ where
         }
     }
 
-    /// Sets the freqency of the I2C interface by calculating and applying the associated timings
+    /// Sets the frequency of the I2C interface by calculating and applying the associated timings
     fn set_frequency(&mut self, freq: u32) {
         // i2c_hal_set_bus_timing(&(i2c_context[i2c_num].hal), freq, 1);
         // i2c_ll_cal_bus_clk(80000000, freq, 0);
@@ -199,9 +199,14 @@ where
         }
     }
 
+    /// Helper function for determining which interface corresponds to the current instance
+    fn is_i2c0(&self) -> bool {
+        (self.0.deref() as *const i2c::RegisterBlock) as u32 == 0x3ff53000
+    }
+
     pub fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), Error> {
         // Use the correct FIFO address for the current I2C peripheral
-        let fifo_addr = if is_i2c0(&self.0) {
+        let fifo_addr = if self.is_i2c0() {
             0x6001301c as *mut u8
         } else {
             0x6002701c as *mut u8
@@ -263,7 +268,7 @@ where
         assert!(buffer.len() > 1); //TODO: temporary, just simplifying the logic during implementation
 
         // Use the correct FIFO address for the current I2C peripheral
-        let fifo_addr = if is_i2c0(&self.0) {
+        let fifo_addr = if self.is_i2c0() {
             (0x3ff53000 + 0x001c) as *mut u8
         } else {
             (0x3ff53000 + 0x14000 + 0x001c) as *mut u8
@@ -406,11 +411,6 @@ pub struct Pins<SDA: OutputPin + InputPin, SCL: OutputPin + InputPin> {
 pub enum Error {
     Transmit,
     Receive,
-}
-
-/// Helper function for determining which interface corresponds to the current instance
-fn is_i2c0<T: Instance>(t: &T) -> bool {
-    (t.deref() as *const i2c::RegisterBlock) as u32 == 0x3ff53000
 }
 
 /// I2C Command
