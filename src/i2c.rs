@@ -7,6 +7,19 @@ use {
     core::ops::Deref,
 };
 
+const DPORT_BASE_ADDR: u32 = 0x3FF4_0000;
+const AHB_BASE_ADDR: u32 = 0x6000_0000;
+const FIFO_OFFSET: u32 = 0x1C;
+const I2C0_OFFSET: u32 = 0x1_3000;
+const I2C1_OFFSET: u32 = 0x2_7000;
+
+const DPORT_I2C0_ADDR: u32 = DPORT_BASE_ADDR + I2C0_OFFSET;
+const DPORT_I2C1_ADDR: u32 = DPORT_BASE_ADDR + I2C1_OFFSET;
+
+const AHB_I2C0_ADDR: u32 = AHB_BASE_ADDR + I2C0_OFFSET;
+const AHB_I2C1_ADDR: u32 = AHB_BASE_ADDR + I2C1_OFFSET;
+
+
 pub struct I2C<T>(T);
 
 impl<T> I2C<T>
@@ -74,7 +87,7 @@ where
                 .set_bit()
                 .scl_force_out()
                 .set_bit()
-                // Use Most Siginificant Bit first for sending and receiving data
+                // Use Most Significant Bit first for sending and receiving data
                 .tx_lsb_first()
                 .clear_bit()
                 .rx_lsb_first()
@@ -201,17 +214,24 @@ where
 
     /// Helper function for determining which interface corresponds to the current instance
     fn is_i2c0(&self) -> bool {
-        (self.0.deref() as *const i2c::RegisterBlock) as u32 == 0x3ff53000
+        (self.0.deref() as *const i2c::RegisterBlock) as u32 == DPORT_I2C0_ADDR
+    }
+
+    /// Gets the FIFO address given the operation type (R/W)
+    fn fifo_addr(&self, operation_type: OperationType) -> u32 {
+        // Errata 3.3: When written via DPORT, consecutive writes to the same address may be lost.
+        // Errata 3.18: FIFO read operations are unpredictable via AHB.
+        let base_addr = match (operation_type, self.is_i2c0()) {
+            (OperationType::READ, true) => DPORT_I2C0_ADDR,
+            (OperationType::READ, false) => DPORT_I2C1_ADDR,
+            (OperationType::WRITE, true) => AHB_I2C0_ADDR,
+            (OperationType::WRITE, false) => AHB_I2C1_ADDR,
+        };
+
+        base_addr + FIFO_OFFSET
     }
 
     pub fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), Error> {
-        // Use the correct FIFO address for the current I2C peripheral
-        let fifo_addr = if self.is_i2c0() {
-            0x6001301c as *mut u8
-        } else {
-            0x6002701c as *mut u8
-        };
-
         // Reset FIFO
         self.reset_fifo();
 
@@ -223,8 +243,10 @@ where
 
         // Load bytes into FIFO
         unsafe {
+            let fifo_addr = self.fifo_addr(OperationType::WRITE) as *mut u8;
+
             // Address
-            core::ptr::write_volatile(fifo_addr, addr << 1 | AddressFlag::WRITE as u8);
+            core::ptr::write_volatile(fifo_addr, addr << 1 | OperationType::WRITE as u8);
 
             // Data
             for byte in bytes {
@@ -267,13 +289,6 @@ where
         dprintln!("starting I2C read");
         assert!(buffer.len() > 1); //TODO: temporary, just simplifying the logic during implementation
 
-        // Use the correct FIFO address for the current I2C peripheral
-        let fifo_addr = if self.is_i2c0() {
-            (0x3ff53000 + 0x001c) as *mut u8
-        } else {
-            (0x3ff53000 + 0x14000 + 0x001c) as *mut u8
-        };
-
         // Reset FIFO
         self.reset_fifo();
 
@@ -283,8 +298,9 @@ where
                 .bits(Command::new(Opcode::RSTART, false, false, false, None).into())
         });
 
-        // Address
-        unsafe { core::ptr::write_volatile(fifo_addr, addr << 1 | AddressFlag::READ as u8) };
+        // Load address into FIFO
+        let fifo_addr = self.fifo_addr(OperationType::READ) as *mut u8;
+        unsafe { core::ptr::write_volatile(fifo_addr, addr << 1 | OperationType::READ as u8) };
 
         // WRITE command
         self.0.comd1.write(|w| unsafe {
@@ -477,7 +493,7 @@ impl From<Command> for u16 {
     }
 }
 
-enum AddressFlag {
+enum OperationType {
     WRITE = 0,
     READ = 1,
 }
