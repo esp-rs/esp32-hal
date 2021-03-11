@@ -14,7 +14,6 @@ use esp32_hal::{
     delay::Delay,
     dport::Split,
     dprintln,
-    interrupt::{self, Interrupt},
     i2c::{self, Error, I2C},
     prelude::*,
     target::{I2C0, Peripherals},
@@ -60,10 +59,6 @@ fn main() -> ! {
     let (.., mut watchdog1) = Timer::new(dp.TIMG1, clkcntrl_config);
     watchdog0.disable();
     watchdog1.disable();
-    dprintln!("Watchdogs disabled");
-    sleep(2.s());
-
-    interrupt::enable(Interrupt::I2C_EXT0_INTR).unwrap();
 
     let pins = dp.GPIO.split();
     let i2c0 = i2c::I2C::new(
@@ -87,15 +82,12 @@ fn main() -> ! {
         sleep(10.ms());
         rst.set_high().unwrap();
 
-        dprintln!("starting display init");
         display.init().unwrap();
-        dprintln!("finished display init");
         display.clear();
         display.flush().unwrap();
 
         display
     };
-    dprintln!("Set up display");
 
     // IMU
     let mut imu = {
@@ -106,14 +98,12 @@ fn main() -> ! {
         imu.init(&mut delay).unwrap();
         imu
     };
-    dprintln!("Set up IMU");
 
     Text::new("Hello world!", Point::new(2, 28))
         .into_styled(TextStyle::new(Font8x16, BinaryColor::On))
         .draw(&mut display)
         .unwrap();
     display.flush().unwrap();
-    dprintln!("Wrote to display");
 
     sleep(3.s());
 
