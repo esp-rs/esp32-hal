@@ -77,9 +77,6 @@ where
         // Clear all I2C interrupts
         i2c.0.int_clr.write(|w| unsafe { w.bits(0x3FFF) });
 
-        // enable I2C_ACK_ERR_INT
-        i2c.0.int_ena.write(|w| w.ack_err_int_ena().set_bit());
-
         i2c.0.ctr.modify(|_, w| unsafe {
             // Clear register
             w.bits(0)
@@ -265,7 +262,7 @@ where
             w.command1().bits(
                 Command::Write {
                     ack_exp: Ack::ACK,
-                    ack_check_en: true,
+                    ack_check_en: false,
                     length: 1 + bytes.len() as u8
                 }.into()
             )
@@ -311,7 +308,7 @@ where
         self.0.comd1.write(|w| unsafe {
             w.command1().bits(Command::Write {
                 ack_exp: Ack::ACK,
-                ack_check_en: true,
+                ack_check_en: false,
                 length: 1,
             }.into())
         });
@@ -424,7 +421,7 @@ where
         self.0.comd1.write(|w| unsafe {
             w.command1().bits(Command::Write {
                 ack_exp: Ack::ACK,
-                ack_check_en: true,
+                ack_check_en: false,
                 length: 1 + bytes.len() as u8,
             }.into())
         });
@@ -441,7 +438,7 @@ where
         self.0.comd3.write(|w| unsafe {
             w.command3().bits(Command::Write {
                 ack_exp: Ack::ACK,
-                ack_check_en: true,
+                ack_check_en: false,
                 length: 1,
             }.into())
         });
@@ -625,12 +622,11 @@ impl From<Command> for u16 {
 
         let mut cmd: u16 = length.into();
 
-        // TODO: Disabling until we figure out how to get the ack checks to work properly
-        // if ack_check_en {
-        //     cmd |= 1 << 8;
-        // } else {
-        //     cmd &= !(1 << 8);
-        // }
+        if ack_check_en {
+            cmd |= 1 << 8;
+        } else {
+            cmd &= !(1 << 8);
+        }
 
         if ack_exp == Ack::NACK {
             cmd |= 1 << 9;
