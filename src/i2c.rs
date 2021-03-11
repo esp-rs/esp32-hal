@@ -1,12 +1,6 @@
-use {
-    crate::{
-        dflush,
-        dprintln,
-        gpio::{InputPin, InputSignal, OutputPin, OutputSignal},
-        target::{i2c, DPORT, I2C0, I2C1},
-    },
-    core::{ops::Deref, ptr},
-};
+use crate::gpio::{InputPin, InputSignal, OutputPin, OutputSignal};
+use crate::target::{i2c, DPORT, I2C0, I2C1};
+use core::{ops::Deref, ptr};
 
 const DPORT_BASE_ADDR: u32 = 0x3FF4_0000;
 const AHB_BASE_ADDR: u32 = 0x6000_0000;
@@ -19,7 +13,6 @@ const DPORT_I2C1_ADDR: u32 = DPORT_BASE_ADDR + I2C1_OFFSET;
 
 const AHB_I2C0_ADDR: u32 = AHB_BASE_ADDR + I2C0_OFFSET;
 const AHB_I2C1_ADDR: u32 = AHB_BASE_ADDR + I2C1_OFFSET;
-
 
 pub struct I2C<T>(T);
 
@@ -234,7 +227,6 @@ where
 
     // TODO: Enable ACK checks and return error if ACK check fails
     pub fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), Error> {
-        dprintln!("starting write");
         // Reset FIFO
         self.reset_fifo();
 
@@ -279,19 +271,14 @@ where
 
         // Busy wait for all three commands to be marked as done
         while self.0.comd0.read().command0_done().bit() != true {}
-        dprintln!("start done");
         while self.0.comd1.read().command1_done().bit() != true {}
-        dprintln!("write done");
         while self.0.comd2.read().command2_done().bit() != true {}
-        dprintln!("stop done");
 
         Ok(())
     }
 
     // TODO: Enable ACK checks and return error if ACK check fails
     pub fn read(&mut self, addr: u8, buffer: &mut [u8]) -> Result<(), Error> {
-        dprintln!("starting I2C read");
-
         // Reset FIFO
         self.reset_fifo();
 
@@ -352,51 +339,35 @@ where
         // Start transmission
         self.0.ctr.modify(|_, w| w.trans_start().set_bit());
 
-        // Busy wait for all three commands to be marked as done
+        // Busy wait for all commands to be marked as done
         while self.0.comd0.read().command0_done().bit() != true {}
         while self.0.comd1.read().command1_done().bit() != true {}
-        dprintln!("write addr done");
 
         if buffer.len() > 1 {
             while self.0.comd2.read().command2_done().bit() != true {}
-            dprintln!("read bytes [..^1] done");
-            dflush!();
             while self.0.comd3.read().command3_done().bit() != true {}
-            dprintln!("read bytes [^1] done");
-            dflush!();
             while self.0.comd4.read().command4_done().bit() != true {}
-            dprintln!("stop done");
-            dflush!();
         } else {
             while self.0.comd2.read().command2_done().bit() != true {}
-            dprintln!("read byte done");
-            dflush!();
             while self.0.comd3.read().command3_done().bit() != true {}
-            dprintln!("stop done");
-            dflush!();
         }
 
 
         // Read bytes from FIFO
-        dprintln!("rxfifo: {:?}", self.0.sr.read().rxfifo_cnt().bits());
-        dflush!();
         for byte in buffer.iter_mut() {
             *byte = unsafe { ptr::read_volatile(fifo_addr) };
         }
-        dprintln!("{:x?}", &buffer);
-        dflush!();
 
         Ok(())
     }
 
     // TODO: Enable ACK checks and return error if ACK check fails
-    pub fn write_then_read(
+    pub fn write_read(
         &mut self,
         addr: u8,
         bytes: &[u8],
         buffer: &mut [u8],
     ) -> Result<(), Error> {
-        dprintln!("starting write then read");
         // Reset FIFO
         self.reset_fifo();
 
@@ -484,20 +455,13 @@ where
 
         // Busy wait for all commands to be marked as done
         while self.0.comd0.read().command0_done().bit() != true {}
-        dprintln!("comd0");
         while self.0.comd1.read().command1_done().bit() != true {}
-        dprintln!("comd1");
         while self.0.comd2.read().command2_done().bit() != true {}
-        dprintln!("comd2");
         while self.0.comd3.read().command3_done().bit() != true {}
-        dprintln!("comd3");
         while self.0.comd4.read().command4_done().bit() != true {}
-        dprintln!("comd4");
         while self.0.comd5.read().command5_done().bit() != true {}
-        dprintln!("comd5");
         if buffer.len() > 1 {
             while self.0.comd6.read().command6_done().bit() != true {}
-            dprintln!("comd6");
         }
 
         // read bytes from FIFO
@@ -551,7 +515,7 @@ where
         bytes: &'w [u8],
         buffer: &'w mut [u8],
     ) -> Result<(), Error> {
-        self.write_then_read(addr, bytes, buffer)
+        self.write_read(addr, bytes, buffer)
     }
 }
 
