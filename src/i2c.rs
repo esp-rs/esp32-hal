@@ -14,6 +14,9 @@ const DPORT_I2C1_ADDR: u32 = DPORT_BASE_ADDR + I2C1_OFFSET;
 const AHB_I2C0_ADDR: u32 = AHB_BASE_ADDR + I2C0_OFFSET;
 const AHB_I2C1_ADDR: u32 = AHB_BASE_ADDR + I2C1_OFFSET;
 
+// Corresponds to https://github.com/espressif/esp-idf/blob/1cb31e50943bb757966ca91ed7f4852692a5b0ed/components/hal/esp32/include/hal/i2c_ll.h#L90
+const SOURCE_CLK_FREQ: u32 = 80_000_000;
+
 pub struct I2C<T>(T);
 
 impl<T> I2C<T>
@@ -174,7 +177,7 @@ where
     fn set_frequency(&mut self, freq: u32) {
         // i2c_hal_set_bus_timing(&(i2c_context[i2c_num].hal), freq, 1);
         // i2c_ll_cal_bus_clk(80000000, freq, 0);
-        let half_cycle = ((80_000_000 / freq) / 2) as u16;
+        let half_cycle = ((SOURCE_CLK_FREQ / freq) / 2) as u16;
         let scl_low = half_cycle;
         let scl_high = half_cycle;
         let sda_hold = half_cycle / 2;
