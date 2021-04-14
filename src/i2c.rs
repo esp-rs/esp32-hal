@@ -29,7 +29,7 @@ where
         let mut i2c = I2C(i2c);
 
         // Configure SDA and SCL pins
-        let (sda_out, sda_in, scl_out, scl_in) = if i2c.is_i2c0() {
+        let (sda_out, sda_in, scl_out, scl_in) = if i2c.0.is_i2c0() {
             (
                 OutputSignal::I2CEXT0_SDA,
                 InputSignal::I2CEXT0_SDA,
@@ -108,7 +108,7 @@ where
 
     /// Resets the interface
     fn reset(&mut self, dport: &mut DPORT) {
-        if self.is_i2c0() {
+        if self.0.is_i2c0() {
             dport.perip_rst_en.modify(|_, w| w.i2c0().set_bit());
             dport.perip_rst_en.modify(|_, w| w.i2c0().clear_bit());
         } else {
@@ -119,7 +119,7 @@ where
 
     /// Enables the interface
     fn enable(&mut self, dport: &mut DPORT) {
-        if self.is_i2c0() {
+        if self.0.is_i2c0() {
             dport.perip_clk_en.modify(|_, w| w.i2c0().set_bit());
             dport.perip_rst_en.modify(|_, w| w.i2c0().clear_bit());
         } else {
@@ -206,16 +206,11 @@ where
         }
     }
 
-    /// Helper function for determining which interface corresponds to the current instance
-    fn is_i2c0(&self) -> bool {
-        (self.0.deref() as *const i2c::RegisterBlock) as u32 == DPORT_I2C0_ADDR
-    }
-
     /// Gets the FIFO address given the operation type (R/W)
     fn fifo_addr(&self, operation_type: OperationType) -> u32 {
         // Errata 3.3: When written via DPORT, consecutive writes to the same address may be lost.
         // Errata 3.18: FIFO read operations are unpredictable via AHB.
-        let base_addr = match (operation_type, self.is_i2c0()) {
+        let base_addr = match (operation_type, self.0.is_i2c0()) {
             (OperationType::READ, true) => DPORT_I2C0_ADDR,
             (OperationType::READ, false) => DPORT_I2C1_ADDR,
             (OperationType::WRITE, true) => AHB_I2C0_ADDR,
@@ -631,7 +626,12 @@ enum Opcode {
     END = 4,
 }
 
-pub trait Instance: Deref<Target = i2c::RegisterBlock> {}
+pub trait Instance: Deref<Target = i2c::RegisterBlock> {
+    /// Determines which interface corresponds to the current instance
+    fn is_i2c0(&self) -> bool {
+        self.deref() as *const i2c::RegisterBlock == I2C0::ptr()
+    }
+}
 
 impl Instance for I2C0 {}
 
