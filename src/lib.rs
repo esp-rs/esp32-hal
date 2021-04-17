@@ -35,6 +35,7 @@ pub mod efuse;
 #[cfg(feature = "external_ram")]
 pub mod external_ram;
 pub mod gpio;
+pub mod i2c;
 #[cfg(feature = "rt")]
 pub mod interrupt;
 pub mod prelude;

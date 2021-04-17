@@ -741,6 +741,7 @@ macro_rules! impl_input {
             }
 
             fn set_alternate_function(&mut self, alternate: AlternateFunction) -> &mut Self {
+                // NOTE(unsafe) atomic read to a stateless register
                 unsafe { &*IO_MUX::ptr() }
                     .$iomux
                     .modify(|_, w| unsafe { w.mcu_sel().bits(alternate as u8) });
