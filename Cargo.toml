@@ -36,23 +36,23 @@ rt = ["esp32/rt", "xtensa-lx-rt"]
 
 
 [dependencies]
-esp32-hal-proc-macros = { version = "=0.2.0", path = "procmacros" }
+esp32-hal-proc-macros = { version = "0.2", path = "procmacros" }
 
-xtensa-lx-rt = { version = "0.5.0", optional = true, features = ["lx6"] }
-xtensa-lx = { version = "0.3.0", features = ["lx6"]}
-esp32 = "0.10.0"
+xtensa-lx-rt = { version = "0.5", optional = true, features = ["lx6"] }
+xtensa-lx = { version = "0.3", features = ["lx6"]}
+esp32 = "0.10"
 bare-metal = "0.2"
-nb = "0.1.2"
-embedded-hal = { version = "0.2.3", features = ["unproven"] }
-linked_list_allocator = { version = "=0.8.11", optional = true, default-features = false, features = ["alloc_ref"] }
-void = { version = "1.0.2", default-features = false }
+nb = "0.1"
+embedded-hal = { version = "0.2", features = ["unproven"] }
+linked_list_allocator = { version = "0.9", optional = true, default-features = false, features = ["alloc_ref"] }
+void = { version = "1.0", default-features = false }
 
 [dev-dependencies]
-panic-halt = "0.2.0"
-ili9341 = { version = "0.3.0", features = ["graphics"] }
-ssd1306 = "0.3.1"
-embedded-graphics = "0.6.2"
-mpu6050 = "0.1.3"
+panic-halt = "0.2"
+ili9341 = { version = "0.3", features = ["graphics"] }
+ssd1306 = "0.3"
+embedded-graphics = "0.6"
+mpu6050 = "0.1"
 
 [[example]]
 name = "alloc"
