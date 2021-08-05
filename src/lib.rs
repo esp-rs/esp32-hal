@@ -15,7 +15,7 @@
 //!         instructions to support IRAM usage and as optimization
 
 #![no_std]
-#![feature(const_fn)]
+#![feature(const_fn_trait_bound)]
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
 #![cfg_attr(feature = "alloc", feature(alloc_layout_extra))]
 #![cfg_attr(feature = "alloc", feature(nonnull_slice_from_raw_parts))]
