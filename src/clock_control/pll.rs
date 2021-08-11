@@ -3,7 +3,6 @@
 
 use super::Error;
 use crate::prelude::*;
-use crate::target::generic::Variant::Val;
 
 // Delays (in microseconds) for changing pll settings
 // TODO according to esp-idf: some of these are excessive, and should be reduced.
@@ -197,9 +196,9 @@ impl super::ClockControl {
             .cpuperiod_sel()
             .variant()
         {
-            Val(super::CPUPERIOD_SEL_A::SEL_80) => super::PLL_FREQ_320M,
-            Val(super::CPUPERIOD_SEL_A::SEL_160) => super::PLL_FREQ_320M,
-            Val(super::CPUPERIOD_SEL_A::SEL_240) => super::PLL_FREQ_480M,
+            Some(super::CPUPERIOD_SEL_A::SEL_80) => super::PLL_FREQ_320M,
+            Some(super::CPUPERIOD_SEL_A::SEL_160) => super::PLL_FREQ_320M,
+            Some(super::CPUPERIOD_SEL_A::SEL_240) => super::PLL_FREQ_480M,
             _ => super::FREQ_OFF,
         }
     }

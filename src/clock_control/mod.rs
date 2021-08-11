@@ -18,7 +18,6 @@
 use crate::prelude::*;
 use crate::target;
 use crate::target::dport::cpu_per_conf::CPUPERIOD_SEL_A;
-use crate::target::generic::Variant::*;
 use crate::target::rtccntl::clk_conf::*;
 use crate::target::rtccntl::cntl::*;
 use crate::target::{APB_CTRL, RTCCNTL, TIMG0};
@@ -1141,9 +1140,9 @@ impl ClockControl {
     /// Get Slow RTC source
     pub fn slow_rtc_source(&self) -> Result<SlowRTCSource, Error> {
         match self.rtc_control.clk_conf.read().ana_clk_rtc_sel().variant() {
-            Val(ANA_CLK_RTC_SEL_A::SLOW_CK) => Ok(SlowRTCSource::RTC150k),
-            Val(ANA_CLK_RTC_SEL_A::CK_XTAL_32K) => Ok(SlowRTCSource::Xtal32k),
-            Val(ANA_CLK_RTC_SEL_A::CK8M_D256_OUT) => Ok(SlowRTCSource::RTC8MD256),
+            Some(ANA_CLK_RTC_SEL_A::SLOW_CK) => Ok(SlowRTCSource::RTC150k),
+            Some(ANA_CLK_RTC_SEL_A::CK_XTAL_32K) => Ok(SlowRTCSource::Xtal32k),
+            Some(ANA_CLK_RTC_SEL_A::CK8M_D256_OUT) => Ok(SlowRTCSource::RTC8MD256),
             _ => Err(Error::UnsupportedFreqConfig),
         }
     }
@@ -1273,9 +1272,9 @@ impl ClockControl {
                 .cpuperiod_sel()
                 .variant()
             {
-                Val(CPUPERIOD_SEL_A::SEL_80) => CPU_FREQ_80M,
-                Val(CPUPERIOD_SEL_A::SEL_160) => CPU_FREQ_160M,
-                Val(CPUPERIOD_SEL_A::SEL_240) => CPU_FREQ_240M,
+                Some(CPUPERIOD_SEL_A::SEL_80) => CPU_FREQ_80M,
+                Some(CPUPERIOD_SEL_A::SEL_160) => CPU_FREQ_160M,
+                Some(CPUPERIOD_SEL_A::SEL_240) => CPU_FREQ_240M,
                 _ => FREQ_OFF,
             },
             CPUSource::RTC8M => self.rtc8m_frequency_measured,

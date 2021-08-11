@@ -7,3 +7,6 @@ rustflags = [
   "-C", "link-arg=-Wl,-Tlink.x",
 ]
 target = "xtensa-esp32-none-elf"
+
+[unstable]
+build-std=["core", "alloc"]
