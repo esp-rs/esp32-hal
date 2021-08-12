@@ -1,6 +1,6 @@
 [package]
 name = "esp32-hal"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Hardware abstraction layer for Espressif's ESP32 WiFi microcontroller."
 authors = ["Scott Mabin <scott@mabez.dev>", "Arjan Mels <arjan@mels.email>"]
 categories = ["embedded", "hardware-support", "no-std"]

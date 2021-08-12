@@ -215,7 +215,7 @@ fn ram_tests(uart: &mut dyn core::fmt::Write) {
 fn external_ram(_uart: &mut dyn core::fmt::Write) {}
 
 #[cfg(feature = "external_ram")]
-fn external_ram(uart: &mut core::fmt::Write) {
+fn external_ram(uart: &mut dyn core::fmt::Write) {
     unsafe {
         print_info!(uart, ATTR_RAM_STATIC_EXTERNAL);
         print_info!(uart, ATTR_RAM_STATIC_EXTERNAL_BSS);
