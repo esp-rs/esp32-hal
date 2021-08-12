@@ -18,6 +18,7 @@
 #![cfg_attr(feature = "alloc", feature(allocator_api))]
 #![cfg_attr(feature = "alloc", feature(alloc_layout_extra))]
 #![cfg_attr(feature = "alloc", feature(nonnull_slice_from_raw_parts))]
+#![cfg_attr(feature = "alloc", feature(const_fn_trait_bound))]
 
 pub use embedded_hal as hal;
 pub use esp32 as target;
@@ -88,6 +89,14 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
 
     // continue with default reset handler
     xtensa_lx_rt::Reset();
+}
+
+/// The esp32 has a first stage bootloader that handles loading program data into the right place
+/// therefore we skip loading it again.
+#[no_mangle]
+#[rustfmt::skip]
+pub extern "Rust" fn __init_data() -> bool {
+    false
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

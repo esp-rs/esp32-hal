@@ -6,7 +6,6 @@
 
 use crate::prelude::*;
 use crate::target;
-use crate::target::generic::Variant::Val;
 use crate::target::rtccntl::wdtconfig0::*;
 use crate::target::RTCCNTL;
 use embedded_hal::watchdog::{WatchdogDisable, WatchdogEnable};
@@ -105,19 +104,19 @@ impl Watchdog {
         let wdtconfig0 = rtc_control.wdtconfig0.read();
 
         let stg0 = match wdtconfig0.wdt_stg0().variant() {
-            Val(x) => x,
+            Some(x) => x,
             _ => return Err(super::Error::UnsupportedWatchdogConfig),
         };
         let stg1 = match wdtconfig0.wdt_stg1().variant() {
-            Val(x) => x,
+            Some(x) => x,
             _ => return Err(super::Error::UnsupportedWatchdogConfig),
         };
         let stg2 = match wdtconfig0.wdt_stg2().variant() {
-            Val(x) => x,
+            Some(x) => x,
             _ => return Err(super::Error::UnsupportedWatchdogConfig),
         };
         let stg3 = match wdtconfig0.wdt_stg3().variant() {
-            Val(x) => x,
+            Some(x) => x,
             _ => return Err(super::Error::UnsupportedWatchdogConfig),
         };
 

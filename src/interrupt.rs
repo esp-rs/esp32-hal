@@ -36,8 +36,8 @@ pub use crate::target::{
     DPORT,
 };
 use crate::Core::{self, APP, PRO};
-use bare_metal::Nr;
 pub use proc_macros::interrupt;
+use xtensa_lx::interrupt::InterruptNumber;
 pub use xtensa_lx::interrupt::{self, free};
 
 /// Interrupt errors
@@ -257,7 +257,7 @@ unsafe fn level_7_handler(level: u32) {
 
 #[ram]
 unsafe fn handle_interrupt(level: u32, interrupt: Interrupt) {
-    let handler = target::__INTERRUPTS[interrupt.nr() as usize]._handler;
+    let handler = target::__INTERRUPTS[interrupt.number() as usize]._handler;
     if handler as *const _ == DefaultHandler as *const unsafe extern "C" fn() {
         DefaultHandler(level, interrupt);
     } else {
@@ -296,7 +296,7 @@ unsafe fn handle_interrupts(level: u32) {
             let mut interrupt_mask = INTERRUPT_LEVELS[level as usize] & INTERRUPT_EDGE;
             loop {
                 let interrupt_nr = interrupt_mask.trailing_zeros();
-                if let Ok(interrupt) = target::Interrupt::try_from(interrupt_nr as u8) {
+                if let Ok(interrupt) = target::Interrupt::try_from(interrupt_nr as u16) {
                     handle_interrupt(level, interrupt)
                 } else {
                     break;
@@ -309,7 +309,7 @@ unsafe fn handle_interrupts(level: u32) {
             let interrupt_nr = interrupt_mask.trailing_zeros();
 
             // target::Interrupt::try_from can fail if interrupt already de-asserted: silently ignore
-            if let Ok(interrupt) = target::Interrupt::try_from(interrupt_nr as u8) {
+            if let Ok(interrupt) = target::Interrupt::try_from(interrupt_nr as u16) {
                 handle_interrupt(level, interrupt);
             }
         }
@@ -351,7 +351,7 @@ fn map_interrupt(
     if cpu_interrupt.0 >= 32 {
         return Err(Error::InvalidCPUInterrupt);
     }
-    if interrupt.nr() >= Interrupt::INTERNAL_TIMER0_INTR.nr() {
+    if interrupt.number() >= Interrupt::INTERNAL_TIMER0_INTR.number() {
         return Err(Error::InternalInterruptsCannotBeMapped);
     }
     unsafe {
@@ -360,7 +360,7 @@ fn map_interrupt(
             crate::Core::APP => (*DPORT::ptr()).app_mac_intr_map.as_ptr(),
         };
 
-        let reg = base_reg.add(interrupt.nr() as usize);
+        let reg = base_reg.add(interrupt.number() as usize);
         *reg = cpu_interrupt.0 as u32;
     };
     Ok(())
@@ -401,9 +401,9 @@ pub fn enable_with_priority(
 
             return (&INTERRUPT_LEVELS_MUTEX).lock(|_| unsafe {
                 for i in 0..=7 {
-                    INTERRUPT_LEVELS[i] &= !(1 << interrupt.nr());
+                    INTERRUPT_LEVELS[i] &= !(1 << interrupt.number());
                 }
-                INTERRUPT_LEVELS[level.0 as usize] |= 1 << interrupt.nr();
+                INTERRUPT_LEVELS[level.0 as usize] |= 1 << interrupt.number();
 
                 interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS);
 
