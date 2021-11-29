@@ -1,9 +1,9 @@
-use esp32::ledc::RegisterBlock;
-use crate::gpio::{OutputPin, OutputSignal};
 use super::{
     timer::{TimerIFace, TimerSpeed},
     HighSpeed, LowSpeed,
 };
+use crate::gpio::{OutputPin, OutputSignal};
+use esp32::ledc::RegisterBlock;
 
 /// Channel errors
 #[derive(Debug)]
@@ -135,8 +135,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, HighSpeed> {
                         .duty_scale_hsch0()
                         .bits(0x0)
                 });
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_0);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_0);
             }
             Number::Channel1 => {
                 self.ledc
@@ -163,8 +162,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, HighSpeed> {
                         .duty_scale_hsch1()
                         .bits(0x0)
                 });
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_1);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_1);
             }
             Number::Channel2 => {
                 self.ledc
@@ -191,8 +189,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, HighSpeed> {
                         .duty_scale_hsch2()
                         .bits(0x0)
                 });
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_2);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_2);
             }
             Number::Channel3 => {
                 self.ledc
@@ -219,8 +216,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, HighSpeed> {
                         .duty_scale_hsch3()
                         .bits(0x0)
                 });
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_3);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_3);
             }
             Number::Channel4 => {
                 self.ledc
@@ -247,8 +243,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, HighSpeed> {
                         .duty_scale_hsch4()
                         .bits(0x0)
                 });
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_4);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_4);
             }
             Number::Channel5 => {
                 self.ledc
@@ -275,8 +270,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, HighSpeed> {
                         .duty_scale_hsch5()
                         .bits(0x0)
                 });
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_5);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_5);
             }
             Number::Channel6 => {
                 self.ledc
@@ -303,8 +297,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, HighSpeed> {
                         .duty_scale_hsch6()
                         .bits(0x0)
                 });
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_6);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_6);
             }
             Number::Channel7 => {
                 self.ledc
@@ -331,8 +324,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, HighSpeed> {
                         .duty_scale_hsch7()
                         .bits(0x0)
                 });
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_7);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_7);
             }
         }
 
@@ -381,8 +373,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, LowSpeed> {
                 self.ledc
                     .lsch0_conf0
                     .modify(|_, w| w.para_up_lsch0().set_bit());
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_0);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_0);
             }
             Number::Channel1 => {
                 self.ledc
@@ -412,8 +403,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, LowSpeed> {
                 self.ledc
                     .lsch1_conf0
                     .modify(|_, w| w.para_up_lsch1().set_bit());
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_1);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_1);
             }
             Number::Channel2 => {
                 self.ledc
@@ -443,8 +433,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, LowSpeed> {
                 self.ledc
                     .lsch2_conf0
                     .modify(|_, w| w.para_up_lsch2().set_bit());
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_2);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_2);
             }
             Number::Channel3 => {
                 self.ledc
@@ -474,8 +463,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, LowSpeed> {
                 self.ledc
                     .lsch3_conf0
                     .modify(|_, w| w.para_up_lsch3().set_bit());
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_3);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_3);
             }
             Number::Channel4 => {
                 self.ledc
@@ -505,8 +493,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, LowSpeed> {
                 self.ledc
                     .lsch4_conf0
                     .modify(|_, w| w.para_up_lsch4().set_bit());
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_4);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_4);
             }
             Number::Channel5 => {
                 self.ledc
@@ -536,8 +523,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, LowSpeed> {
                 self.ledc
                     .lsch5_conf0
                     .modify(|_, w| w.para_up_lsch5().set_bit());
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_5);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_5);
             }
             Number::Channel6 => {
                 self.ledc
@@ -567,8 +553,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, LowSpeed> {
                 self.ledc
                     .lsch6_conf0
                     .modify(|_, w| w.para_up_lsch6().set_bit());
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_6);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_6);
             }
             Number::Channel7 => {
                 self.ledc
@@ -598,8 +583,7 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, LowSpeed> {
                 self.ledc
                     .lsch7_conf0
                     .modify(|_, w| w.para_up_lsch7().set_bit());
-                output_pin
-                    .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_7);
+                output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_7);
             }
         }
 

@@ -1,5 +1,5 @@
-use channel::Channel;
 use crate::{clock_control::ClockControlConfig, dport};
+use channel::Channel;
 use timer::Timer;
 
 use self::timer::TimerSpeed;
@@ -29,7 +29,6 @@ pub trait Speed {}
 
 impl Speed for HighSpeed {}
 impl Speed for LowSpeed {}
-
 
 impl<'a> LEDC<'a> {
     /// Return a new LEDC

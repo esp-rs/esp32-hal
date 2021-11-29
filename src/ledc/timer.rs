@@ -1,6 +1,6 @@
 use super::{HighSpeed, LowSpeed, Speed};
-use esp32::ledc;
 use crate::{clock_control::ClockControlConfig, units::*};
+use esp32::ledc;
 
 /// Timer errors
 #[derive(Debug)]
