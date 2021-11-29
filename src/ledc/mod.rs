@@ -1,3 +1,36 @@
+//! LEDC (LED PWM Controller) peripheral control
+//!
+//! Currently only supports fixed frequency output. Hardware fade support and interrupts are not currently
+//! implemented. High Speed and Low Speed channels are available.
+//!
+//! # Example:
+//! The following will configure the Low Speed channel 0 to 24Mhz output with 50% duty using the ABP Clock
+//! ```
+//!     let mut ledc = LEDC::new(clock_control_config);
+//!
+//!     ledc.set_global_slow_clock(LSGlobalClkSource::ABPClk);
+//!     let mut lstimer0 = ledc.get_timer::<LowSpeed>(timer::Number::Timer0);
+//!     lstimer0
+//!         .configure(timer::config::Config {
+//!             duty: timer::config::Duty::Duty1Bit,
+//!             clock_source: timer::LSClockSource::SlowClk,
+//!             frequency: 24_000_000.Hz(),
+//!         })
+//!     .unwrap();
+//!
+//!     let mut channel0 = ledc.get_channel(channel::Number::Channel0);
+//!     channel0
+//!         .configure(channel::config::Config {
+//!             timer: &lstimer0,
+//!             duty: 0.5,
+//!             output_pin: pins.gpio4,
+//!         })
+//!     .unwrap();
+//! ```
+//! # TODO
+//! - Hardware fade support
+//! - Interrupts
+
 use crate::{clock_control::ClockControlConfig, dport};
 use channel::Channel;
 use timer::Timer;
@@ -14,7 +47,7 @@ pub enum LSGlobalClkSource {
     ABPClk,
 }
 
-/// LEDC
+/// LEDC (LED PWM Controller)
 pub struct LEDC<'a> {
     ledc: &'a esp32::ledc::RegisterBlock,
     clock_control_config: ClockControlConfig,
