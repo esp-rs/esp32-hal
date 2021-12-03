@@ -18,12 +18,11 @@
 //!         })
 //!     .unwrap();
 //!
-//!     let mut channel0 = ledc.get_channel(channel::Number::Channel0);
+//!     let mut channel0 = ledc.get_channel(channel::Number::Channel0, pins.gpio4);
 //!     channel0
 //!         .configure(channel::config::Config {
 //!             timer: &lstimer0,
 //!             duty: 0.5,
-//!             output_pin: pins.gpio4,
 //!         })
 //!     .unwrap();
 //! ```
@@ -31,7 +30,7 @@
 //! - Hardware fade support
 //! - Interrupts
 
-use crate::{clock_control::ClockControlConfig, dport};
+use crate::{clock_control::ClockControlConfig, dport, gpio::OutputPin};
 use channel::Channel;
 use timer::Timer;
 
@@ -90,7 +89,7 @@ impl<'a> LEDC<'a> {
     }
 
     /// Return a new channel
-    pub fn get_channel<S: TimerSpeed>(&self, number: channel::Number) -> channel::Channel<S> {
-        Channel::new(number)
+    pub fn get_channel<S: TimerSpeed, O: OutputPin>(&self, number: channel::Number, output_pin: O) -> channel::Channel<S, O> {
+        Channel::new(number, output_pin)
     }
 }

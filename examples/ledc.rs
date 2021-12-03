@@ -69,12 +69,11 @@ fn main() -> ! {
         })
         .unwrap();
 
-    let mut channel0 = ledc.get_channel(channel::Number::Channel0);
+    let mut channel0 = ledc.get_channel(channel::Number::Channel0, pins.gpio4);
     channel0
         .configure(channel::config::Config {
             timer: &lstimer0,
-            duty: 0.5,
-            output_pin: pins.gpio4,
+            duty_pct: 0.5,
         })
         .unwrap();
 
