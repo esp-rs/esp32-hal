@@ -17,7 +17,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## [v0.2.0] - 2020-09-23
 
 ### Changed
-  - Replace `xtenxa-lx6` with `xtensa-lx`, a silicon agnostic craate for the runtime and peripheral access of xtensa CPU's.
+  - Replace `xtenxa-lx6` with `xtensa-lx`, a silicon agnostic crate for the runtime and peripheral access of xtensa CPU's.
 
 ### Fixed
   - Update alloc to support the new `alloc_ref` nightly changes.
