@@ -379,11 +379,13 @@ pub fn connect_high_to_peripheral(signal: InputSignal) {
 }
 
 macro_rules! impl_output {
-    ($pxi:ident:
+    (
+        $pxi:ident:
         (
             $pin_num:expr, $bit:expr, $iomux:ident, $out_en_set:ident, $out_en_clear:ident,
-            $outs:ident, $outc:ident
-        ) $( ,( $( $af_signal:ident: $af:ident ),* ))?
+            $out:ident, $outs:ident, $outc:ident
+        )
+        $( ,( $( $af_signal:ident: $af:ident ),* ))?
     ) => {
         impl<MODE> embedded_hal::digital::v2::OutputPin for $pxi<Output<MODE>> {
             type Error = Infallible;
@@ -403,8 +405,7 @@ macro_rules! impl_output {
 
         impl<MODE> embedded_hal::digital::v2::StatefulOutputPin for $pxi<Output<MODE>> {
             fn is_set_high(&self) -> Result<bool, Self::Error> {
-                // NOTE(unsafe) atomic read to a stateless register
-                unsafe { Ok((*GPIO::ptr()).$outs.read().bits() & (1 << $bit) != 0) }
+                unsafe { Ok(((*GPIO::ptr()).$out.read().bits() >> $bit) & 0x01 != 0) }
             }
 
             fn is_set_low(&self) -> Result<bool, Self::Error> {
@@ -412,17 +413,7 @@ macro_rules! impl_output {
             }
         }
 
-        impl<MODE> embedded_hal::digital::v2::ToggleableOutputPin for $pxi<Output<MODE>> {
-            type Error = Infallible;
-
-            fn toggle(&mut self) -> Result<(), Self::Error> {
-                if self.is_set_high()? {
-                    Ok(self.set_low()?)
-                } else {
-                    Ok(self.set_high()?)
-                }
-            }
-        }
+        impl<MODE> embedded_hal::digital::v2::toggleable::Default for $pxi<Output<MODE>> {}
 
         impl<MODE> $pxi<MODE> {
             pub fn into_pull_up_input(self) -> $pxi<Input<PullUp>> {
@@ -831,7 +822,7 @@ macro_rules! impl_output_wrap {
         $( ,( $( $af_output_signal:ident : $af_output:ident ),* ))?
     ) => {
         impl_output!($pxi:
-            ($pin_num, $pin_num % 32, $iomux,  enable_w1ts, enable_w1tc, out_w1ts, out_w1tc)
+            ($pin_num, $pin_num % 32, $iomux,  enable_w1ts, enable_w1tc, out, out_w1ts, out_w1tc)
 
             $( ,( $( $af_output_signal: $af_output ),* ) )? );
     };
@@ -839,7 +830,7 @@ macro_rules! impl_output_wrap {
         $( ,( $( $af_output_signal:ident: $af_output:ident ),* ))?
     ) => {
         impl_output!($pxi:
-            ($pin_num, $pin_num % 32, $iomux, enable1_w1ts, enable1_w1tc, out1_w1ts, out1_w1tc)
+            ($pin_num, $pin_num % 32, $iomux, enable1_w1ts, enable1_w1tc, out1, out1_w1ts, out1_w1tc)
             $( ,( $( $af_output_signal: $af_output ),* ) )? );
     };
     ($pxi:ident, $pin_num:expr, $bank:ident, $iomux:ident, Input) => {
