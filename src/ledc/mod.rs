@@ -89,7 +89,11 @@ impl<'a> LEDC<'a> {
     }
 
     /// Return a new channel
-    pub fn get_channel<S: TimerSpeed, O: OutputPin>(&self, number: channel::Number, output_pin: O) -> channel::Channel<S, O> {
+    pub fn get_channel<S: TimerSpeed, O: OutputPin>(
+        &self,
+        number: channel::Number,
+        output_pin: O,
+    ) -> channel::Channel<S, O> {
         Channel::new(number, output_pin)
     }
 }

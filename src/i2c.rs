@@ -229,10 +229,9 @@ where
         self.reset_fifo();
 
         // RSTART command
-        self.0.comd0.write(|w| unsafe {
-            w.command0()
-                .bits(Command::Start.into())
-        });
+        self.0
+            .comd0
+            .write(|w| unsafe { w.command0().bits(Command::Start.into()) });
 
         // Load into FIFO
         unsafe {
@@ -253,24 +252,24 @@ where
                 Command::Write {
                     ack_exp: Ack::ACK,
                     ack_check_en: false,
-                    length: 1 + bytes.len() as u8
-                }.into()
+                    length: 1 + bytes.len() as u8,
+                }
+                .into(),
             )
         });
 
         // STOP command
-        self.0.comd2.write(|w| unsafe {
-            w.command2()
-                .bits(Command::Stop.into())
-        });
+        self.0
+            .comd2
+            .write(|w| unsafe { w.command2().bits(Command::Stop.into()) });
 
         // Start transmission
         self.0.ctr.modify(|_, w| w.trans_start().set_bit());
 
         // Busy wait for all three commands to be marked as done
-        while self.0.comd0.read().command0_done().bit() != true {}
-        while self.0.comd1.read().command1_done().bit() != true {}
-        while self.0.comd2.read().command2_done().bit() != true {}
+        while !self.0.comd0.read().command0_done().bit() {}
+        while !self.0.comd1.read().command1_done().bit() {}
+        while !self.0.comd2.read().command2_done().bit() {}
 
         Ok(())
     }
@@ -281,9 +280,9 @@ where
         self.reset_fifo();
 
         // RSTART command
-        self.0.comd0.write(|w| unsafe {
-            w.command0().bits(Command::Start.into())
-        });
+        self.0
+            .comd0
+            .write(|w| unsafe { w.command0().bits(Command::Start.into()) });
 
         // Load address into FIFO
         let fifo_addr = self.fifo_addr(OperationType::READ) as *mut u8;
@@ -291,65 +290,76 @@ where
 
         // WRITE command
         self.0.comd1.write(|w| unsafe {
-            w.command1().bits(Command::Write {
-                ack_exp: Ack::ACK,
-                ack_check_en: false,
-                length: 1,
-            }.into())
+            w.command1().bits(
+                Command::Write {
+                    ack_exp: Ack::ACK,
+                    ack_check_en: false,
+                    length: 1,
+                }
+                .into(),
+            )
         });
 
         if buffer.len() > 1 {
             // READ command for first n - 1 bytes
             self.0.comd2.write(|w| unsafe {
-                w.command2().bits(Command::Read {
-                    ack_value: Ack::ACK,
-                    length: buffer.len() as u8 - 1,
-                }.into())
+                w.command2().bits(
+                    Command::Read {
+                        ack_value: Ack::ACK,
+                        length: buffer.len() as u8 - 1,
+                    }
+                    .into(),
+                )
             });
 
             // READ command for final byte
             self.0.comd3.write(|w| unsafe {
-                w.command3().bits(Command::Read {
-                    ack_value: Ack::NACK,
-                    length: 1,
-                }.into())
+                w.command3().bits(
+                    Command::Read {
+                        ack_value: Ack::NACK,
+                        length: 1,
+                    }
+                    .into(),
+                )
             });
 
             // STOP command
-            self.0.comd4.write(|w| unsafe {
-                w.command4().bits(Command::Stop.into())
-            });
+            self.0
+                .comd4
+                .write(|w| unsafe { w.command4().bits(Command::Stop.into()) });
         } else {
             // READ command for byte
             self.0.comd2.write(|w| unsafe {
-                w.command2().bits(Command::Read {
-                    ack_value: Ack::NACK,
-                    length: 1,
-                }.into())
+                w.command2().bits(
+                    Command::Read {
+                        ack_value: Ack::NACK,
+                        length: 1,
+                    }
+                    .into(),
+                )
             });
 
             // STOP command
-            self.0.comd3.write(|w| unsafe {
-                w.command3().bits(Command::Stop.into())
-            });
+            self.0
+                .comd3
+                .write(|w| unsafe { w.command3().bits(Command::Stop.into()) });
         }
 
         // Start transmission
         self.0.ctr.modify(|_, w| w.trans_start().set_bit());
 
         // Busy wait for all commands to be marked as done
-        while self.0.comd0.read().command0_done().bit() != true {}
-        while self.0.comd1.read().command1_done().bit() != true {}
+        while !self.0.comd0.read().command0_done().bit() {}
+        while !self.0.comd1.read().command1_done().bit() {}
 
         if buffer.len() > 1 {
-            while self.0.comd2.read().command2_done().bit() != true {}
-            while self.0.comd3.read().command3_done().bit() != true {}
-            while self.0.comd4.read().command4_done().bit() != true {}
+            while !self.0.comd2.read().command2_done().bit() {}
+            while !self.0.comd3.read().command3_done().bit() {}
+            while !self.0.comd4.read().command4_done().bit() {}
         } else {
-            while self.0.comd2.read().command2_done().bit() != true {}
-            while self.0.comd3.read().command3_done().bit() != true {}
+            while !self.0.comd2.read().command2_done().bit() {}
+            while !self.0.comd3.read().command3_done().bit() {}
         }
-
 
         // Read bytes from FIFO
         for byte in buffer.iter_mut() {
@@ -360,19 +370,14 @@ where
     }
 
     // TODO: Enable ACK checks and return error if ACK check fails
-    pub fn write_read(
-        &mut self,
-        addr: u8,
-        bytes: &[u8],
-        buffer: &mut [u8],
-    ) -> Result<(), Error> {
+    pub fn write_read(&mut self, addr: u8, bytes: &[u8], buffer: &mut [u8]) -> Result<(), Error> {
         // Reset FIFO
         self.reset_fifo();
 
         // START
-        self.0.comd0.write(|w| unsafe {
-            w.command0().bits(Command::Start.into())
-        });
+        self.0
+            .comd0
+            .write(|w| unsafe { w.command0().bits(Command::Start.into()) });
 
         // load into FIFO
         let fifo_addr = self.fifo_addr(OperationType::WRITE) as *mut u8;
@@ -388,78 +393,93 @@ where
 
         // WRITE addr + data
         self.0.comd1.write(|w| unsafe {
-            w.command1().bits(Command::Write {
-                ack_exp: Ack::ACK,
-                ack_check_en: false,
-                length: 1 + bytes.len() as u8,
-            }.into())
+            w.command1().bits(
+                Command::Write {
+                    ack_exp: Ack::ACK,
+                    ack_check_en: false,
+                    length: 1 + bytes.len() as u8,
+                }
+                .into(),
+            )
         });
 
         // repeat START
-        self.0.comd2.write(|w| unsafe {
-            w.command2().bits(Command::Start.into())
-        });
+        self.0
+            .comd2
+            .write(|w| unsafe { w.command2().bits(Command::Start.into()) });
 
         // load slave address into FIFO
         unsafe { ptr::write_volatile(fifo_addr, addr << 1 | OperationType::READ as u8) };
 
         // WRITE slave address
         self.0.comd3.write(|w| unsafe {
-            w.command3().bits(Command::Write {
-                ack_exp: Ack::ACK,
-                ack_check_en: false,
-                length: 1,
-            }.into())
+            w.command3().bits(
+                Command::Write {
+                    ack_exp: Ack::ACK,
+                    ack_check_en: false,
+                    length: 1,
+                }
+                .into(),
+            )
         });
 
         if buffer.len() > 1 {
             // READ first n - 1 bytes
             self.0.comd4.write(|w| unsafe {
-                w.command4().bits(Command::Read {
-                    ack_value: Ack::ACK,
-                    length: buffer.len() as u8 - 1,
-                }.into())
+                w.command4().bits(
+                    Command::Read {
+                        ack_value: Ack::ACK,
+                        length: buffer.len() as u8 - 1,
+                    }
+                    .into(),
+                )
             });
 
             // READ last byte
             self.0.comd5.write(|w| unsafe {
-                w.command5().bits(Command::Read {
-                    ack_value: Ack::NACK,
-                    length: 1,
-                }.into())
+                w.command5().bits(
+                    Command::Read {
+                        ack_value: Ack::NACK,
+                        length: 1,
+                    }
+                    .into(),
+                )
             });
 
             // STOP
-            self.0.comd6.write(|w| unsafe {
-                w.command6().bits(Command::Stop.into())
-            });
+            self.0
+                .comd6
+                .write(|w| unsafe { w.command6().bits(Command::Stop.into()) });
         } else {
             // READ byte
             self.0.comd4.write(|w| unsafe {
-                w.command4().bits(Command::Read {
-                    ack_value: Ack::NACK,
-                    length: 1,
-                }.into())
+                w.command4().bits(
+                    Command::Read {
+                        ack_value: Ack::NACK,
+                        length: 1,
+                    }
+                    .into(),
+                )
             });
 
             // STOP
-            self.0.comd5.write(|w| unsafe {
-                w.command5().bits(Command::Stop.into())
-            });
+            self.0
+                .comd5
+                .write(|w| unsafe { w.command5().bits(Command::Stop.into()) });
         }
 
         // Start transmission
         self.0.ctr.modify(|_, w| w.trans_start().set_bit());
 
         // Busy wait for all commands to be marked as done
-        while self.0.comd0.read().command0_done().bit() != true {}
-        while self.0.comd1.read().command1_done().bit() != true {}
-        while self.0.comd2.read().command2_done().bit() != true {}
-        while self.0.comd3.read().command3_done().bit() != true {}
-        while self.0.comd4.read().command4_done().bit() != true {}
-        while self.0.comd5.read().command5_done().bit() != true {}
+        while !self.0.comd0.read().command0_done().bit() {}
+        while !self.0.comd1.read().command1_done().bit() {}
+        while !self.0.comd2.read().command2_done().bit() {}
+        while !self.0.comd3.read().command3_done().bit() {}
+        while !self.0.comd4.read().command4_done().bit() {}
+        while !self.0.comd5.read().command5_done().bit() {}
         if buffer.len() > 1 {
-            while self.0.comd6.read().command6_done().bit() != true {}
+            while !self.0.comd6.read().command6_done().bit() {}
         }
 
         // read bytes from FIFO
@@ -574,7 +594,9 @@ impl From<Command> for u16 {
 
         let ack_check_en = match c {
             Command::Start | Command::Stop | Command::Read { .. } => false,
-            Command::Write { ack_check_en: en, .. } => en,
+            Command::Write {
+                ack_check_en: en, ..
+            } => en,
         };
 
         let ack_value = match c {

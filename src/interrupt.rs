@@ -265,7 +265,6 @@ unsafe fn handle_interrupt(level: u32, interrupt: Interrupt) {
     }
 }
 
-#[inline(always)]
 #[ram]
 unsafe fn handle_interrupts(level: u32) {
     let cpu_interrupt_mask =
@@ -387,19 +386,19 @@ pub fn enable_with_priority(
             }
             if level == InterruptLevel(0) {
                 interrupt::disable_mask(1 << cpu_interrupt.0);
-                return Ok(());
+                Ok(())
             } else if level == cpu_interrupt_to_level(cpu_interrupt) {
                 unsafe { interrupt::enable_mask(1 << cpu_interrupt.0) };
-                return Ok(());
+                Ok(())
             } else {
-                return Err(Error::InvalidInterruptLevel);
+                Err(Error::InvalidInterruptLevel)
             }
         }
         Err(_) => {
             let cpu_interrupt =
                 interrupt_level_to_cpu_interrupt(level, interrupt_is_edge(interrupt))?;
 
-            return (&INTERRUPT_LEVELS_MUTEX).lock(|_| unsafe {
+            (&INTERRUPT_LEVELS_MUTEX).lock(|_| unsafe {
                 for i in 0..=7 {
                     INTERRUPT_LEVELS[i] &= !(1 << interrupt.number());
                 }
@@ -408,7 +407,7 @@ pub fn enable_with_priority(
                 interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS);
 
                 map_interrupt(core, interrupt, cpu_interrupt)
-            });
+            })
         }
     }
 }
@@ -426,7 +425,7 @@ pub fn enable(interrupt: Interrupt) -> Result<(), Error> {
     match interrupt_to_cpu_interrupt(interrupt) {
         Ok(cpu_interrupt) => {
             unsafe { interrupt::enable_mask(1 << cpu_interrupt.0) };
-            return Ok(());
+            Ok(())
         }
         Err(_) => enable_with_priority(crate::get_core(), interrupt, InterruptLevel(1)),
     }
@@ -438,7 +437,7 @@ pub fn disable(interrupt: Interrupt) -> Result<(), Error> {
     match interrupt_to_cpu_interrupt(interrupt) {
         Ok(cpu_interrupt) => {
             unsafe { interrupt::enable_mask(1 << cpu_interrupt.0) };
-            return Ok(());
+            Ok(())
         }
         Err(_) => enable_with_priority(crate::get_core(), interrupt, InterruptLevel(0)),
     }

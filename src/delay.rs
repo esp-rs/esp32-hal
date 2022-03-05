@@ -7,7 +7,12 @@ pub struct Delay {}
 
 impl Delay {
     pub fn new() -> Delay {
-        Delay {}
+        Self::default()
+    }
+}
+impl Default for Delay {
+    fn default() -> Self {
+        Self {}
     }
 }
 

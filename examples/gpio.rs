@@ -94,7 +94,7 @@ fn main() -> ! {
 
     let mut x = 0;
     loop {
-        x = x + 1;
+        x += 1;
         (&SERIAL, &GPIO).lock(|serial, gpio| {
             let serial = serial.as_mut().unwrap();
             let gpio = gpio.as_mut().unwrap();

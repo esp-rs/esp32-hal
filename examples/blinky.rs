@@ -1,11 +1,11 @@
 #![no_std]
 #![no_main]
 
+use esp32_hal as hal;
 use esp32_hal::target;
 use hal::prelude::*;
-use xtensa_lx::timer::get_cycle_count;
 use panic_halt as _;
-use esp32_hal as hal;
+use xtensa_lx::timer::get_cycle_count;
 
 /// The default clock source is the onboard crystal
 /// In most cases 40mhz (but can be as low as 2mhz depending on the board)

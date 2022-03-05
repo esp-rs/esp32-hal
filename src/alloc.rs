@@ -159,7 +159,7 @@ unsafe impl AllocAllocator for Allocator {
         let ptr = unsafe { GlobalAlloc::alloc(self, layout) };
         match NonNull::new(ptr) {
             Some(ptr) => Ok(NonNull::slice_from_raw_parts(ptr, layout.size())),
-            None => Err(AllocError)
+            None => Err(AllocError),
         }
     }
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
