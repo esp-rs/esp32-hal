@@ -16,6 +16,8 @@ const NUM_LEDS: usize = 23;
 const STEPS: u8 = 10;
 const TOP_ROW: usize = 4;
 const MID_ROW: usize = 10;
+const FIRST_MID_LED_INDEX: usize = TOP_ROW;
+const LAST_MID_LED_INDEX: usize = TOP_ROW + MID_ROW - 1;
 const BOT_ROW: usize = 9;
 const DT: u32 = 5;
 const BREATHING_MULTIPLIER: u32 = 10;
@@ -26,6 +28,11 @@ struct LightData {
     leds: [RGB8; NUM_LEDS],
 }
 impl LightData {
+    fn turn_off_indexes(&mut self, indexes: &[usize]){
+        for i in indexes {
+            self.leds[*i] = RGB8::new(0, 0, 0);
+        }
+    }
     fn rgb() -> Self{
         let mut result = Self::empty();
         // Blink the LED's in a blue-green-red pattern.
@@ -189,6 +196,13 @@ struct Strip {
 }
 
 impl Strip {
+    fn middle_off_animation(&mut self){
+        for i in 0..5{
+            self.data.turn_off_indexes(&[FIRST_MID_LED_INDEX + i, LAST_MID_LED_INDEX - i]);
+            self.write();
+            delay(BREATHING_MULTIPLIER * 1_000_000);
+        }
+    }
     fn breathe(&mut self) {
         let data_clone = self.data.clone();
         let empty: LightData = LightData::empty();
