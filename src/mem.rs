@@ -100,7 +100,7 @@ pub unsafe extern "C" fn memcpy(mut dst: *mut u8, src: *const u8, n: usize) -> *
             while i < *chunk_size {
                 *(dst as *mut c_int).wrapping_add(i) =
                     *(dst.wrapping_add(src_off) as *mut c_int).wrapping_add(i);
-                i = i + 1;
+                i += 1;
             }
             dst = dst.wrapping_add(*chunk_size * PTR_SIZE);
         }
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn memcpy(mut dst: *mut u8, src: *const u8, n: usize) -> *
         dst = dst.wrapping_add(1);
     }
 
-    return dst;
+    dst
 }
 
 /// Copies n-bytes of data from src to dst
@@ -174,7 +174,7 @@ pub unsafe extern "C" fn memcpy_reverse(dst: *mut u8, src: *const u8, n: usize) 
             // instead of store with positive offset; so 3 instructions per loop instead of 2
             let mut i = *chunk_size;
             while i > 0 {
-                i = i - 1;
+                i -= 1;
                 *(cur as *mut c_int).wrapping_add(i) =
                     *(cur.wrapping_add(src_off) as *mut c_int).wrapping_add(i);
             }
@@ -187,7 +187,7 @@ pub unsafe extern "C" fn memcpy_reverse(dst: *mut u8, src: *const u8, n: usize) 
         *cur = *cur.wrapping_add(src_off);
     }
 
-    return dst;
+    dst
 }
 
 /// Copies n-bytes of data from src to dst and properly handles overlapping data
@@ -244,7 +244,7 @@ pub unsafe extern "C" fn memset(mut s: *mut u8, c: c_int, n: usize) -> *mut u8 {
             let mut i = 0;
             while i < *chunk_size {
                 *(s as *mut c_int).wrapping_add(i) = c_int::from_ne_bytes([c as u8; PTR_SIZE]);
-                i = i + 1;
+                i += 1;
             }
             s = s.wrapping_add(*chunk_size * PTR_SIZE);
         }
@@ -337,7 +337,7 @@ pub unsafe extern "C" fn memcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i
         s1 = s1.wrapping_add(1);
     }
 
-    return 0;
+    0
 }
 
 /// Compare n-bytes of data from s1 and s2 and returns 0 for s1==s2 and !=0 otherwise
@@ -394,7 +394,7 @@ pub unsafe extern "C" fn bcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i32
                 {
                     return true as i32;
                 }
-                i = i + 1;
+                i += 1;
             }
             s1 = s1.wrapping_add(*chunk_size * PTR_SIZE);
         }
@@ -408,5 +408,5 @@ pub unsafe extern "C" fn bcmp(mut s1: *const u8, s2: *const u8, n: usize) -> i32
         s1 = s1.wrapping_add(1);
     }
 
-    return false as i32;
+    false as i32
 }

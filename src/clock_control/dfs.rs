@@ -198,23 +198,21 @@ impl<'a> super::ClockControl {
         (&DFS_MUTEX).lock(|data| {
             data.apb += 1;
 
-            if data.apb == 1 {
-                if data.cpu == 0 || self.cpu_frequency_apb_locked > self.cpu_frequency_locked {
-                    let cpu_source_before = self.cpu_source;
-                    let cpu_frequency_before = self.cpu_frequency;
-                    let apb_frequency_before = self.apb_frequency;
+            if data.apb == 1 && (data.cpu == 0 || self.cpu_frequency_apb_locked > self.cpu_frequency_locked) {
+                let cpu_source_before = self.cpu_source;
+                let cpu_frequency_before = self.cpu_frequency;
+                let apb_frequency_before = self.apb_frequency;
 
-                    self.set_cpu_frequency_apb_locked(data.pll_d2 > 0).unwrap();
+                self.set_cpu_frequency_apb_locked(data.pll_d2 > 0).unwrap();
 
-                    self.do_callbacks(
-                        cpu_source_before,
-                        cpu_frequency_before,
-                        apb_frequency_before,
-                        self.cpu_source,
-                        self.cpu_frequency,
-                        self.apb_frequency,
-                    );
-                }
+                self.do_callbacks(
+                    cpu_source_before,
+                    cpu_frequency_before,
+                    apb_frequency_before,
+                    self.cpu_source,
+                    self.cpu_frequency,
+                    self.apb_frequency,
+                );
             }
         });
         LockAPB {}

@@ -4,3 +4,5 @@ procmacros/target
 Cargo.lock
 .vscode/.cortex-debug*
 core
+.embuild/
+.idea/

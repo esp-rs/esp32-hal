@@ -488,7 +488,7 @@ impl<TIMG: TimerGroup> Timer<TIMG, TimerLact> {
         unsafe {
             (*(self.timg))
                 .lactrtc
-                .modify(|_, w| w.lact_rtc_step_len().bits(ticks.into()));
+                .modify(|_, w| w.lact_rtc_step_len().bits(ticks));
         };
         self
     }

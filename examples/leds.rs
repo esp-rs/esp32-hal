@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 
+use core::panic::PanicInfo;
 use esp32::SPI2;
-use esp32_hal::{dport::Split, prelude::*, spi, target};
-use panic_halt;
+use esp32_hal::{dport::Split, dprintln, prelude::*, spi, target};
 use smart_leds::{SmartLedsWrite, RGB, RGB8};
 
 use esp32_hal::clock_control::{ClockControl, XTAL_FREQUENCY_AUTO};
@@ -395,4 +395,10 @@ fn main() -> ! {
         strip.write();
         delay(DT * 40_000_000);
     }
+}
+
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    dprintln!("\n\n*** {:?}", info);
+    loop {}
 }
