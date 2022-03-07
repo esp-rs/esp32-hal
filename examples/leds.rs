@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-
+//! This is an example for the ESP32 with a WS2812B LED strip.
 use core::panic::PanicInfo;
 use esp32::SPI2;
 use esp32_hal::{dport::Split, dprintln, prelude::*, spi, target};
@@ -16,53 +16,29 @@ const NUM_LEDS: usize = 23;
 const STEPS: u8 = 10;
 const TOP_ROW: usize = 4;
 const MID_ROW: usize = 10;
-const FIRST_MID_LED_INDEX: usize = TOP_ROW;
-const LAST_MID_LED_INDEX: usize = TOP_ROW + MID_ROW - 1;
-const BOT_ROW: usize = 9;
 const DT: u32 = 5;
 const BREATHING_MULTIPLIER: u32 = 10;
-
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct LightData {
     leds: [RGB8; NUM_LEDS],
 }
 impl LightData {
-    fn turn_off_indexes(&mut self, indexes: &[usize]){
-        for i in indexes {
-            self.leds[*i] = RGB8::new(0, 0, 0);
+    fn empty() -> Self {
+        Self {
+            leds: [RGB8::new(0, 0, 0); NUM_LEDS],
         }
-    }
-    fn rgb() -> Self{
-        let mut result = Self::empty();
-        // Blink the LED's in a blue-green-red pattern.
-        for led in result.iter_mut().step_by(3) {
-            led.b = 0x10;
-        }
-
-        if NUM_LEDS > 1 {
-            for led in result.iter_mut().skip(1).step_by(3) {
-                led.g = 0x10;
-            }
-        }
-
-        if NUM_LEDS > 2 {
-            for led in result.iter_mut().skip(2).step_by(3) {
-                led.r = 0x10;
-            }
-        }
-        result
     }
     fn from_gradient(from: RGB8, to: RGB8) -> Self {
         let mut result = [RGB8::default(); NUM_LEDS];
         let r_delta = to.r as i16 - from.r as i16;
         let g_delta = to.g as i16 - from.g as i16;
         let b_delta = to.b as i16 - from.b as i16;
-        for i in 0..NUM_LEDS{
+        for i in 0..NUM_LEDS {
             let r = (from.r + (r_delta * i as i16 / (NUM_LEDS - 1) as i16) as u8) as u8;
             let g = (from.g + (g_delta * i as i16 / (NUM_LEDS - 1) as i16) as u8) as u8;
             let b = (from.b + (b_delta * i as i16 / (NUM_LEDS - 1) as i16) as u8) as u8;
-            result[i] = RGB8 {r, g, b};
+            result[i] = RGB8 { r, g, b };
         }
         Self::from(result)
     }
@@ -73,20 +49,11 @@ impl LightData {
             .max()
             .unwrap()
     }
-    fn iter_mut(&mut self) -> impl Iterator<Item = &mut RGB8> {
-        self.leds.iter_mut()
-    }
     fn write_to_strip(
         &self,
         strip: &mut Ws2812<SPI<SPI2, Gpio14<Unknown>, Gpio15<Output<PushPull>>, Gpio25<Unknown>>>,
     ) {
         strip.write(self.leds.iter().cloned()).unwrap();
-    }
-    fn is_off(&self) -> bool {
-        if self.leds.iter().any(|l| l.r > 0 && l.g > 0 && l.b > 0) {
-            return false;
-        }
-        true
     }
     fn get_led(&self, index: usize) -> RGB8 {
         self.leds[index]
@@ -94,21 +61,6 @@ impl LightData {
     fn set_color_all(&mut self, color: RGB8) {
         for i in 0..NUM_LEDS {
             self.set_color(i, color);
-        }
-    }
-    fn set_red_all(&mut self, red: u8) {
-        for i in 0..NUM_LEDS {
-            self.set_red(i, red);
-        }
-    }
-    fn set_green_all(&mut self, green: u8) {
-        for i in 0..NUM_LEDS {
-            self.set_green(i, green);
-        }
-    }
-    fn set_blue_all(&mut self, blue: u8) {
-        for i in 0..NUM_LEDS {
-            self.set_blue(i, blue);
         }
     }
     fn set_red(&mut self, index: usize, red: u8) {
@@ -123,11 +75,6 @@ impl LightData {
     fn set_color(&mut self, led: usize, color: RGB8) {
         self.leds[led] = color;
     }
-    fn set_lightness_all(&mut self, lightness: u8) {
-        for led in 0..self.leds.len() {
-            self.set_lightness(lightness, led);
-        }
-    }
     fn set_lightness_percent_all(&mut self, lightness: f32) {
         for led in 0..self.leds.len() {
             self.set_lightness_percent(lightness, led);
@@ -137,42 +84,6 @@ impl LightData {
         self.leds[led].r = (self.leds[led].r as f32 * lightness) as u8;
         self.leds[led].g = (self.leds[led].g as f32 * lightness) as u8;
         self.leds[led].b = (self.leds[led].b as f32 * lightness) as u8;
-    }
-    fn set_lightness(&mut self, lightness: u8, led: usize) {
-        self.leds[led].r = lightness;
-        self.leds[led].g = lightness;
-        self.leds[led].b = lightness;
-    }
-    /// Sets an entire row of LEDs to a single color
-    ///
-    /// # Arguments
-    /// * `row` - The row to set. 0 is the top row, 1 is the middle row, and everything else is the bottom row.
-    fn edit_row(&mut self, row: usize, color: RGB8) {
-        match row {
-            0 => {
-                for led in 0..TOP_ROW {
-                    self.leds[led] = color;
-                }
-            }
-            1 => {
-                for led in TOP_ROW..MID_ROW + TOP_ROW {
-                    self.leds[led] = color;
-                }
-            }
-            _ => {
-                for led in MID_ROW + TOP_ROW..NUM_LEDS {
-                    self.leds[led] = color;
-                }
-            }
-        }
-    }
-    fn get_iter(&mut self) -> impl Iterator<Item = &mut RGB8> {
-        self.leds.iter_mut()
-    }
-    fn empty() -> Self {
-        Self {
-            leds: [RGB8::new(0, 0, 0); NUM_LEDS],
-        }
     }
 }
 impl Default for LightData {
@@ -196,28 +107,6 @@ struct Strip {
 }
 
 impl Strip {
-    fn middle_off_animation(&mut self){
-        for i in 0..5{
-            self.data.turn_off_indexes(&[FIRST_MID_LED_INDEX + i, LAST_MID_LED_INDEX - i]);
-            self.write();
-            delay(BREATHING_MULTIPLIER * 1_000_000);
-        }
-    }
-    fn breathe(&mut self) {
-        let data_clone = self.data.clone();
-        let empty: LightData = LightData::empty();
-        self.fade_into(empty);
-        self.fade_into(data_clone);
-    }
-    fn fill_with_data_animated(&mut self, data: LightData) {
-        for i in 0..NUM_LEDS {
-            self.data.set_color(i, data.get_led(i));
-            delay(5_000_000);
-            self.write();
-        }
-        self.get_brightness();
-    }
-
     fn fade_into(&mut self, data: LightData) {
         while self.data != data {
             for i in 0..NUM_LEDS {
@@ -292,10 +181,6 @@ impl Strip {
     fn write(&mut self) {
         self.data.write_to_strip(&mut self.ws);
     }
-    fn off(&mut self) {
-        self.data.set_color_all(RGB8::new(0, 0, 0));
-        self.write();
-    }
     fn set_color(&mut self, color: RGB8, index: usize) {
         self.data.set_color(index, color);
         self.write();
@@ -304,50 +189,6 @@ impl Strip {
         self.data.set_color_all(color);
         self.write();
     }
-    fn set_lightness(&mut self, percentage: f32) {
-        let value = (percentage * 255.0) as u8;
-        self.brightness = value;
-        for led in self.data.iter_mut() {
-            if led.r > 0 {
-                led.r = value;
-            }
-            if led.g > 0 {
-                led.g = value;
-            }
-            if led.b > 0 {
-                led.b = value;
-            }
-        }
-        if self.is_off() {
-            self.data.get_iter().for_each(|led| {
-                led.r = value;
-                led.g = value;
-                led.b = value;
-            })
-        }
-        self.write();
-    }
-    fn red_and_white(&mut self) {
-        for i in 0..TOP_ROW + MID_ROW - 5 {
-            self.set_color(RGB8::new(self.brightness, 0, 0), i);
-        }
-        for i in TOP_ROW + MID_ROW - 5..NUM_LEDS {
-            self.set_color(
-                RGB8::new(self.brightness, self.brightness, self.brightness),
-                i,
-            );
-        }
-        self.write();
-    }
-    fn white(&mut self) {
-        self.set_solid(RGB8::new(self.brightness, self.brightness, self.brightness));
-        self.write();
-    }
-
-    fn is_off(&self) -> bool {
-        self.data.is_off()
-    }
-
     fn get_brightness(&mut self) {
         self.data.get_brightness();
     }
@@ -387,13 +228,19 @@ fn main() -> ! {
     let ws = Ws2812::new(spi);
 
     let mut strip = Strip {
-        ws: ws,
+        ws,
         data: LightData::from_gradient(RGB8::new(40, 0, 0), RGB::new(0, 0, 40)),
         brightness: 10,
     };
     loop {
-        strip.write();
+        strip.startup_animation();
+        delay(1_000_000);
+        strip.fade_into(LightData::from_gradient(
+            RGB8::new(40, 0, 0),
+            RGB::new(0, 0, 40),
+        ));
         delay(DT * 40_000_000);
+        strip.shutdown_animation();
     }
 }
 
