@@ -198,7 +198,9 @@ impl<'a> super::ClockControl {
         (&DFS_MUTEX).lock(|data| {
             data.apb += 1;
 
-            if data.apb == 1 && (data.cpu == 0 || self.cpu_frequency_apb_locked > self.cpu_frequency_locked) {
+            if data.apb == 1
+                && (data.cpu == 0 || self.cpu_frequency_apb_locked > self.cpu_frequency_locked)
+            {
                 let cpu_source_before = self.cpu_source;
                 let cpu_frequency_before = self.cpu_frequency;
                 let apb_frequency_before = self.apb_frequency;
