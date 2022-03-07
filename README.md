@@ -1,8 +1,8 @@
 # esp32-hal
 
-A hardware abstraction layer for the [esp32](https://en.wikipedia.org/wiki/ESP32) written in Rust.
+⚠️  **NOTE** this HAL is now in maintenence mode only, and will be archived when we have ported all drivers to the new multichip HAL: [esp-rs/esp-hal](https://github.com/esp-rs/esp-hal)
 
-Contributions are welcome :)
+A hardware abstraction layer for the [esp32](https://en.wikipedia.org/wiki/ESP32) written in Rust.
 
 Join in on the discussion: https://matrix.to/#/#esp-rs:matrix.org!
 
