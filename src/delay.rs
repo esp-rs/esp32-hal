@@ -2,12 +2,12 @@
 use crate::units::{MicroSeconds, MilliSeconds};
 use embedded_hal::blocking::delay::{DelayMs, DelayUs};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Delay {}
 
 impl Delay {
     pub fn new() -> Delay {
-        Delay {}
+        Self::default()
     }
 }
 

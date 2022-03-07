@@ -43,8 +43,11 @@ pub mod config {
 }
 
 /// Channel interface
-pub trait ChannelIFace<'a, S: TimerSpeed + 'a, O: OutputPin = crate::gpio::Gpio1<crate::gpio::Output<crate::gpio::PushPull>>>
-where
+pub trait ChannelIFace<
+    'a,
+    S: TimerSpeed + 'a,
+    O: OutputPin = crate::gpio::Gpio1<crate::gpio::Output<crate::gpio::PushPull>>,
+> where
     Channel<'a, S, O>: ChannelHW<O>,
 {
     /// Configure channel
@@ -190,35 +193,43 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, HighSpeed, O> {
             match self.number {
                 Number::Channel0 => {
                     set_channel!(self, h, 0, channel_number);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_0);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_0);
                 }
                 Number::Channel1 => {
                     set_channel!(self, h, 1, channel_number);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_1);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_1);
                 }
                 Number::Channel2 => {
                     set_channel!(self, h, 2, channel_number);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_2);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_2);
                 }
                 Number::Channel3 => {
                     set_channel!(self, h, 3, channel_number);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_3);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_3);
                 }
                 Number::Channel4 => {
                     set_channel!(self, h, 4, channel_number);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_4);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_4);
                 }
                 Number::Channel5 => {
                     set_channel!(self, h, 5, channel_number);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_5);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_5);
                 }
                 Number::Channel6 => {
                     set_channel!(self, h, 6, channel_number);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_6);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_6);
                 }
                 Number::Channel7 => {
                     set_channel!(self, h, 7, channel_number);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_7);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_HS_SIG_7);
                 }
             }
         } else {
@@ -259,42 +270,50 @@ impl<'a, O: OutputPin> ChannelHW<O> for Channel<'a, LowSpeed, O> {
                 Number::Channel0 => {
                     set_channel!(self, l, 0, channel_number);
                     update_channel!(self, 0);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_0);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_0);
                 }
                 Number::Channel1 => {
                     set_channel!(self, l, 1, channel_number);
                     update_channel!(self, 1);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_1);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_1);
                 }
                 Number::Channel2 => {
                     set_channel!(self, l, 2, channel_number);
                     update_channel!(self, 2);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_2);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_2);
                 }
                 Number::Channel3 => {
                     set_channel!(self, l, 3, channel_number);
                     update_channel!(self, 3);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_3);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_3);
                 }
                 Number::Channel4 => {
                     set_channel!(self, l, 4, channel_number);
                     update_channel!(self, 4);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_4);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_4);
                 }
                 Number::Channel5 => {
                     set_channel!(self, l, 5, channel_number);
                     update_channel!(self, 5);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_5);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_5);
                 }
                 Number::Channel6 => {
                     set_channel!(self, l, 6, channel_number);
                     update_channel!(self, 6);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_6);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_6);
                 }
                 Number::Channel7 => {
                     set_channel!(self, l, 7, channel_number);
                     update_channel!(self, 7);
-                    self.output_pin.connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_7);
+                    self.output_pin
+                        .connect_peripheral_to_output(OutputSignal::LEDC_LS_SIG_7);
                 }
             }
         } else {

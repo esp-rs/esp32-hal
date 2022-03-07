@@ -72,7 +72,7 @@ fn main() -> ! {
         while let Ok(x) = rx.read() {
             write!(tx, "{} ({:#x}) ", if x >= 32 { x as char } else { '?' }, x).unwrap()
         }
-        writeln!(tx, "").unwrap();
+        writeln!(tx).unwrap();
 
         blinky.set_high().unwrap();
         sleep((Hertz(1_000_000) / BLINK_HZ).us());

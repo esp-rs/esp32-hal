@@ -141,10 +141,10 @@ impl Watchdog {
 
     /// Change watchdog timer configuration and start
     pub fn set_config(&mut self, config: &WatchdogConfig) {
-        let per1 = self.calc_ticks(config.period1.into());
-        let per2 = self.calc_ticks(config.period2.into());
-        let per3 = self.calc_ticks(config.period3.into());
-        let per4 = self.calc_ticks(config.period4.into());
+        let per1 = self.calc_ticks(config.period1);
+        let per2 = self.calc_ticks(config.period2);
+        let per3 = self.calc_ticks(config.period3);
+        let per4 = self.calc_ticks(config.period4);
 
         self.access_registers(|rtc_control| {
             rtc_control.wdtfeed.write(|w| w.wdt_feed().set_bit());

@@ -113,8 +113,7 @@ impl<TIMG: TimerGroup> Watchdog<TIMG> {
                 .wdtconfig1
                 .read()
                 .wdt_clk_prescale()
-                .bits()
-                .into(),
+                .bits(),
         )
     }
 

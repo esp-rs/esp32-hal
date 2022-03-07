@@ -319,16 +319,14 @@ impl<UART: Instance, TX: OutputPin, RX: InputPin, CTS: InputPin, RTS: OutputPin>
         baudrate: T,
         use_apb_frequency: bool,
     ) -> Result<&mut Self, Error> {
-        if let None = self.rx.apb_lock {
+        if self.rx.apb_lock.is_none() {
             if use_apb_frequency {
                 self.rx.apb_lock = Some(self.clock_control.lock_apb_frequency());
                 self.tx.apb_lock = Some(self.clock_control.lock_apb_frequency());
             }
-        } else {
-            if !use_apb_frequency {
-                self.rx.apb_lock = None;
-                self.tx.apb_lock = None;
-            }
+        } else if !use_apb_frequency {
+            self.rx.apb_lock = None;
+            self.tx.apb_lock = None;
         }
 
         // set clock source

@@ -474,7 +474,7 @@ impl<
                 } else {
                     buffer[count / divider] |= (value.into()) << ((count % divider) * bits);
                 }
-                count = count + 1;
+                count += 1;
             }
 
             while self.instance.cmd.read().usr().bit_is_set() {}

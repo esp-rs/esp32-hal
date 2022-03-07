@@ -16,7 +16,7 @@ use esp32_hal::{
     dprintln,
     i2c::{self, Error, I2C},
     prelude::*,
-    target::{I2C0, Peripherals},
+    target::{Peripherals, I2C0},
     timer::Timer,
 };
 use mpu6050::Mpu6050;
@@ -137,7 +137,12 @@ impl<'a> Write for I2CWrapper<'a> {
 impl<'a> WriteRead for I2CWrapper<'a> {
     type Error = Error;
 
-    fn write_read(&mut self, address: u8, bytes: &[u8], buffer: &mut [u8]) -> Result<(), Self::Error> {
+    fn write_read(
+        &mut self,
+        address: u8,
+        bytes: &[u8],
+        buffer: &mut [u8],
+    ) -> Result<(), Self::Error> {
         self.i2c.lock(|x| x.write_read(address, bytes, buffer))
     }
 }

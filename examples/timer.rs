@@ -148,7 +148,7 @@ fn main() -> ! {
 
     let mut x = 0;
     loop {
-        x = x + 1;
+        x += 1;
         (&TX, &TIMER0, &TIMER1, &TIMER2).lock(|tx, timer0, timer1, timer2| {
             let tx = tx.as_mut().unwrap();
             let timer0 = timer0.as_mut().unwrap();
@@ -164,7 +164,7 @@ fn main() -> ! {
                 xtensa_lx::timer::get_cycle_count()
             )
             .unwrap();
-            if let Ok(_) = timer1.wait() {
+            if timer1.wait().is_ok() {
                 writeln!(tx, "CANCELLING Timers").unwrap();
                 timer0.cancel().unwrap();
                 timer1.cancel().unwrap();
